@@ -75,6 +75,41 @@ class DevelopmentPolicyTests(unittest.TestCase):
         path.symlink_to(self.config / 'missing.json')
         self.assertNotEqual(self.run_script('check-dev-source.py').returncode, 0)
 
+    def test_manual_mode_blocks_both_publish_entries_before_writes(self):
+        path = self.write_policy()
+        policy = json.loads(path.read_text())
+        policy['mode'] = 'manual-release'
+        path.write_text(json.dumps(policy))
+        for script, args in [('deploy-dev.py', ()), ('publish-dev.py', (str(ROOT / 'dashboard'),))]:
+            result = self.run_script(script, *args)
+            self.assertNotEqual(result.returncode, 0)
+            self.assertIn('manual-release mode', result.stderr)
+        self.assertFalse((self.config / 'plugin').exists())
+        self.assertIn('linked feature worktree', self.run_script('check-dev-source.py').stderr)
+
+    def test_unknown_mode_fails_closed(self):
+        path = self.write_policy()
+        policy = json.loads(path.read_text())
+        policy['mode'] = 'manual-releas'
+        path.write_text(json.dumps(policy))
+        self.assertIn('Invalid development policy', self.run_script('deploy-dev.py').stderr)
+
+    def test_linked_worktree_is_allowed_but_independent_clone_is_not(self):
+        repo = self.config / 'repo'
+        subprocess.run(['git', 'init', '-q', str(repo)], check=True)
+        subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.com',
+                        'commit', '--allow-empty', '-qm', 'initial'], check=True)
+        linked = self.config / 'linked'
+        subprocess.run(['git', '-C', str(repo), 'worktree', 'add', '-q', '--detach', str(linked)], check=True)
+        clone = self.config / 'clone'
+        subprocess.run(['git', 'clone', '-q', str(repo), str(clone)], check=True)
+        policy = {'source': str(repo), 'mode': 'manual-release'}
+        self.assertFalse(POLICY.allowed_build_source(repo, policy))
+        self.assertTrue(POLICY.allowed_build_source(linked, policy))
+        self.assertFalse(POLICY.allowed_build_source(clone, policy))
+        policy['mode'] = 'development'
+        self.assertFalse(POLICY.allowed_build_source(linked, policy))
+
 
 if __name__ == '__main__':
     unittest.main()
