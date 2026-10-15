@@ -72,3 +72,21 @@ it('freezes earlier segments at steering boundaries while only the newest timer 
   expect(complete[0].timing).toMatchObject({ duration: 3000, completedAt: undefined, weeklyRemainingPercent: undefined });
   expect(complete[1].timing).toMatchObject({ running: false, duration: 5000, completedAt: 9000, weeklyRemainingPercent: 72 });
 });
+
+
+it('preserves completed response snapshots after another user message arrives', () => {
+  for (const nextUser of [
+    { id: 'next', role: 'user', turnId: 'next-turn', observedAt: 12000 },
+    { id: 'next', role: 'user', observedAt: 12000 },
+    { id: 'next', role: 'user', turnId: 'next-turn' },
+  ]) {
+    const groups = processBlocks([
+      { id: 'u', role: 'user', turnId: 'old', observedAt: 1000 },
+      { id: 'a', role: 'tool', turnId: 'old', turnCompletedAt: 9000, weeklyRemainingPercent: 72 },
+      nextUser,
+      { id: 'b', role: 'tool', turnId: 'next-turn', turnStatus: 'running', observedAt: 12100 },
+    ]).filter(b => b.kind === 'process');
+    expect(groups[0].timing).toMatchObject({ running: false, duration: 8000, completedAt: 9000, weeklyRemainingPercent: 72 });
+    expect(groups[1].timing?.running).toBe(true);
+  }
+});

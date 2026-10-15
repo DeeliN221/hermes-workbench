@@ -36,8 +36,12 @@ export function processBlocks<T extends ProcessMessage & { id: string; turnId?: 
         // Optimistic user messages may not have a turnId yet.
         for (const group of groups.values()) {
           group.hasFollowingBody = true;
-          group.closed = true;
-          group.segmentEndedAt = message.observedAt;
+          const completion = group.messages.find(m => m.turnCompletedAt !== undefined)?.turnCompletedAt;
+          const sameTurn = message.turnId !== undefined && message.turnId === group.messages[0].turnId;
+          const alreadyCompleted = completion !== undefined && !sameTurn &&
+            (message.observedAt === undefined || completion <= message.observedAt);
+          group.closed = !alreadyCompleted;
+          group.segmentEndedAt = alreadyCompleted ? undefined : message.observedAt;
         }
         segmentStartedAt = message.observedAt;
         groups.clear();
