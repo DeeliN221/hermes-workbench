@@ -101,19 +101,39 @@ async function renderPanel(): Promise<void> {
 
 }
 
-export async function waitForReleaseJob(id: string, report: (message: string) => void): Promise<void> {
+export type ReleaseProgress = { id?: string; version?: string; phase?: string; stage?: string; received?: number; total?: number; attempt?: number; error?: string };
+export function releaseProgressText(job: ReleaseProgress): string {
+  if (job.phase === 'activating') return sourceText('正在启动新版本并检查健康状态，失败会自动回滚…', 'Starting the new version and checking health; failures roll back automatically…');
+  if (job.phase === 'queued') return sourceText('校验通过，准备切换并重新连接…', 'Verified. Preparing to switch and reconnect…');
+  if (job.stage === 'downloading') {
+    const size = (n: number) => (n / 1048576).toFixed(1) + ' MB';
+    const amount = job.total ? `${size(job.received || 0)} / ${size(job.total)} · ${Math.min(100, Math.floor((job.received || 0) / job.total * 100))}%` : size(job.received || 0);
+    return sourceText(`正在下载 ${amount}`, `Downloading ${amount}`) + ((job.attempt || 1) > 1 ? sourceText(`（第 ${job.attempt} 次尝试）`, ` (attempt ${job.attempt})`) : '');
+  }
+  if (job.stage === 'extracting') return sourceText('正在解包并核对前后端文件…', 'Extracting and checking frontend/backend files…');
+  if (job.stage === 'verifying') return sourceText('下载完成，正在校验文件…', 'Download complete. Verifying files…');
+  return sourceText('正在检查任务状态和版本信息…', 'Checking active tasks and release information…');
+}
+function friendlyUpdateError(message: string): string {
+  if (/Another operation/.test(message)) return sourceText('有保存操作或终端连接尚未结束，请关闭终端并稍后重试。', 'A save operation or terminal connection is still active. Close terminals and retry shortly.');
+  if (/Tasks are running/.test(message)) return sourceText('会话任务仍在运行，请等任务结束后再切换版本。', 'Conversation tasks are running. Wait for them to finish before switching.');
+  if (/Another version/.test(message)) return sourceText('已有版本更新正在进行，请等待进度完成，不要重复提交。', 'A version update is already in progress. Wait for it to finish without submitting again.');
+  return message;
+}
+
+export async function waitForReleaseJob(id: string, report: (message: string, job?: ReleaseProgress) => void): Promise<void> {
   for (let attempt = 0; attempt < 150; attempt++) {
     await new Promise(resolve => setTimeout(resolve, 1200));
-    let result: { id?: string; phase?: string; error?: string };
+    let result: ReleaseProgress;
     try {
-      const response = await fetch('/api/plugins/workbench/versions/update-status', { credentials: 'same-origin' });
-      if (!response.ok) continue; // The backend is briefly unavailable during activation/rollback.
+      const response = await fetch('/api/plugins/workbench/versions/update-status', { credentials: 'same-origin', signal: AbortSignal.timeout(5000) });
+      if (!response.ok) { report(sourceText('正在等待服务重新连接…', 'Waiting for the service to reconnect…')); continue; } // The backend is briefly unavailable during activation/rollback.
       result = await response.json();
-    } catch { continue; }
+    } catch { report(sourceText("正在等待服务重新连接…", "Waiting for the service to reconnect…")); continue; }
     if (result.id !== id) throw new Error(sourceText("更新状态已变化，请刷新页面确认当前版本。", "Update state changed. Refresh to confirm the current version."));
     if (result.phase === 'succeeded') return;
-    if (result.phase === 'failed') throw new Error(result.error || sourceText("更新失败，已保留原版本。", "Update failed. The previous version was retained."));
-    report(result.phase === 'activating' ? sourceText("正在启动新版本；失败会自动回滚…", "Starting the new version; failures roll back automatically…") : sourceText("正在准备完整版本…", "Preparing the full release…"));
+    if (result.phase === 'failed') throw new Error(friendlyUpdateError(result.error || sourceText("更新失败，已保留原版本。", "Update failed. The previous version was retained.")));
+    report(releaseProgressText(result), result);
   }
   throw new Error(sourceText("更新状态暂不可确认，请稍后刷新查看；不要重复提交更新。", "Update state is temporarily unknown. Refresh later; do not submit again."));
 }
@@ -123,19 +143,30 @@ export async function renderWorkbenchVersions(panel: HTMLElement, reload = () =>
   const status = document.createElement('p');
   status.className = 'workbench-version-muted';
   status.setAttribute('role', 'status');
-  list.before(status);
+  const progress = document.createElement('progress');
+  progress.max = 100;
+  progress.hidden = true;
+  progress.setAttribute('aria-label', sourceText('版本更新进度', 'Release update progress'));
+  progress.style.cssText = 'width:100%;height:14px;accent-color:var(--accent,#7ca65c)';
+  list.before(status, progress);
+  const report = (message: string, job?: ReleaseProgress) => {
+    status.textContent = message;
+    progress.hidden = false;
+    if (job?.stage === 'downloading' && job.phase === 'preparing' && job.total) progress.value = Math.min(100, (job.received || 0) / job.total * 100);
+    else progress.removeAttribute('value');
+  };
   try {
     const response = await fetch('/api/plugins/workbench/versions', { credentials: 'same-origin' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json() as {
-      active: string; warning?: string; update_mode?: string; update?: { id?: string; phase?: string; error?: string };
+      active: string; warning?: string; update_mode?: string; update?: ReleaseProgress;
       versions: Array<{ version: string; ready?: boolean; notes?: string; prerelease?: boolean; published_at?: string; source?: string }>;
     };
     const description = panel.querySelector('[data-workbench-version-description]');
     if (description) description.textContent = data.update_mode === 'release'
       ? sourceText("用户版：手动选择 GitHub 正式版本，前后端一起更新。任务运行中不能切换，启动失败自动回滚。", "Managed instance: choose a GitHub release to update the matching frontend and backend. Switching is blocked during active tasks, and startup failures roll back automatically.")
       : sourceText("开发版：运行可编辑源码；这里仅切换界面资源，后端由开发者构建和实测。", "Development instance: editable source is in use. This control switches browser assets only; developers build and validate the backend separately.");
-    status.textContent = data.warning || data.update?.error || sourceText(`当前版本 ${data.active} · 按版本从新到旧排列`, `Current version ${data.active} · Newest releases first`);
+    status.textContent = data.warning || (data.update?.error ? friendlyUpdateError(data.update.error) : '') || sourceText(`当前版本 ${data.active} · 按版本从新到旧排列`, `Current version ${data.active} · Newest releases first`);
     list.replaceChildren(...data.versions.map(item => {
       const card = document.createElement('article');
       card.className = 'workbench-version-card';
@@ -167,21 +198,37 @@ export async function renderWorkbenchVersions(panel: HTMLElement, reload = () =>
           controls.forEach(control => { control.disabled = true; });
           button.textContent = sourceText("校验并切换中…", "Verifying and switching…");
           status.textContent = sourceText(`正在准备 ${item.version}，请稍候…`, `Preparing ${item.version}. Please wait…`);
+          report(releaseProgressText({}));
+          let reading = false;
+          const timer = window.setInterval(async () => {
+            if (reading || !panel.isConnected) return;
+            reading = true;
+            try {
+              const response = await fetch('/api/plugins/workbench/versions/update-status', { credentials: 'same-origin', signal: AbortSignal.timeout(5000) });
+              if (response.ok) {
+                const job: ReleaseProgress = await response.json();
+                if (job.version === item.version && ['preparing', 'queued', 'activating'].includes(job.phase || '')) report(releaseProgressText(job), job);
+              }
+            } catch { /* The enqueue request below reports errors. */ }
+            finally { reading = false; }
+          }, 700);
           try {
             const switched = await fetch('/api/plugins/workbench/versions/switch', {
               method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ version: item.version }),
             });
             const result = await switched.json() as { detail?: string; pending?: boolean; job_id?: string };
-            if (!switched.ok) throw new Error(result.detail || `HTTP ${switched.status}`);
-            if (result.pending && result.job_id) await waitForReleaseJob(result.job_id, message => { status.textContent = message; });
+            if (!switched.ok) throw new Error(friendlyUpdateError(result.detail || `HTTP ${switched.status}`));
+            window.clearInterval(timer);
+            if (result.pending && result.job_id) await waitForReleaseJob(result.job_id, report);
             status.textContent = sourceText("切换完成，正在刷新…", "Switched successfully. Refreshing…");
             reload();
           } catch (error) {
+            progress.hidden = true;
             status.textContent = sourceText(`切换失败：${error instanceof Error ? error.message : String(error)}`, `Switch failed: ${error instanceof Error ? error.message : String(error)}`);
             controls.forEach(control => { control.disabled = false; });
             button.textContent = caption;
-          }
+          } finally { window.clearInterval(timer); }
         });
         row.append(button);
       }
@@ -199,9 +246,10 @@ export async function renderWorkbenchVersions(panel: HTMLElement, reload = () =>
     if (data.update?.id && ['preparing', 'queued', 'activating'].includes(data.update.phase || '')) {
       list.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = true; });
       try {
-        await waitForReleaseJob(data.update.id, message => { status.textContent = message; });
+        await waitForReleaseJob(data.update.id, report);
         reload();
       } catch (error) {
+        progress.hidden = true;
         status.textContent = String(error);
         list.querySelectorAll<HTMLButtonElement>('button').forEach(button => { button.disabled = false; });
       }

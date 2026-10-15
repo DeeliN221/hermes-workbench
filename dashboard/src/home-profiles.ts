@@ -24,7 +24,7 @@ export async function loadHomeProfiles(fetchJSON: FetchJSON, signal: AbortSignal
       publish();
     };
     await Promise.all([
-      codexSessions(read, profile, signal, rows => { codex = rows; update(); }),
+      codexSessions(read, profile, signal, rows => { codex = rows; update(); }, true),
       listSessions(read, profile, rows => { hermes = rows; update(); }),
     ].map(async request => {
       try { await request; } catch { failed.add(profile); publish(); }
@@ -33,7 +33,7 @@ export async function loadHomeProfiles(fetchJSON: FetchJSON, signal: AbortSignal
   // The current profile is known before the expensive roster (skills/gateway probes) returns.
   const first = options.initialProfile ? load(options.initialProfile) : Promise.resolve();
   try {
-    const roster = await read<{ profiles: { name: string }[] }>('/api/profiles');
+    const roster = await read<{ profiles: { name: string }[] }>('/api/plugins/workbench/profile-names');
     if (!Array.isArray(roster.profiles)) throw new Error(sourceText("智能体列表格式异常", "Invalid agent list response"));
     const names = [...new Set(roster.profiles.map(row => String(row.name || '').trim()).filter(Boolean))];
     for (const name of byProfile.keys()) if (!names.includes(name)) byProfile.delete(name);

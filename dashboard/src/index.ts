@@ -5,7 +5,7 @@ import './recovered-runtime.js';
 // Keep the complete Chinese literal pack in the canonical build.  The
 // achievements plugin is a Hermes-native bundle, so it cannot rely on the
 // Workbench runtime's smaller embedded dictionary alone.
-import './zh-locale.js';
+import './zh-locale';
 import { installKanbanDeleteBoardScope } from './kanban-delete-board-scope';
 
 installKanbanDeleteBoardScope();

@@ -340,3 +340,22 @@ def test_pending_managed_update_blocks_mutations_but_keeps_status_and_auth(sidec
     assert client.post('/api/plugins/workbench/files',headers=headers,json={}).status_code == 409
     assert client.post('/api/plugins/workbench/files',json={}).status_code == 401
     assert client.get('/api/plugins/workbench/versions/update-status',headers=headers).json()['id'] == 'job'
+
+
+def test_idle_event_subscription_does_not_reserve_mutation_slot(monkeypatch):
+    import asyncio
+    import sidecar_app
+    import workbench_version_manager as versions
+    monkeypatch.setenv('HERMES_DASHBOARD_TRUSTED_PROXY_SECRET', 'proxy-secret')
+    monkeypatch.setenv('HERMES_WORKBENCH_ALLOWED_USERS', 'developer')
+    observed = []
+    async def endpoint(scope, receive, send):
+        observed.append(versions._active_mutations)
+    gate = sidecar_app.TrustedProxyGate(endpoint)
+    async def noop(*args): pass
+    def call(path):
+        asyncio.run(gate({'type': 'websocket', 'path': path, 'headers': [(b'x-hermes-proxy-secret', b'proxy-secret'), (b'remote-user', b'developer')]}, noop, noop))
+    call('/api/plugins/workbench/codex/events')
+    call('/api/plugins/workbench/terminal')
+    assert observed == [0, 1]
+    assert versions._active_mutations == 0

@@ -1,3 +1,10 @@
+type FieldMetadata = { label: string; description?: string; options?: Record<string, string> };
+type SchemaFields = Record<string, { options?: string[] } | null>;
+type TranslationRecord = { original: string; translated: string };
+type LocaleHost = Window & {
+  __HERMES_PLUGINS__?: { registerLocalePack?: (pack: unknown) => void };
+  __HERMES_PLUGIN_SDK__?: { api?: { getSchema?: () => Promise<{ fields?: SchemaFields }> } };
+};
 /**
  * Hermes Dashboard Simplified Chinese display pack.
  *
@@ -9,15 +16,15 @@
   "use strict";
 
   const PACK_ID = "hermes.workbench.zh-dashboard";
-  const registry = window.__HERMES_PLUGINS__;
-  const sdk = window.__HERMES_PLUGIN_SDK__;
+  const registry = (window as LocaleHost).__HERMES_PLUGINS__;
+  const sdk = (window as LocaleHost).__HERMES_PLUGIN_SDK__;
 
   if (!registry) {
     console.warn("[hermes-zh-locale] Dashboard plugin registry is unavailable");
     return;
   }
 
-  const CATEGORY_LABELS = {
+  const CATEGORY_LABELS: Record<string, string> = {
     general: "通用",
     agent: "智能体",
     terminal: "终端",
@@ -62,7 +69,7 @@
     vertex: "Google Vertex AI",
   };
 
-  const IDENTIFIERS = {
+  const IDENTIFIERS: Record<string, string> = {
     agent: "智能体",
     allowed: "允许的",
     allow: "允许",
@@ -240,7 +247,7 @@
     yaml: "YAML",
   };
 
-  const PHRASE_LABELS = {
+  const PHRASE_LABELS: Record<string, string> = {
     api_key: "API 密钥",
     auto_reload_on_config_change: "配置变化时自动重载",
     auto_source_bashrc: "自动加载 bashrc",
@@ -285,7 +292,7 @@
     wal_autocheckpoint: "WAL 自动检查点",
   };
 
-  const OPTION_LABELS = {
+  const OPTION_LABELS: Record<string, string> = {
     "": "不指定（使用默认值）",
     auto: "自动",
     default: "默认",
@@ -312,7 +319,7 @@
     ERROR: "错误",
   };
 
-  const EXPLICIT_FIELDS = {
+  const EXPLICIT_FIELDS: Record<string, FieldMetadata> = {
     model: {
       label: "默认模型",
       description: "新会话默认使用的模型；提供商和模型标识保持原样。",
@@ -347,7 +354,7 @@
     },
   };
 
-  const GENERIC_FIELDS = {
+  const GENERIC_FIELDS: Record<string, FieldMetadata> = {
     $item: { label: "条目" },
     $api_key: { label: "API 密钥" },
     $args: { label: "参数" },
@@ -363,9 +370,9 @@
     $url: { label: "URL" },
   };
 
-  const BASE_FIELDS = { ...GENERIC_FIELDS, ...EXPLICIT_FIELDS };
+  const BASE_FIELDS: Record<string, FieldMetadata> = { ...GENERIC_FIELDS, ...EXPLICIT_FIELDS };
 
-  const HOST_DASHBOARD_TEXT = {
+  const HOST_DASHBOARD_TEXT: Record<string, string> = {
   // Shared components and dialogs
   "Log out": "退出登录",
   "Logged in as …": "当前登录：…",
@@ -375,7 +382,6 @@
   "New session": "新建会话",
   "Untitled": "未命名",
   "Reasoning": "推理",
-  "Confirm": "确认",
   "Close console": "关闭控制台",
   "Command failed.": "命令失败。",
   "Console connection failed before the server handshake. Check that this dashboard is connected to a backend with /api/console.": "服务器握手前控制台连接失败。请检查此仪表盘是否连接到包含 /api/console 的后端。",
@@ -390,7 +396,6 @@
   "Switch anyway": "仍要切换",
   "Switch": "切换",
   "This model has unusually high known pricing.": "此模型的已知价格异常高。",
-  "Reload": "重新加载",
   "Switch model?": "切换模型？",
   "Token exchange failed": "令牌交换失败",
   "Disabled": "已禁用",
@@ -497,52 +502,22 @@
   "Files": "文件",
   "Upload": "上传",
   "Choose files": "选择文件",
-  "Name": "名称",
-  "Size": "大小",
-  "Modified": "修改时间",
-  "Actions": "操作",
   "this dashboard (default)": "当前仪表盘（默认）",
   "Achievements": "成就",
   "Hermes Achievements": "Hermes 成就",
   "Achievement": "成就",
   "Agentic Gamerscore": "智能体积分",
   "Scanning Hermes session history. First scan can take 5–10 seconds on large histories.": "正在扫描 Hermes 会话历史。历史较多时，首次扫描可能需要 5–10 秒。",
-  "Building achievement profile…": "正在建立成就档案…",
-  "Reading sessions, tool calls, model metadata, and unlock state.": "正在读取会话、工具调用、模型信息和解锁状态。",
-  "Starting achievement scan…": "正在开始成就扫描…",
-  "Rendering…": "正在渲染…",
   "Scan status": "扫描状态",
   "What is scanned": "扫描内容",
   "Sessions, tool calls, model metadata, errors, achievements, and local unlock state.": "会话、工具调用、模型信息、错误、成就和本地解锁状态。",
   "Badges appear here as they unlock.": "徽章解锁后会显示在这里。",
-  "Secret achievements": "隐藏成就",
   "No hidden secrets left in this scan.": "本次扫描没有更多隐藏成就。",
-  "Tiers": "等级",
-  "Recent unlocks": "最近解锁",
-  "Latest": "最新",
-  "Unlocked": "已解锁",
-  "Discovered": "已发现",
   "Secrets": "隐藏项",
-  "Highest tier": "最高等级",
-  "None yet": "暂无",
-  "All": "全部",
-  "All categories": "全部类别",
-  "All visibility": "全部状态",
   "Unlocked only": "仅已解锁",
   "Discovered only": "仅已发现",
   "Secret only": "仅隐藏项",
-  "Share achievement": "分享成就",
-  "Share this achievement": "分享此成就",
-  "Share": "分享",
-  "Share on X": "分享到 X",
-  "Copy image": "复制图片",
   "Copy the image to paste in your post": "复制图片，以便粘贴到帖子中",
-  "Download PNG": "下载 PNG",
-  "Opens X with a pre-filled post": "打开带有预填内容的 X 发帖页面",
-  "Close": "关闭",
-  "Copied ✓": "已复制 ✓",
-  "Clipboard image copy not supported in this browser — use Download instead.": "此浏览器不支持复制图片，请改用下载。",
-  "Something went wrong.": "发生错误。",
   "Copper": "铜",
   "Silver": "银",
   "Gold": "金",
@@ -618,28 +593,12 @@
   "Tool Mastery": "工具掌握",
   "Model Lore": "模型知识",
   "Lifestyle": "生活方式",
-  "Unlocked": "已解锁",
-  "Discovered": "已发现",
-  "Secret": "秘密",
-  "Target {tier}": "目标：{tier}",
-  "Complete": "已完成",
-  "Objective": "目标",
   "Hidden": "隐藏",
-  "Share": "分享",
-  "Share this achievement": "分享此成就",
-  "What counts": "计入条件",
-  "How to reveal": "如何揭示",
-  "Evidence": "证据",
-  "No evidence yet": "暂无证据",
-  "All": "全部",
   "all": "全部",
   "unlocked": "已解锁",
   "discovered": "已发现",
   "secret": "秘密",
-  "Rescan": "重新扫描",
   "Recent unlocks": "最近解锁",
-  "Highest tier": "最高等级",
-  "None yet": "暂无",
   "Channels": "消息渠道",
   "Pairing": "设备配对",
   "Delete item?": "删除此项？",
@@ -707,7 +666,6 @@
   "Could not generate description": "无法生成说明",
   "Description saved": "说明已保存",
   "Distribution": "分发",
-  "Edit description": "编辑说明",
   "Gateway running": "网关运行中",
   "Generating…": "正在生成…",
   "Inherit from clone / default": "继承自克隆项／默认值",
@@ -832,7 +790,7 @@
   "Webhooks enabled; gateway restarting…": "Webhook 已启用；网关正在重启…"
 };
 
-  const KANBAN_TEXT = {
+  const KANBAN_TEXT: Record<string, string> = {
   // Board settings and orchestrator
   "Open Hermes Kanban docs in a new tab": "在新标签页中打开 Hermes 看板文档",
   "Configure the kanban orchestrator (profile picker, default assignee, auto-decompose, profile descriptions)": "配置看板编排器（配置文件选择器、默认负责人、自动拆分、配置文件说明）",
@@ -845,42 +803,21 @@
   "Boards are independent work streams. Each board has its own tasks, tenants, and assignees.": "看板是相互独立的工作流。每个看板都有自己的任务、租户和负责人。",
   "Boards let you separate unrelated streams of work": "使用看板分隔互不相关的工作流",
   "+ New board": "+ 新建看板",
-  "Settings": "设置",
   "Board": "看板",
   "Archive this board": "归档此看板",
-  "Archive": "归档",
-  "New board": "新建看板",
   "Slug": "标识",
   "— lowercase, hyphens, e.g. atm10-server": "— 使用小写字母和连字符，例如 atm10-server",
-  "Display name": "显示名称",
-  "Description": "说明",
-  "Project directory": "项目目录",
-  "Icon": "图标",
   "(optional)": "（可选）",
   "(recommended)": "（推荐）",
-  "(single character or emoji)": "（单个字符或表情符号）",
   "Create a new board. Useful when you want an unrelated work stream (different project, different team, isolated scratch area).": "新建看板。适合创建互不相关的工作流（不同项目、不同团队或独立的临时工作区）。",
   "What goes on this board?": "这个看板用于什么工作？",
-  "Switch to this board after creating it": "创建后切换到此看板",
-  "Cancel": "取消",
-  "Creating…": "正在创建…",
-  "Create board": "创建看板",
   "Board settings — {name}": "看板设置 — {name}",
-  "Saving…": "正在保存…",
-  "Save": "保存",
 
   // Filters and board controls
   "Search": "搜索",
   "Filter cards…": "筛选卡片…",
   "Tenant": "租户",
-  "All tenants": "所有租户",
   "Assignee": "负责人",
-  "All profiles": "所有配置文件",
-  "Show archived": "显示已归档项",
-  "Lanes by profile": "按配置文件分泳道",
-  "Nudge dispatcher": "提醒调度器",
-  "Refresh": "刷新",
-  "Clear filters": "清除筛选条件",
   "Fuzzy-match tasks by id, title, or description. Matches across all columns.": "按任务 ID、标题或说明进行模糊匹配，搜索所有列。",
   "Tenants are free-form tags on a task (e.g. customer, project, team). Set them via the task drawer or kanban_create.": "租户是任务的自由标签（如客户、项目、团队）。可在任务抽屉或通过 kanban_create 设置。",
   "Filter by assigned Hermes profile. Profiles are the named agent identities that claim and work on tasks.": "按已分配的 Hermes 配置文件筛选。配置文件是领取并处理任务的具名智能体身份。",
@@ -913,7 +850,6 @@
   "Delete task?": "删除任务？",
   "Delete {n} tasks?": "删除 {n} 个任务？",
   "Permanently delete {n} selected tasks? This cannot be undone.": "永久删除选中的 {n} 个任务？此操作无法撤销。",
-  "Delete": "删除",
   "Confirm": "确认",
   "OK": "确定",
   "Confirm change": "确认更改",
@@ -924,17 +860,9 @@
   "Archive {n} tasks? They disappear from the default board view.": "归档 {n} 个任务？它们将从默认看板视图中消失。",
   "Mark {n} tasks as blocked? The workers' claims are released.": "将 {n} 个任务标记为阻塞？工作者的领取将被释放。",
   "Drag a card here to permanently delete it": "将卡片拖到此处即可永久删除",
-  "Drop to delete": "松开以删除",
   "Permanently delete this task? This cannot be undone.": "永久删除此任务？此操作无法撤销。",
 
   // Column, card, empty and create-task UI
-  "Triage": "待梳理",
-  "Todo": "待办",
-  "Ready": "就绪",
-  "In Progress": "进行中",
-  "Blocked": "已阻塞",
-  "Review": "待审核",
-  "Done": "已完成",
   "Archived": "已归档",
   "Create task in this column": "在此列创建任务",
   "— no tasks —": "— 暂无任务 —",
@@ -1002,7 +930,6 @@
   "— add child —": "— 添加子任务 —",
   "Block": "阻塞",
   "Unblock": "解除阻塞",
-  "Complete": "完成",
   "Notify home channels": "通知主频道",
   "Sending updates to {target}. Click to stop.": "正在向 {target} 发送更新。点击以停止。",
   "Send completed / blocked / gave_up notifications to {target}.": "向 {target} 发送完成 / 阻塞 / 放弃通知。",
@@ -1033,13 +960,12 @@
   "Reassign to:": "重新分配给：",
 };
 
-  const STATIC_TEXT = {
+  const STATIC_TEXT: Record<string, string> = {
     ...KANBAN_TEXT,
     ...HOST_DASHBOARD_TEXT,
     "Triage": "待梳理",
     "Todo": "待完善",
     "Scheduled": "已排期",
-    "Ready": "待执行",
     "Running": "执行中",
     "In Progress": "执行中",
     "Blocked": "已阻塞",
@@ -1061,7 +987,6 @@
     "阻塞": "已阻塞",
     "Settings": "设置",
     "Display name": "显示名称",
-    "Description": "说明",
     "Project directory": "项目目录",
     "Absolute path to the project folder": "项目文件夹的绝对路径",
     "Git projects use preserved worktrees. Other folders use the directory directly. Leave blank only for temporary work.": "Git 项目使用保留的工作树；其他文件夹直接使用该目录。仅临时工作可留空。",
@@ -1169,7 +1094,6 @@
     "Instructions for the agent when this webhook fires (optional)": "Webhook 触发时给智能体的指令（可选）",
     "Revoke": "撤销",
     "Revoke access": "撤销访问权限",
-    "Close": "关闭",
     "Close log": "关闭日志",
     "Event": "事件",
     "Matcher (optional)": "匹配条件（可选）",
@@ -1302,7 +1226,7 @@
   };
 
   /** Translate one config identifier while preserving unknown technical tokens. */
-  function labelIdentifier(identifier) {
+  function labelIdentifier(identifier: string) {
     const normalized = String(identifier || "").toLowerCase();
     if (PHRASE_LABELS[normalized]) return PHRASE_LABELS[normalized];
     return normalized
@@ -1313,23 +1237,22 @@
   }
 
   /** Build display-only labels for every field returned by the live Hermes schema. */
-  function buildFieldMetadata(schemaFields) {
+  function buildFieldMetadata(schemaFields: SchemaFields) {
     const result = { ...BASE_FIELDS };
     for (const [rawPath, schema] of Object.entries(schemaFields || {})) {
       const parts = rawPath.split(".");
       const translatedPath = parts.map(labelIdentifier).join(" → ");
-      const options = {};
-      for (const rawValue of Array.isArray(schema && schema.options) ? schema.options : []) {
+      const options: Record<string, string> = {};
+      for (const rawValue of Array.isArray(schema?.options) ? schema.options : []) {
         if (Object.prototype.hasOwnProperty.call(OPTION_LABELS, rawValue)) {
           options[rawValue] = OPTION_LABELS[rawValue];
         }
       }
-      result[rawPath] = {
+      result[rawPath] = Object.assign({
         label: labelIdentifier(parts[parts.length - 1]),
         description: `配置路径：${translatedPath}。`,
         ...(Object.keys(options).length ? { options } : {}),
-        ...(EXPLICIT_FIELDS[rawPath] || {}),
-      };
+      }, EXPLICIT_FIELDS[rawPath]);
       for (let index = 1; index < parts.length; index += 1) {
         const prefix = parts.slice(0, index).join(".");
         if (!result[prefix]) result[prefix] = { label: labelIdentifier(parts[index - 1]) };
@@ -1339,8 +1262,8 @@
   }
 
   /** Register the stable host-string and config-category portion of the locale pack. */
-  function registerPack(fields) {
-    if (typeof registry.registerLocalePack !== "function") return false;
+  function registerPack(fields: Record<string, FieldMetadata>) {
+    if (typeof registry?.registerLocalePack !== "function") return false;
     registry.registerLocalePack({
       id: PACK_ID,
       locale: "zh",
@@ -1367,12 +1290,12 @@
     return true;
   }
 
-  const textRecords = new Map();
-  const attributeRecords = new Map();
+  const textRecords = new Map<Node, TranslationRecord>();
+  const attributeRecords = new Map<Element, Record<string, TranslationRecord>>();
   let overlayQueued = false;
 
   /** Keep chat/session bodies and technical text surfaces outside the literal overlay. */
-  function shouldSkip(element) {
+  function shouldSkip(element: Element | null) {
     if (!element || typeof element.closest !== "function") return true;
     if (element.closest("pre, code, textarea, [contenteditable='true'], .xterm")) return true;
     if ((location.pathname === "/chat" || location.pathname === "/sessions") && element.closest("main")) {
@@ -1382,7 +1305,7 @@
   }
 
   /** Preserve surrounding whitespace when replacing one exact UI literal. */
-  function translatedValue(value) {
+  function translatedValue(value: string) {
     const original = String(value || "");
     const trimmed = original.trim();
     const translated = STATIC_TEXT[trimmed] || translateDynamicText(trimmed);
@@ -1392,19 +1315,19 @@
   }
 
   /** Translate count and relative-time labels emitted by the board without touching task content. */
-  function translateDynamicText(value) {
+  function translateDynamicText(value: string) {
     const boardSettings = /^Board settings — (.+)$/.exec(value);
     if (boardSettings) return `看板设置 — ${boardSettings[1]}`;
     const taskCount = /^(\d+) tasks?$/.exec(value);
     if (taskCount) return `${taskCount[1]} 个任务`;
     const relativeTime = /^(\d+)([smhdw]) ago$/.exec(value);
     if (!relativeTime) return null;
-    const unit = { s: "秒", m: "分钟", h: "小时", d: "天", w: "周" }[relativeTime[2]];
+    const unit = ({ s: "秒", m: "分钟", h: "小时", d: "天", w: "周" } as Record<string, string>)[relativeTime[2]];
     return unit ? `${relativeTime[1]} ${unit}前` : null;
   }
 
   /** Apply exact translations to one text node and remember how to restore it. */
-  function localizeTextNode(node) {
+  function localizeTextNode(node: Node) {
     const parent = node.parentElement;
     if (shouldSkip(parent)) return;
     const current = node.nodeValue || "";
@@ -1420,7 +1343,7 @@
   }
 
   /** Apply exact translations to user-facing attributes without changing form values. */
-  function localizeAttributes(element) {
+  function localizeAttributes(element: Element) {
     if (shouldSkip(element)) return;
     const names = ["placeholder", "title", "aria-label"];
     const record = attributeRecords.get(element) || {};
@@ -1439,10 +1362,10 @@
   }
 
   /** Walk one newly rendered subtree and localize only exact known literals. */
-  function localizeTree(root) {
+  function localizeTree(root: Node | null) {
     if (!root) return;
     if (root.nodeType === Node.TEXT_NODE) localizeTextNode(root);
-    if (root.nodeType === Node.ELEMENT_NODE) localizeAttributes(root);
+    if (root.nodeType === Node.ELEMENT_NODE) localizeAttributes(root as Element);
     const walker = document.createTreeWalker(
       root,
       NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT,
@@ -1450,7 +1373,7 @@
     let node = walker.nextNode();
     while (node) {
       if (node.nodeType === Node.TEXT_NODE) localizeTextNode(node);
-      else localizeAttributes(node);
+      else localizeAttributes(node as Element);
       node = walker.nextNode();
     }
   }

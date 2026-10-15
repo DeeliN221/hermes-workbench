@@ -6,7 +6,7 @@ import { createHomeSwipeCard } from './home-swipe-card';
 import { readMarkers, cardWasRead, markCardRead, cardIdentity, type ReadMarkers } from './home-read-state';
 import type { FetchJSON } from './workbench-api';
 import { sessionDisplayTitle } from './session-organization';
-import { decodeHermesStructuredContent, isHermesCompressionContinuation, type HermesRecord } from './hermes-transcript';
+import { decodeHermesStructuredContent, type HermesRecord } from './hermes-transcript';
 
 export type RecentSession = { id: string; title: string; source: 'Codex' | 'Hermes'; updated: number; status: string; workspace: string; profile: string; completedSeq: number; readSeq?: number; messageCount: number; historyId?: string };
 export function activityTime(row: HermesRecord): number {
@@ -33,14 +33,14 @@ export function recentSessions(codex: HermesRecord[], hermes: HermesRecord[], pr
       status: String(row.status || ''), workspace: String(row.workspacePath ?? row.workspace_path ?? row.model ?? '') }];
   })).sort((a, b) => b.updated - a.updated || a.id.localeCompare(b.id)).slice(0, 24);
 }
-export async function codexSessions(fetchJSON: FetchJSON, profile: string, signal: AbortSignal, onPage?: (rows: HermesRecord[]) => void): Promise<HermesRecord[]> {
+export async function codexSessions(fetchJSON: FetchJSON, profile: string, signal: AbortSignal, onPage?: (rows: HermesRecord[]) => void, recent = false): Promise<HermesRecord[]> {
   const rows: HermesRecord[] = [];
   for (let offset = 0; ; offset += 100) {
-    const page = await fetchJSON<{ items: HermesRecord[] }>(`/api/plugins/workbench/codex/sessions?profile=${encodeURIComponent(profile)}&limit=100&offset=${offset}`, { signal });
+    const page = await fetchJSON<{ items: HermesRecord[] }>(`/api/plugins/workbench/codex/sessions?profile=${encodeURIComponent(profile)}&limit=${recent ? 24 : 100}&offset=${offset}${recent ? "&recent=true" : ""}`, { signal });
     if (!Array.isArray(page.items)) throw new Error(uiText("会话列表格式异常", "Invalid session list response"));
     rows.push(...page.items);
     onPage?.([...rows]);
-    if (page.items.length < 100) return rows;
+    if (recent || page.items.length < 100) return rows;
   }
 }
 export type PromptPair = { first: string; latest: string; partial?: boolean };
@@ -79,19 +79,7 @@ export async function loadPromptPair(fetchJSON: FetchJSON, profile: string, row:
   const bounded = AbortSignal.any([signal, timeout]);
   const read: FetchJSON = (url, init) => fetchJSON(url, { ...init, signal: bounded });
   if (row.source === 'Hermes' || row.historyId) {
-    const exportSession = (id: string) => read<HermesRecord>(`/api/sessions/${encodeURIComponent(id)}/export?profile=${encodeURIComponent(profile)}`);
-    let current = await exportSession(row.historyId || row.id);
-    if (current.id && current.id !== (row.historyId || row.id)) throw new Error('Session identity mismatch');
-    const pages = [current];
-    const seen = new Set([row.id]);
-    while (current.parent_session_id && !seen.has(String(current.parent_session_id))) {
-      const parent = await exportSession(String(current.parent_session_id));
-      if (!isHermesCompressionContinuation(current, parent)) break;
-      seen.add(String(current.parent_session_id));
-      pages.unshift(parent); current = parent;
-    }
-    if (pages.some(page => !Array.isArray(page.messages))) throw new Error(uiText("会话内容格式异常", "Invalid session content response"));
-    return promptPair(pages.flatMap(page => page.messages));
+    return read<PromptPair>(`/api/plugins/workbench/session-prompts?profile=${encodeURIComponent(profile)}&session_id=${encodeURIComponent(row.historyId || row.id)}`);
   }
   const result = await read<{ turns?: { items?: HermesRecord[] }[] }>(
     `/api/plugins/workbench/codex/session/preview?profile=${encodeURIComponent(profile)}&session_id=${encodeURIComponent(row.id)}&turns=8`);
@@ -104,7 +92,7 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
   const SwipeCard = createHomeSwipeCard(sdk.React);
   const { useState, useEffect, useRef } = sdk.hooks;
   let savedRows: RecentSession[] = [];
-  const savedPreviews = new Map<string, { updated: number; pair: PromptPair }>();
+  const savedPreviews = new Map<string, { updated: number; historyId?: string; pair: PromptPair }>();
   const markersFor = (rows: RecentSession[]) => Object.assign({}, ...[...new Set(rows.map(row => row.profile))].map(readMarkers));
   return function RecentHome({ profile }: { profile: string }) {
     const [rows, setRows] = useState(() => savedRows);
@@ -139,6 +127,40 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
         busy = true;
         setLoading(true);
         let nextRows: RecentSession[];
+        const pending: RecentSession[] = [];
+        const scheduled = new Set<string>();
+        const workers: Promise<void>[] = [];
+        let activeWorkers = 0;
+        const worker = async () => {
+          activeWorkers++;
+          try {
+            while (pending.length && !controller.signal.aborted) {
+              const row = pending.shift()!;
+              const key = cardIdentity(row);
+              const cached = cache.current.get(key);
+              try {
+                const pair = cached?.updated === row.updated && (!row.historyId || cached.historyId === row.historyId) && row.status !== 'running'
+                  ? cached.pair : await loadPromptPair(sdk.fetchJSON, row.profile, row, controller.signal);
+                if (controller.signal.aborted) return;
+                if (!row.historyId && cache.current.get(key)?.historyId) continue;
+                cache.current.set(key, { updated: row.updated, historyId: row.historyId, pair });
+                queuePreview(key, pair);
+              } catch {
+                if (!controller.signal.aborted) queuePreview(key, 'error');
+              }
+            }
+          } finally { activeWorkers--; }
+        };
+        const enqueuePreviews = (rows: RecentSession[]) => {
+          const markers = markersFor(rows);
+          for (const row of rows) {
+            const key = `${cardIdentity(row)}:${row.updated}:${row.historyId || ""}`;
+            if (scheduled.has(key) || cardWasRead(row, markers)) continue;
+            scheduled.add(key); pending.push(row);
+          }
+          while (pending.length && activeWorkers < 3) workers.push(worker());
+        };
+
         try {
           const result = await loadHomeProfiles(sdk.fetchJSON, controller.signal, {
             initialProfile: profile, initialRows: savedRows,
@@ -147,6 +169,7 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
               savedRows = result.rows;
               setRows(result.rows);
               setMarkers(markersFor(result.rows));
+              enqueuePreviews(result.rows);
             },
           });
           if (controller.signal.aborted) return;
@@ -162,26 +185,8 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
           busy = false; return;
         }
         setLoading(false);
-        // Keep at most three history reads in flight and reuse unchanged summaries.
-        const markers = Object.assign({}, ...[...new Set(nextRows.map(row => row.profile))].map(readMarkers));
-        const pending = nextRows.filter(row => !cardWasRead(row, markers));
-        await Promise.all(Array.from({ length: 3 }, async () => {
-          while (pending.length && !controller.signal.aborted) {
-            const row = pending.shift()!;
-            const key = cardIdentity(row);
-            const cached = cache.current.get(key);
-            try {
-              const pair = cached?.updated === row.updated && row.status !== 'running'
-                ? cached.pair : await loadPromptPair(sdk.fetchJSON, row.profile, row, controller.signal);
-              if (controller.signal.aborted) return;
-              cache.current.set(key, { updated: row.updated, pair });
-              queuePreview(key, pair);
-            } catch {
-              if (controller.signal.aborted) return;
-              queuePreview(key, 'error');
-            }
-          }
-        }));
+        enqueuePreviews(nextRows);
+        await Promise.all(workers);
         busy = false;
       };
       void refresh();

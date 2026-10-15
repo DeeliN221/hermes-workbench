@@ -117,11 +117,16 @@ def _switch_managed(version: str, store: ReleaseStore) -> dict:
             if _active_mutations:
                 raise HTTPException(409, 'Another operation is in progress. Retry the update later.')
             write_json(store.job, job)
+        def progress(**values):
+            job.update(values, updated_at=time.time())
+            write_json(store.job, job)
         try:
+            progress(stage='checking')
             if asyncio.run(_codex_busy()):
                 raise HTTPException(409, 'Tasks are running. Wait for them to finish before updating.')
             if not store.target(version).exists():
-                _download_release(version)
+                _download_release(version, progress)
+            progress(stage='verifying')
             store.validate(version)
             if asyncio.run(_codex_busy()):
                 raise HTTPException(409, 'Tasks are running. The version is downloaded; wait for tasks to finish before switching.')
@@ -161,12 +166,29 @@ def _manifest_version() -> str:
         return 'unknown'
 
 
-def _read_url(url: str, limit: int) -> bytes:
+def _read_url(url: str, limit: int, progress=None) -> bytes:
     request = urllib.request.Request(url, headers={'User-Agent': 'hermes-workbench', 'Accept': 'application/vnd.github+json' if '/api.github.com/' in url else 'application/octet-stream'})
     for attempt in range(3):
         try:
             with urllib.request.urlopen(request, timeout=20) as response:
-                data = response.read(limit + 1)
+                length = response.headers.get('Content-Length')
+                total = int(length) if length and length.isdigit() else None
+                if total is not None and total > limit:
+                    raise ValueError('Release response exceeds size limit')
+                chunks, received = [], 0
+                if progress:
+                    progress(stage='downloading', received=0, total=total, attempt=attempt + 1)
+                while True:
+                    chunk = response.read(min(256 * 1024, limit + 1 - received))
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+                    received += len(chunk)
+                    if received > limit:
+                        raise ValueError('Release response exceeds size limit')
+                    if progress:
+                        progress(stage='downloading', received=received, total=total, attempt=attempt + 1)
+                data = b''.join(chunks)
             break
         except OSError as exc:
             if attempt == 2 or (isinstance(exc, urllib.error.HTTPError) and exc.code < 500 and exc.code != 429):
@@ -243,7 +265,7 @@ def _version_catalog() -> dict:
     return {'active': store.active() if store else _manifest_version(), 'update_mode': 'release' if store else 'development', 'update': store.status() if store else None, 'versions': sorted(rows.values(), key=lambda row: _version_key(row['version']), reverse=True), 'warning': warning}
 
 
-def _download_release(version: str) -> Path:
+def _download_release(version: str, progress=None) -> Path:
     # Resolve against our fixed public repository, never an arbitrary client URL.
     row = next((row for row in _github_releases() if row['version'] == version), None)
     if row is None:
@@ -258,11 +280,15 @@ def _download_release(version: str) -> Path:
                      if len(parts := line.split()) == 2 and parts[1] == name), None)
     if not expected or not re.fullmatch(r'[a-fA-F0-9]{64}', expected):
         raise ValueError('Release checksum missing')
-    data = _read_url(base + name, 50 * 1024 * 1024)
+    data = _read_url(base + name, 50 * 1024 * 1024, progress) if progress else _read_url(base + name, 50 * 1024 * 1024)
+    if progress:
+        progress(stage='verifying')
     if hashlib.sha256(data).hexdigest() != expected.lower():
         raise ValueError('Release checksum mismatch')
     store = managed_store()
     if store:
+        if progress:
+            progress(stage='extracting')
         return store.stage(data, version)
     RELEASES.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(dir=RELEASES, prefix='.download-') as tmp:

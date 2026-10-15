@@ -1113,3 +1113,30 @@ async def shell_socket(websocket: WebSocket) -> None:
     finally:
         if pid > 0 and master_fd >= 0:
             await asyncio.to_thread(_close_shell, pid, master_fd)
+
+
+@router.get('/profile-names')
+async def profile_names() -> dict:
+    """Read the roster without probing skills, providers or gateway processes."""
+    def read():
+        from skill_files import _configured_instance_root, _profile_home
+        root = _configured_instance_root()
+        names = ['default']
+        directory = root / 'profiles'
+        if directory.is_dir() and not directory.is_symlink():
+            for entry in sorted(directory.iterdir()):
+                if not entry.is_dir() or entry.is_symlink() or entry.name.startswith('.') or entry.name == 'default' or (directory / '.deleted' / entry.name).exists():
+                    continue
+                try:
+                    _profile_home(entry.name)
+                except HTTPException:
+                    continue
+                names.append(entry.name)
+        return {'profiles': [{'name': name} for name in names]}
+    return await asyncio.to_thread(read)
+
+
+@router.get('/session-prompts')
+async def home_session_prompts(profile: str = 'default', session_id: str = Query(min_length=1, max_length=256)) -> dict:
+    from home_prompts import session_prompts
+    return await asyncio.to_thread(session_prompts, profile, session_id)
