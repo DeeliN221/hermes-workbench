@@ -40,7 +40,7 @@ if target.is_symlink() or not (target / 'dist/index.js').is_file():
     raise SystemExit('Expected an existing developer plugin, not a managed release or missing loader')
 backup = args.backup_root / str(time.time_ns())
 backup.mkdir(parents=True)
-files = {'dist/index.js': args.source / 'loader.js',
+files = {'dist/index.js': args.source / 'dist/loader.js',
          'dist/workbench.js': args.source / 'dist/index.js',
          'dist/workbench.css': args.source / 'dist/style.css',
          'dist/mermaid.min.js': args.source / 'dist/mermaid.min.js',

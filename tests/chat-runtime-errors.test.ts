@@ -22,7 +22,7 @@ describe('Codex runtime errors and request reconciliation', () => {
 });
 
 it('keeps empty compact failures before later successful replies across replay', () => {
-  const later = { id: 'reply', turnId: 'later', role: 'assistant', turnStartedAt: 1789874204000 };
+  const later = { id: 'reply', turnId: 'later', role: 'assistant', content: 'completed', turnStartedAt: 1789874204000 };
   const turn = { id: 'compact', status: 'failed', startedAt: 1789869249, error: { message: 'compact failed' } };
   const first = withTurnError([later], turn);
   expect(first.map(m => m.id)).toEqual(['runtime-error:compact', 'reply']);

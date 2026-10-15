@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def source_digest(root):
     paths = list((root / 'dashboard/src').rglob('*')) + list((root / 'dashboard/vendor').rglob('*'))
-    paths += [root / name for name in ('package.json', 'pnpm-lock.yaml', 'vite.config.ts', 'dashboard/loader.js', 'dashboard/manifest.json')]
+    paths += [root / name for name in ('package.json', 'pnpm-lock.yaml', 'vite.config.ts', 'vite.loader.config.ts', 'dashboard/loader.ts', 'dashboard/manifest.json')]
     digest = hashlib.sha256()
     for path in sorted(paths):
         if path.is_file():
@@ -18,7 +18,7 @@ def source_digest(root):
 
 def asset_hashes(root):
     return {name: hashlib.sha256((root/'dashboard/dist'/name).read_bytes()).hexdigest()
-            for name in ['index.js', 'style.css', 'mermaid.min.js']
+            for name in ['index.js', 'loader.js', 'style.css', 'mermaid.min.js']
             + [str(p.relative_to(root/'dashboard/dist')) for p in sorted((root/'dashboard/dist/plantuml').rglob('*')) if p.is_file()]}
 
 if __name__ == '__main__':
