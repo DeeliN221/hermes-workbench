@@ -40,23 +40,12 @@ describe('OZW request cards', () => {
     expect(promptPair([{ role: 'user', content: 'One request' }])).toEqual({ first: 'One request', latest: 'One request' });
     expect(promptPair([{ role: 'assistant', content: 'No user' }])).toEqual({ first: '', latest: '' });
   });
-  it('reads the first request across compression without following an ordinary branch', async () => {
-    const read = async <T>(url: string): Promise<T> => (url.includes('/child/')
-      ? { id: 'child', parent_session_id: 'parent', messages: [{ role: 'user', content: 'Latest' }] }
-      : { id: 'parent', end_reason: 'compression', messages: [{ role: 'user', content: 'First' }] }) as T;
-    const row = recentSessions([], [{ id: 'child' }])[0];
-    expect(await loadPromptPair(read, 'writer', row, new AbortController().signal)).toEqual({ first: 'First', latest: 'Latest' });
-  });
-});
-
-
-describe('read-only home summaries', () => {
   it('reads a Codex projection without opening the live thread', async () => {
     const urls: string[] = [];
-    const read = async <T>(url: string): Promise<T> => { urls.push(url); return { id: 'one', messages: [{role:'user',content:'First'}, {role:'user',content:'Latest'}] } as T; };
+    const read = async <T>(url: string): Promise<T> => { urls.push(url); return {first:'First',latest:'Latest'} as T; };
     const row = recentSessions([{id:'one'}], [{id:'one',source:'codex'}], 'writer')[0];
     expect(await loadPromptPair(read, 'writer', row, new AbortController().signal)).toEqual({first:'First',latest:'Latest'});
-    expect(urls).toEqual(['/api/sessions/one/export?profile=writer']);
+    expect(urls).toEqual(['/api/plugins/workbench/session-prompts?profile=writer&session_id=one']);
   });
   it('uses the bounded cache for unmirrored sessions, never live history', async () => {
     const urls: string[] = [];

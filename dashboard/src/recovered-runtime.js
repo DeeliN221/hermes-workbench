@@ -1,3 +1,5 @@
+import { ProcessSummary } from './process-summary';
+import { loadChatSetup } from './chat-setup';
 import { displayCommand } from './command-display';
 import { createShortcutSettings, useSendShortcut, shouldSendMessage, sendShortcutHint } from './send-shortcut';
 import { createCodexUserInput, pendingAsyncQuestions, formatQuestionAnswers } from './codex-user-input';
@@ -53843,6 +53845,9 @@ WARNING: This link could potentially be dangerous`)
         turnDurationMs:
           e.turnDurationMs !== void 0 ? e.turnDurationMs : i.turnDurationMs,
         turnStatus: e.turnStatus ?? i.turnStatus,
+        observedAt: e.observedAt ?? i.observedAt,
+        turnCompletedAt: e.turnCompletedAt ?? i.turnCompletedAt,
+        weeklyRemainingPercent: e.weeklyRemainingPercent ?? i.weeklyRemainingPercent,
         turnStartedAt:
           e.turnStartedAt !== void 0 ? e.turnStartedAt : i.turnStartedAt,
       },
@@ -54024,10 +54029,7 @@ WARNING: This link could potentially be dangerous`)
     });
   }
   async function YL(i, e) {
-    const [t, config] = await Promise.all([
-      i(`${Lt}/models?profile=${tt(e)}`),
-      i(`/api/config?profile=${tt(e)}`),
-    ]),
+    const [t, config] = await loadChatSetup(i, e),
       r = Array.isArray(t.data) ? t.data : t.models;
     const choices = (Array.isArray(r) ? r : []).flatMap((n) => {
       if (!n || typeof n != "object") return [];
@@ -54089,6 +54091,8 @@ WARNING: This link could potentially be dangerous`)
               turnId: n.id,
               turnDurationMs: a,
               turnStartedAt: l,
+              turnCompletedAt: El(n.completedAt ?? n.completed_at) ?? (o !== "running" && l !== undefined && a !== undefined ? l + a : undefined),
+              weeklyRemainingPercent: n.weeklyRemainingPercent,
               turnStatus: o,
             },
             `${e}:${r}:${u}`,
@@ -54128,6 +54132,7 @@ WARNING: This link could potentially be dangerous`)
           status: c.status === "failed" ? "failed" : "pending",
           submissionError: runtimeErrorText(c.result),
           turnStartedAt: El(c.updated_at),
+          observedAt: El(c.updated_at),
         }));
     }
     const o = Ll(t.session),
@@ -54383,6 +54388,9 @@ WARNING: This link could potentially be dangerous`)
         turnDurationMs: m,
         turnStatus: O,
         turnStartedAt: g,
+        observedAt: El(t.observedAt),
+        turnCompletedAt: El(t.turnCompletedAt),
+        weeklyRemainingPercent: typeof t.weeklyRemainingPercent === 'number' ? t.weeklyRemainingPercent : undefined,
         error: t.error === !0 || f === "failed" || (b != null && b !== 0),
         suppressDeltas: t.suppressDeltas === !0,
       };
@@ -54409,6 +54417,7 @@ WARNING: This link could potentially be dangerous`)
     return mn(
       {
         ...n,
+        observedAt: n.observedAt ?? El(i.created_at),
         turnId: r.turnId ?? r.turn_id,
         turnDurationMs: l === void 0 ? oi(s, "durationMs", "duration_ms") : l,
         turnStartedAt: c === void 0 ? oi(s, "startedAt", "started_at") : c,
@@ -54420,6 +54429,9 @@ WARNING: This link could potentially be dangerous`)
   }
   function c0(i, e) {
     const { method: t, params: r } = l0(e);
+    if (t === 'workbench/turnMetrics') return i.map(message => message.turnId === r.turnId ? {
+      ...message, turnCompletedAt: El(r.completedAt), weeklyRemainingPercent: r.weeklyRemainingPercent ?? undefined,
+    } : message);
     if (t === "turn/completed" || t === "turn/failed") {
       const l = mt(r.turn),
         c = Al(l.status) || "completed",
@@ -54445,6 +54457,7 @@ WARNING: This link could potentially be dangerous`)
             status: b,
             turnDurationMs: h !== void 0 ? h : S.turnDurationMs,
             turnStatus: c,
+            turnCompletedAt: El(l.completedAt ?? l.completed_at ?? e.created_at) ?? Date.now(),
             turnStartedAt: d !== void 0 ? d : S.turnStartedAt,
             suppressDeltas: !1,
           },
@@ -55769,16 +55782,6 @@ WARNING: This link could potentially be dangerous`)
         : null,
     );
   }
-  function ProcessDuration({ React: i, running, startedAt, duration }) {
-    const [, tick] = i.useState(0);
-    i.useEffect(() => {
-      if (!running || startedAt === void 0) return;
-      const timer = setInterval(() => tick(value => value + 1), 1000);
-      return () => clearInterval(timer);
-    }, [running, startedAt]);
-    const elapsed = running && startedAt !== void 0 ? Math.max(0, Date.now() - startedAt) : duration;
-    return W(i, "span", { "data-testid": "codex-tool-duration" }, elapsed === void 0 ? runtimeText("耗时未知", "Unknown duration") : runtimeText(`耗时 ${x5(elapsed)}`, `Duration ${x5(elapsed)}`));
-  }
   function LazyToolRun({ React: i, messages, active, superseded }) {
     const [expanded, setExpanded] = i.useState(active && !superseded);
     i.useEffect(() => { if (superseded) setExpanded(false); }, [superseded]);
@@ -55790,15 +55793,9 @@ WARNING: This link could potentially be dangerous`)
     expanded ? W(i, "div", { className: "codex-tool-rows" },
       ...messages.map(message => W(i, C5, { key: message.id, React: i, message }))) : null);
   }
-  function Q5({ React: i, messages: e, hasFollowingBody = false }) {
-    const r = e.some(
-        (h) => h.turnStatus === "running" || h.status === "running",
-      ),
-      [expanded, setExpanded] = i.useState(r && !hasFollowingBody),
-      s = e.map((h) => y0(h.turnDurationMs)).find((h) => h !== void 0),
-      o = e
-        .map((h) => h.turnStartedAt)
-        .find((h) => typeof h == "number" && Number.isFinite(h));
+  function Q5({ React: i, messages: e, hasFollowingBody = false, timing }) {
+    const r = timing?.running ?? false,
+      [expanded, setExpanded] = i.useState(r && !hasFollowingBody);
     i.useEffect(() => {
       if (hasFollowingBody) setExpanded(false);
       else if (r) setExpanded(true);
@@ -55842,8 +55839,7 @@ WARNING: This link could potentially be dangerous`)
         "summary",
         { className: "codex-tool-heading" },
         st(i, "right"),
-        W(i, ProcessDuration, { React: i, running: r, startedAt: o, duration: s }),
-        r ? W(i, "span", null, runtimeText("处理中", "Processing")) : null,
+        W(i, ProcessSummary, { React: i, timing: timing || { running: false } }),
       ),
       W(i, "div", { className: "codex-process-content" }, ...u),
     );
@@ -55851,7 +55847,7 @@ WARNING: This link could potentially be dangerous`)
   function P5(i, e, Process = Q5, Message = T5) {
     return processBlocks(e).map(block => block.kind === "message"
       ? W(i, Message, { key: block.message.id, React: i, message: block.message })
-      : W(i, Process, { key: block.key, React: i, messages: block.messages, hasFollowingBody: block.hasFollowingBody }));
+      : W(i, Process, { key: block.key, React: i, messages: block.messages, hasFollowingBody: block.hasFollowingBody, timing: block.timing }));
   }
 
   function w0(i) {
@@ -57184,6 +57180,7 @@ WARNING: This link could potentially be dangerous`)
               {
                 id: ne,
                 role: "user",
+                observedAt: Date.now(),
                 content: ee,
                 status: "pending",
                 paragraphs: [ee],

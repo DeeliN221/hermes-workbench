@@ -120,3 +120,16 @@ def test_concurrent_switch_rejected(home):
         with pytest.raises(HTTPException) as exc:
             versions._switch('0.7.0')
     assert exc.value.status_code == 409
+
+
+def test_stream_download_reports_bytes_and_rejects_oversized_response(monkeypatch):
+    class Response(io.BytesIO):
+        headers = {'Content-Length': '600000'}
+    monkeypatch.setattr(versions.urllib.request, 'urlopen', lambda *a, **k: Response(b'x' * 600000))
+    updates = []
+    assert len(versions._read_url('https://example.invalid/release', 700000, lambda **v: updates.append(v))) == 600000
+    assert updates[0]['received'] == 0
+    assert 0 < updates[1]['received'] < 600000
+    assert updates[-1]['received'] == updates[-1]['total'] == 600000
+    with pytest.raises(ValueError, match='size limit'):
+        versions._read_url('https://example.invalid/release', 100)

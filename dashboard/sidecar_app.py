@@ -84,7 +84,9 @@ class TrustedProxyGate:
             return
         if self._authorized(scope):
             scope.setdefault("state", {})["workbench_authenticated"] = True
-            mutation = (scope.get('type') == 'websocket' or scope.get('method') not in ['GET', 'HEAD', 'OPTIONS']) and path != _API_PREFIX + '/versions/switch'
+            # Event subscriptions cannot submit work; an idle chat tab must not block updates.
+            read_events = scope.get('type') == 'websocket' and path == _API_PREFIX + '/codex/events'
+            mutation = not read_events and (scope.get('type') == 'websocket' or scope.get('method') not in ['GET', 'HEAD', 'OPTIONS']) and path != _API_PREFIX + '/versions/switch'
             if mutation and not begin_mutation():
                 if scope.get('type') == 'websocket':
                     await send({'type': 'websocket.close', 'code': 1013, 'reason': 'Workbench updating'})

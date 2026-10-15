@@ -13,6 +13,8 @@ workers cannot share the in-memory Codex subscription registry.
 
 from __future__ import annotations
 
+import response_metrics
+
 import asyncio
 import contextlib
 import fcntl
@@ -510,6 +512,7 @@ class BridgeStore:
         except BlockingIOError as exc:
             self.lock_file.close()
             raise RuntimeError(f"Codex bridge database is already open: {path}") from exc
+        self.path = path.resolve()
         self.connection = sqlite3.connect(path, check_same_thread=False)
         self.connection.row_factory = sqlite3.Row
         self.lock = threading.RLock()
@@ -619,6 +622,7 @@ class BridgeStore:
             self.connection.execute("""CREATE INDEX IF NOT EXISTS codex_turn_markers
                 ON codex_events(user_id,profile,session_id,seq)
                 WHERE method IN ('history/turn','history/turn-status','turn/completed')""")
+            response_metrics.install_schema(self.connection)
             self.connection.commit()
 
     def _row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -626,22 +630,20 @@ class BridgeStore:
 
         return dict(row) if row is not None else None
 
-    def _last_completed_seq(self, user: str, profile: str, session_id: str) -> int:
+    def _last_completed_seq(self, user: str, profile: str, session_id: str, connection=None) -> int:
         """Find the latest event that represents a successfully completed turn."""
 
-        rows = self.connection.execute("SELECT seq,method,payload FROM codex_events WHERE user_id=? AND profile=? AND session_id=? AND method IN ('history/turn','history/turn-status','turn/completed') ORDER BY seq DESC", (user, profile, session_id))
-        for row in rows:
-            if row["method"] == "history/turn-status":
-                continue
-            if row["method"] == "history/turn":
-                return int(row["seq"])
-            try:
-                turn = json.loads(row["payload"]).get("params", {}).get("turn", {})
-            except (TypeError, json.JSONDecodeError):
-                turn = {}
-            if not isinstance(turn, dict) or turn.get("status") in (None, "completed"):
-                return int(row["seq"])
-        return 0
+        row = (connection or self.connection).execute("""
+            SELECT seq FROM codex_events
+            WHERE user_id=? AND profile=? AND session_id=?
+              AND method IN ('history/turn','history/turn-status','turn/completed')
+              AND (method='history/turn' OR (method='turn/completed' AND
+                CASE WHEN json_valid(payload) THEN
+                  COALESCE(json_extract(payload,'$.params.turn.status'),'completed')='completed'
+                ELSE 1 END))
+            ORDER BY seq DESC LIMIT 1
+        """, (user, profile, session_id)).fetchone()
+        return int(row[0]) if row else 0
 
     def close(self) -> None:
         """Close the SQLite handle after all bridge tasks have stopped."""
@@ -716,18 +718,22 @@ class BridgeStore:
                 raise
         return self.session(user, profile, value["session_id"]) or value
 
-    def list_sessions(self, user: str, profile: str, limit: int, offset: int, deleted: bool = False) -> list[dict[str, Any]]:
+    def list_sessions(self, user: str, profile: str, limit: int, offset: int, deleted: bool = False, recent: bool = False) -> list[dict[str, Any]]:
         """Return a bounded page of active sessions or the identity's trash."""
 
-        with self.lock:
-            rows = self.connection.execute(
-                """SELECT s.*, COALESCE(o.favorite, 0) AS favorite,
+        # WAL readers do not wait behind history archival on the writer's Python lock.
+        from contextlib import closing
+        with closing(sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True)) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute('BEGIN')
+            rows = connection.execute(
+                f"""SELECT s.*, COALESCE(o.favorite, 0) AS favorite,
                     o.group_id AS organization_group_id, COALESCE(o.deleted, 0) AS deleted
                     FROM codex_sessions AS s
                     LEFT JOIN codex_session_organization AS o
                     ON o.user_id=s.user_id AND o.profile=s.profile AND o.session_id=s.session_id
                     WHERE s.user_id=? AND s.profile=? AND COALESCE(o.deleted, 0)=?
-                    ORDER BY s.created_at DESC, s.rowid DESC LIMIT ? OFFSET ?""",
+                    ORDER BY {'s.updated_at' if recent else 's.created_at'} DESC, s.rowid DESC LIMIT ? OFFSET ?""",
                 (user, profile, int(deleted), limit, offset),
             ).fetchall()
             result = []
@@ -736,8 +742,8 @@ class BridgeStore:
                 value["favorite"] = bool(value.get("favorite"))
                 value["groupId"] = value.pop("organization_group_id")
                 value["deleted"] = bool(value.get("deleted"))
-                value["lastCompletedSeq"] = self._last_completed_seq(user, profile, value["session_id"])
-                read = self.connection.execute("SELECT last_completed_seq FROM codex_reads WHERE user_id=? AND profile=? AND session_id=?", (user, profile, value["session_id"])).fetchone()
+                value["lastCompletedSeq"] = self._last_completed_seq(user, profile, value["session_id"], connection)
+                read = connection.execute("SELECT last_completed_seq FROM codex_reads WHERE user_id=? AND profile=? AND session_id=?", (user, profile, value["session_id"])).fetchone()
                 value["readSeq"] = int(read[0]) if read else 0
                 value["unread"] = value["lastCompletedSeq"] > value["readSeq"]
                 value["title"] = value.get("title") or value["session_id"]
@@ -1591,8 +1597,8 @@ class CodexBridge:
                 await connection.close()
                 raise
             self._connections[key] = connection
-            self.store.invalidate_approvals(user, profile, epoch)
-            for session in self.store.all_sessions(user, profile):
+            await asyncio.to_thread(self.store.invalidate_approvals, user, profile, epoch)
+            for session in await asyncio.to_thread(self.store.all_sessions, user, profile):
                 # Completed history is loaded on demand by history(); eagerly
                 # resuming it spawns MCP workers for every archived conversation.
                 if session.get("status") not in {"running", "waiting", "unknown"}:
@@ -1669,6 +1675,10 @@ class CodexBridge:
         if session is None:
             return None
         event_message = message
+        item = params.get('item')
+        if method in ('item/started', 'item/completed') and isinstance(item, dict) and item.get('id'):
+            observed = response_metrics.observe_item(self.store, (user, profile, session['session_id']), str(item['id']), time.time() * 1000)
+            event_message = {**message, 'params': {**params, 'item': {**item, 'observedAt': observed}}}
         opaque_id: str | None = None
         if "id" in message:
             # JSON-RPC messages with both ``method`` and ``id`` are upstream
@@ -1729,32 +1739,39 @@ class CodexBridge:
         # A batch may contain lifecycle events for the same session.  Resolve
         # the current row for each event so a started event cannot leave a
         # following completed event stuck with the batch's initial status.
-        session = self.store.session(user, profile, session_id) or context["session"]
+        session = await asyncio.to_thread(self.store.session, user, profile, session_id) or context["session"]
         opaque_id = context["opaque_id"]
         if method in {"turn/started", "turn/completed"}:
             # Earlier events in this batch may already have changed this session.
-            session = self.store.session(user, profile, session_id) or session
+            session = await asyncio.to_thread(self.store.session, user, profile, session_id) or session
         if opaque_id is not None:
             # Persist unknown request schemas too, so the browser can show
             # them as native-terminal-only rather than guess a response.
-            self.store.save_approval(user, profile, session_id, opaque_id, method, message, epoch)
+            await asyncio.to_thread(self.store.save_approval, user, profile, session_id, opaque_id, method, message, epoch)
         if method == "serverRequest/resolved":
             # Resolve only the epoch that received the request, so a reused
             # raw JSON-RPC id on a later connection cannot remove it.
-            self.store.remove_approval_by_upstream_id(user, profile, session_id, epoch, params.get("requestId"))
+            await asyncio.to_thread(self.store.remove_approval_by_upstream_id, user, profile, session_id, epoch, params.get("requestId"))
         elif method == "turn/completed":
             turn_value = params.get("turn")
             turn_id = turn_value.get("id") if isinstance(turn_value, dict) else None
             turn_status = turn_value.get("status") if isinstance(turn_value, dict) else "completed"
             next_status = turn_status or "completed"
             if session.get("status") != next_status:
-                session = self.store.upsert_session(user, profile, {**session, "status": next_status})
-            self.store.remove_approvals_for_turn(user, profile, session_id, epoch, str(turn_id or params.get("turnId") or ""))
+                session = await asyncio.to_thread(self.store.upsert_session, user, profile, {**session, "status": next_status})
+            await asyncio.to_thread(self.store.remove_approvals_for_turn, user, profile, session_id, epoch, str(turn_id or params.get("turnId") or ""))
             if turn_status in (None, "completed"):
+                completed_at = response_metrics.completion_time(turn_value if isinstance(turn_value, dict) else {}, event["created_at"])
+                identity = (user, profile, session_id)
+                metrics_turn_id = str(turn_id or params.get('turnId') or '')
+                if metrics_turn_id and await asyncio.to_thread(response_metrics.reserve_completion, self.store, identity, metrics_turn_id, completed_at):
+                    task = asyncio.create_task(self._capture_response_metrics(identity, epoch, session['thread_id'], metrics_turn_id, completed_at))
+                    self._observer_tasks.add(task)
+                    task.add_done_callback(self._observer_tasks.discard)
                 await self._schedule_completion(session, event, str(turn_id or params.get("turnId") or ""))
         elif method == "turn/started":
             if session.get("status") != "running":
-                self.store.upsert_session(user, profile, {**session, "status": "running"})
+                await asyncio.to_thread(self.store.upsert_session, user, profile, {**session, "status": "running"})
         for queue in tuple(self._subscribers.get((user, profile, session_id), ())):
             try:
                 queue.put_nowait(event)
@@ -2064,6 +2081,7 @@ class CodexBridge:
         preview = await asyncio.to_thread(self.store.cached_history_preview, user, profile, session_id, limit)
         if preview is None:
             return {"cached": False, "session": session, "turns": []}
+        preview["turns"] = await asyncio.to_thread(response_metrics.decorate_turns, self.store, (user, profile, session_id), preview["turns"])
         terminal_turns = {
             str(turn.get("id"))
             for turn in preview["turns"]
@@ -2279,6 +2297,7 @@ class CodexBridge:
         cursor = all_events[-1]["seq"] if all_events else after
         terminal_turns = {str(turn.get("id")) for turn in canonical_turns if turn.get("status") in ("completed", "failed", "interrupted")}
         pending_approvals = [approval for approval in self.store.pending_approvals(user, profile, session_id) if str(approval.get("params", {}).get("turnId")) not in terminal_turns]
+        canonical_turns = await asyncio.to_thread(response_metrics.decorate_turns, self.store, (user, profile, session_id), canonical_turns)
         result = {"session": session, "turns": canonical_turns, "events": events, "snapshotEvents": snapshot_events, "snapshotSeq": snapshot_seq, "pendingApprovals": pending_approvals, "pendingRequests": self.store.pending_requests(user, profile, session_id), "next": cursor, "hasMore": len(all_events) >= limit, "readSeq": self.store.read_progress(user, profile, session_id)}
         if defer_persistence and history_entries:
             task = asyncio.create_task(self._persist_history(session, connection, canonical_turns, history_entries, marker_indexes))
@@ -2291,6 +2310,21 @@ class CodexBridge:
             task.add_done_callback(archive_done)
         return result
 
+
+    async def _capture_response_metrics(self, identity, epoch, thread_id, turn_id, completed_at):
+        remaining = None
+        try:
+            connection = self._connections.get(identity[:2])
+            if connection and not connection.closed and connection.epoch == epoch:
+                result = await asyncio.wait_for(connection.request('account/rateLimits/read', {}), 5)
+                remaining = response_metrics.weekly_remaining(result)
+            await asyncio.to_thread(response_metrics.save_quota, self.store, identity, turn_id, remaining)
+            await self._notification(*identity[:2], epoch, {
+                'method': 'workbench/turnMetrics',
+                'params': {'threadId': thread_id, 'turnId': turn_id, 'completedAt': completed_at, 'weeklyRemainingPercent': remaining},
+            })
+        except Exception:
+            logging.getLogger(__name__).warning('Response quota snapshot unavailable; preserving unknown quota')
 
     async def models(self, user: str, profile: str) -> dict[str, Any]:
         """Read model choices from the connected Codex service."""
@@ -2501,10 +2535,10 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
         return {"items": service.workspaces(profile, _user(request))}
 
     @router.get("/sessions")
-    async def sessions(request: Request, profile: str = "default", limit: int = 50, offset: int = 0, deleted: bool = False) -> dict[str, Any]:
+    async def sessions(request: Request, profile: str = "default", limit: int = 50, offset: int = 0, deleted: bool = False, recent: bool = False) -> dict[str, Any]:
         """Return a page of identity-scoped session mappings."""
 
-        return {"items": await asyncio.to_thread(service.store.list_sessions, _user(request), _safe(profile, "profile"), min(max(limit, 1), _MAX_PAGE), max(offset, 0), deleted)}
+        return {"items": await asyncio.to_thread(service.store.list_sessions, _user(request), _safe(profile, "profile"), min(max(limit, 1), _MAX_PAGE), max(offset, 0), deleted, recent)}
 
     @router.get("/groups")
     async def groups(request: Request, profile: str = "default") -> dict[str, Any]:

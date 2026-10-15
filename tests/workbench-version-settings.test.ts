@@ -80,3 +80,25 @@ it('shows rollback and re-enables controls without claiming success', async () =
 });
 
 beforeEach(() => { document.documentElement.lang = 'zh-CN'; });
+
+it('shows byte progress while the switch request is still downloading', async () => {
+  vi.useFakeTimers();
+  try {
+    let finish!: (value: Response) => void;
+    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+      if (url.endsWith('/versions')) return new Response(JSON.stringify({ ...data, update_mode: 'release' }));
+      if (url.endsWith('/switch')) return new Promise<Response>(resolve => { finish = resolve; });
+      return new Response(JSON.stringify({ id: 'job', version: '0.7.0', phase: 'preparing', stage: 'downloading', received: 1048576, total: 2097152 }));
+    }));
+    const target = panel();const reload = vi.fn();
+    await renderWorkbenchVersions(target, reload);target.querySelector('button')!.click();
+    await vi.advanceTimersByTimeAsync(800);
+    expect(target.querySelector('progress')!.value).toBe(50);
+    expect(target.querySelector('[role=status]')!.textContent).toContain('1.0 MB / 2.0 MB');
+    expect(target.querySelector('button')!.disabled).toBe(true);
+    expect(reload).not.toHaveBeenCalled();
+    finish(new Response(JSON.stringify({ ok: true })));
+    await vi.advanceTimersByTimeAsync(1);
+    expect(reload).toHaveBeenCalledOnce();
+  } finally { vi.useRealTimers(); }
+});

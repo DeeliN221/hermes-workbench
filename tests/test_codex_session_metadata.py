@@ -91,3 +91,24 @@ class EmptyThreadContract(unittest.TestCase):
                 self.assertFalse(bridge._native_thread_is_known_empty(session, metadata))
             finally:
                 bridge.store.close()
+
+class ConcurrentListContract(unittest.TestCase):
+    def test_home_reads_committed_rows_while_writer_lock_is_held(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with tempfile.TemporaryDirectory() as directory:
+            store = BridgeStore(Path(directory) / 'db')
+            try:
+                for sid, created, updated in [('older', 1, 5), ('newer', 2, 3)]:
+                    store.upsert_session('qa', 'default', {'session_id': sid, 'thread_id': sid, 'workspace_id': 'default', 'workspace_path': directory})
+                    store.connection.execute('UPDATE codex_sessions SET created_at=?,updated_at=? WHERE session_id=?', (created, updated, sid))
+                store.connection.commit()
+                with ThreadPoolExecutor() as executor:
+                    with store.lock:
+                        future = executor.submit(store.list_sessions, 'qa', 'default', 1, 0, False, True)
+                        rows = future.result(timeout=2)
+                        self.assertEqual([row['id'] for row in rows], ['older'])
+                self.assertEqual(store.list_sessions('other', 'default', 24, 0), [])
+                self.assertEqual(store.list_sessions('qa', 'other', 24, 0), [])
+                self.assertEqual(store.list_sessions('qa', 'default', 1, 0)[0]['id'], 'newer')
+            finally:
+                store.close()

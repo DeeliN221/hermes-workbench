@@ -5,7 +5,7 @@ describe('cross-profile home', () => {
   it('keeps identical session IDs separated and sorts by activity across profiles', async () => {
     const read = async <T>(url: string): Promise<T> => {
       const u = new URL(url, 'http://localhost');
-      if (u.pathname === '/api/profiles') return { profiles: [{ name: 'default' }, { name: 'writer' }] } as T;
+      if (u.pathname === '/api/plugins/workbench/profile-names') return { profiles: [{ name: 'default' }, { name: 'writer' }] } as T;
       if (u.pathname.endsWith('/codex/sessions')) return { items: [{ id: 'same', updatedAt: u.searchParams.get('profile') === 'writer' ? 300 : 100 }] } as T;
       return { sessions: [], total: 0 } as T;
     };
@@ -16,7 +16,7 @@ describe('cross-profile home', () => {
   it('retains successful profiles when another profile fails', async () => {
     const read = async <T>(url: string): Promise<T> => {
       const u = new URL(url, 'http://localhost');
-      if (u.pathname === '/api/profiles') return { profiles: [{ name: 'default' }, { name: 'writer' }] } as T;
+      if (u.pathname === '/api/plugins/workbench/profile-names') return { profiles: [{ name: 'default' }, { name: 'writer' }] } as T;
       if (u.searchParams.get('profile') === 'writer') throw new Error('offline');
       if (u.pathname.endsWith('/codex/sessions')) return { items: [{ id: 'one' }] } as T;
       return { sessions: [], total: 0 } as T;
@@ -32,15 +32,16 @@ describe('cross-profile home', () => {
     const progress: string[][] = [];
     const read = async <T>(url: string): Promise<T> => {
       const u = new URL(url, 'http://localhost');
-      if (u.pathname === '/api/profiles') {
+      if (u.pathname === '/api/plugins/workbench/profile-names') {
         await roster;
         return { profiles: [{ name: 'default' }, { name: 'writer' }] } as T;
       }
       const profile = u.searchParams.get('profile');
       if (u.pathname.endsWith('/codex/sessions')) {
         if (profile === 'writer') return { items: [] } as T;
-        const offset = Number(u.searchParams.get('offset'));
-        return { items: offset ? [{ id: 'old-but-active', updatedAt: 999 }] : Array.from({ length: 100 }, (_, i) => ({ id: `new-${i}`, updatedAt: i + 1 })) } as T;
+        expect(u.searchParams.get('recent')).toBe('true');
+        expect(u.searchParams.get('limit')).toBe('24');
+        return { items: [{ id: 'old-but-active', updatedAt: 999 }, ...Array.from({ length: 23 }, (_, i) => ({ id: `new-${i}`, updatedAt: i + 1 }))] } as T;
       }
       await archive;
       return { sessions: [{ id: `${profile}-history`, updated_at: 500 }], total: 1 } as T;
@@ -60,7 +61,7 @@ describe('cross-profile home', () => {
     const progress: string[][] = [];
     const read = async <T>(url: string, init?: RequestInit): Promise<T> => {
       expect(init?.signal).toBeInstanceOf(AbortSignal);
-      if (url === '/api/profiles') return { profiles: [{ name: 'default' }] } as T;
+      if (url === '/api/plugins/workbench/profile-names') return { profiles: [{ name: 'default' }] } as T;
       if (url.includes('/codex/sessions')) return { items: [{ id: 'ready' }] } as T;
       throw new DOMException('timeout', 'TimeoutError');
     };
@@ -76,7 +77,7 @@ describe('cross-profile home', () => {
     const cached = { id: 'cached', title: 'Cached', source: 'Codex' as const, updated: 1, status: '', workspace: '', profile: 'writer', completedSeq: 1, messageCount: 0 };
     const progress: string[][] = [];
     const read = async <T>(url: string): Promise<T> => {
-      if (url === '/api/profiles') return { profiles: [{ name: 'default' }, { name: 'writer' }] } as T;
+      if (url === '/api/plugins/workbench/profile-names') return { profiles: [{ name: 'default' }, { name: 'writer' }] } as T;
       if (url.includes('profile=writer')) await slow;
       return (url.includes('/codex/sessions') ? { items: [] } : { sessions: [], total: 0 }) as T;
     };
