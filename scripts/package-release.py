@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory() as tmp:
     plugin = stage / 'plugin/dashboard'
     dist = plugin / 'dist'
     dist.mkdir(parents=True)
-    for src, dst in [('loader.js', 'index.js'), ('loader.css', 'style.css'),
+    for src, dst in [('dist/loader.js', 'index.js'), ('loader.css', 'style.css'),
                      ('dist/index.js', 'workbench.js'), ('dist/style.css', 'workbench.css'),
                      ('dist/mermaid.min.js', 'mermaid.min.js')]:
         shutil.copy2(root / 'dashboard' / src, dist / dst)

@@ -5,6 +5,7 @@ project_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 dist="$project_root/dashboard/dist"
 
 test -s "$dist/index.js"
+test -s "$dist/loader.js"
 test -s "$dist/style.css"
 test -s "$dist/mermaid.min.js"
 test -s "$dist/plantuml/runtime.js"

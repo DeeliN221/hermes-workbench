@@ -1,11 +1,11 @@
 /** Build Workbench from readable source instead of relying on read-only release bundles. */
 import './platform-status';
 import './recovered-runtime.css';
-import './recovered-runtime.js';
 // Keep the complete Chinese literal pack in the canonical build.  The
 // achievements plugin is a Hermes-native bundle, so it cannot rely on the
 // Workbench runtime's smaller embedded dictionary alone.
 import './zh-locale';
+import './recovered-runtime.js';
 import { installKanbanDeleteBoardScope } from './kanban-delete-board-scope';
 
 installKanbanDeleteBoardScope();

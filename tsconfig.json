@@ -2,7 +2,11 @@
   "compilerOptions": {
     "target": "ES2022",
     "useDefineForClassFields": true,
-    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "lib": [
+      "ES2022",
+      "DOM",
+      "DOM.Iterable"
+    ],
     "module": "ESNext",
     "moduleResolution": "Bundler",
     "allowImportingTsExtensions": true,
@@ -10,7 +14,18 @@
     "isolatedModules": true,
     "strict": true,
     "noEmit": true,
-    "types": ["node", "vite/client", "vitest/globals"]
+    "types": [
+      "node",
+      "vite/client",
+      "vitest/globals"
+    ]
   },
-  "include": ["dashboard/src/**/*.ts", "tests/**/*.ts", "vite.config.ts", "vitest.config.ts"]
+  "include": [
+    "dashboard/src/**/*.ts",
+    "tests/**/*.ts",
+    "vite.config.ts",
+    "vitest.config.ts",
+    "dashboard/loader.ts",
+    "vite.loader.config.ts"
+  ]
 }
