@@ -1,0 +1,157 @@
+{
+  "upstream": "https://github.com/NousResearch/hermes-agent.git",
+  "base_commit": "a55c972e09177e4db3934915e329993858b247d6",
+  "patch": "workbench-compat.patch",
+  "patch_sha256": "f36b23814be77f4a9e7bca61e84ef957f35077d009c9b85bde3a8e3b4931fcb3",
+  "license": "MIT",
+  "files": [
+    {
+      "path": "agent/codex_runtime.py",
+      "sha256": "5b3d24abfc4a867ef488ff57550dabe890feaebde6bf8a7bc59a50f457af3c68"
+    },
+    {
+      "path": "agent/transports/codex_app_server_session.py",
+      "sha256": "43a6f8b8f914de0ad13a604cb5ece92daa053e44f9a99d1f54b3dc8a6d7837fb"
+    },
+    {
+      "path": "agent/transports/hermes_tools_mcp_server.py",
+      "sha256": "8c9b9b0a33e6ebaacaa615d91bac8e8b55c8070376fc68a086888592805dfff0"
+    },
+    {
+      "path": "apps/desktop/src/app/settings/connections-registry.test.tsx",
+      "sha256": "d1924d318a4c7f5ec3e27f5f8d034a8ead266b5262415798527756b1b18ddb1d"
+    },
+    {
+      "path": "apps/desktop/src/app/settings/connections-registry.tsx",
+      "sha256": "61d35bb4e90cdfa0b3d0de763e19a06ad3511762966cc7e9360631c0305dca19"
+    },
+    {
+      "path": "hermes_cli/auth_codex.py",
+      "sha256": "ef8c098f300e10cb940adf369c2035e2602ca8451bee69fd26e33cce434a0551"
+    },
+    {
+      "path": "hermes_cli/config_migrations.py",
+      "sha256": "ce56705135208a172b40c13f7b4e7c71a64c8eb6775b67cbe0f07013e7c1604c"
+    },
+    {
+      "path": "hermes_cli/kanban_board_profiles.py",
+      "sha256": "e654a451c34687bfac714be9a7b107d608ae0a8128c5660c1b361cf63853ede3"
+    },
+    {
+      "path": "hermes_cli/kanban_db.py",
+      "sha256": "e66befd3037778d05a4a648a05af39d05f8ddcc94d9aebe98ee8d318cd73e918"
+    },
+    {
+      "path": "hermes_cli/kanban_db_dispatch.py",
+      "sha256": "67661227f603413d62ed511f35e2fe06dc616afb5bb23addcb2644fd8bdc9010"
+    },
+    {
+      "path": "hermes_cli/plugin_dev.py",
+      "sha256": "3f15ac7b4b3f28a4cf91b4cb7859edd6c9a943c12e4c869e861ff6f65fb17972"
+    },
+    {
+      "path": "hermes_cli/plugin_paths.py",
+      "sha256": "44f4196fe7c4e835c259f6d8dcb882e4d22cbb90afb063065ff768b5fea857d6"
+    },
+    {
+      "path": "hermes_cli/plugins.py",
+      "sha256": "15320ffc9bb44e1b877262b88464abd025141cf6b3376da9bae6d006c95e5922"
+    },
+    {
+      "path": "hermes_cli/plugins_cmd.py",
+      "sha256": "62a4cf0161933190e0f9ce5e6ad0496549c9e3c5ebd75fc38db4bfb564f36fce"
+    },
+    {
+      "path": "hermes_cli/plugins_discovery.py",
+      "sha256": "4254eddf302325be5acda8c709d81cc6b4d0ce7c630da4379b18d9c3ee242a71"
+    },
+    {
+      "path": "hermes_cli/plugins_loader.py",
+      "sha256": "6e3ea7fcfd89be2ceb267526fdf71d158844da17cb4e576a51ec9c409a11e062"
+    },
+    {
+      "path": "hermes_cli/plugins_state.py",
+      "sha256": "e28fda21bbb493fc7ae9fbe152201f9d36048db71e5bc1dffaa6932b57dd4b5c"
+    },
+    {
+      "path": "hermes_cli/runtime_provider.py",
+      "sha256": "8ad8bebbbb3864195ffef9ecda2e445609892faecf0055ace45dc3c684c9cf8b"
+    },
+    {
+      "path": "hermes_cli/security_audit.py",
+      "sha256": "67f502486025037068f71ff4c77a9eabcd8ee4560baacbb5237627bf2e0dbbc0"
+    },
+    {
+      "path": "hermes_cli/shared_codex.py",
+      "sha256": "3f0d477b1b1fc51be0c25958bfb626e7d69a09dda66f9d39b40396cb13c6bbe3"
+    },
+    {
+      "path": "hermes_cli/web_server_dashboard.py",
+      "sha256": "f71fbb9d3d3f035b66e6c6878c9c1818e5b048a5df49d84863afcc8f733368ae"
+    },
+    {
+      "path": "plugins/hermes-achievements/dashboard/plugin_api.py",
+      "sha256": "0f3635f5d9895c34a2c27df978a137759cc50abf0989f5d4f39afeba43c56be1"
+    },
+    {
+      "path": "plugins/hermes-achievements/tests/test_achievement_engine.py",
+      "sha256": "2fe2ee19eab286b2d4d41f7b3546beb7d3d0be13190ad56f3f3748765256f63c"
+    },
+    {
+      "path": "plugins/kanban/dashboard/dist/index.js",
+      "sha256": "a6902d29b9680c1d76238097b197af5d073b58259feec993fe09220e8d500c46"
+    },
+    {
+      "path": "plugins/kanban/dashboard/plugin_api.py",
+      "sha256": "9b34bc558c08732d82d9952b90105dc50d610fe01d00d7bfd0e46862bf50da83"
+    },
+    {
+      "path": "plugins/plugin_loader.py",
+      "sha256": "09ea65309a0db9363e28aba26923cf555fc0ca919455282181c1187aadfc3cfb"
+    },
+    {
+      "path": "plugins/plugin_storage.py",
+      "sha256": "2511f4fa70d678525ce1e23d99aa974c0106df7c8b32b8a531bb64bc33f37a04"
+    },
+    {
+      "path": "providers/__init__.py",
+      "sha256": "3a8765710778f5cd1baeb38d8a236c6da8704b22ef76b80869311651e19036f5"
+    },
+    {
+      "path": "tests/agent/test_codex_cron_activity.py",
+      "sha256": "78400a45ec28ec4984840438447fc50c072f265c2dc59d6f739e92965cb23b07"
+    },
+    {
+      "path": "tests/agent/transports/test_codex_mcp_approval.py",
+      "sha256": "805b31e428febb75427e9340e06e56ce9d97b857d6b72db47aed9f34d372cdb7"
+    },
+    {
+      "path": "tests/agent/transports/test_codex_startup_retry.py",
+      "sha256": "049d2ffaffaf1c45195ffbce0574849cc3d448d1cac83420abcc3317f6dcac4c"
+    },
+    {
+      "path": "tests/agent/transports/test_mcp_kanban_handoff.py",
+      "sha256": "ec7256a7d870c859d49d8ed2ee53e26639721fc5c4eaed170b6927e505706152"
+    },
+    {
+      "path": "tests/plugins/test_grouped_plugin_layout.py",
+      "sha256": "cd383818c2eb1db76faf8f53ce20b4d662f1a949b1b0a3555e7471218614af3e"
+    },
+    {
+      "path": "tests/plugins/test_kanban_board_profiles.py",
+      "sha256": "a961973fd0b7f302fa5d2c9644fed88a1d750deb855afe785a8597e83234d5bd"
+    },
+    {
+      "path": "web/src/pages/SessionsPage.test.tsx",
+      "sha256": "d3da1d4742ff3a079bc7acfe779699001a7cb6bb196a67b3998d6d1f3da6dfe9"
+    },
+    {
+      "path": "web/src/pages/SessionsPage.tsx",
+      "sha256": "9ea59521d006df5d7cb7ffb46670cee09e272bc72191f67ff9c718fec2309a15"
+    },
+    {
+      "path": "website/docs/user-guide/features/kanban.md",
+      "sha256": "9c89f4e4e06987346a549550446a1d01bb8f1c9954df5112fc5bd7f373af8c52"
+    }
+  ]
+}

@@ -1,0 +1,41 @@
+.workbench-recent-home { overflow-y: auto; padding: 24px clamp(16px, 3vw, 32px); }
+.workbench-home-header { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 16px; margin: 0 auto 28px; max-width: 1120px; }
+.workbench-home-header h1 { margin: 4px 0 8px; font-size: 20px; font-weight: 600; }
+.workbench-home-header p { margin: 0; color: var(--mc-muted, #70776b); }
+.workbench-home-profile { font-size: 12px; }
+.workbench-home-actions { display: flex; gap: 10px; }
+.workbench-home-actions :is(a, button), .workbench-recent-home > p button { border: 1px solid var(--mc-line-soft, #c7c7ba); border-radius: 6px; background: var(--mc-raised, #eef0e8); color: inherit; padding: 8px 12px; text-decoration: none; cursor: pointer; }
+.workbench-home-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; max-width: 1120px; margin: auto; }
+.workbench-home-card { display: flex; flex-direction: column; gap: 12px; min-width: 0; padding: 20px; border: 1px solid var(--mc-line-soft, #c7c7ba); border-radius: 16px; color: inherit; background: var(--mc-surface, #fff); text-decoration: none; }
+.workbench-home-card:is(:hover, :focus-visible) { border-color: var(--mc-accent, #466d2b); outline: 2px solid var(--mc-accent, #466d2b); outline-offset: 2px; }
+.workbench-home-card h2 { font-size: 16px; margin: 0; overflow-wrap: anywhere; }
+.workbench-home-card-meta { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; color: var(--mc-muted, #70776b); }
+.workbench-home-card-meta .is-running { color: var(--mc-accent, #466d2b); }
+.workbench-home-workspace { margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--mc-muted, #70776b); font-size: 12px; }
+.workbench-home-card time { margin-top: auto; color: var(--mc-muted, #70776b); font-size: 12px; }
+.workbench-home-empty { text-align: center; padding: 60px 12px; }
+/* Use the composer itself as the containing block, including in narrow split panes. */
+.codex-composer-actions { position: relative; }
+.codex-option-anchor { position: static; }
+.codex-option-anchor > .codex-options-popover {
+  box-sizing: border-box; left: 8px; right: auto; bottom: calc(100% + 8px);
+  width: min(24rem, calc(100% - 16px)); max-width: calc(100% - 16px);
+  max-height: min(60dvh, 27rem); overflow-y: auto; overflow-x: hidden;
+}
+.codex-options-popover .codex-setting-label { flex: 1 1 auto; min-width: 0; }
+.codex-options-popover .codex-setting-choice { min-width: 0; overflow-wrap: anywhere; }
+.codex-options-popover .codex-setting-choice > span { min-width: 0; }
+
+.workbench-home-request { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.6; }
+.workbench-home-ellipsis { margin: 4px 0; color: var(--mc-muted, #70776b); }
+.workbench-home-request-status { margin: 0; color: var(--mc-muted, #70776b); }
+.dashboard-owned-page:focus { outline: none; }
+
+.workbench-home-swipe { position: relative; overflow: hidden; border-radius: 16px; background: #32764c; }
+.workbench-home-read-background { position: absolute; inset: 0; display: flex; align-items: center; padding: 20px; color: white; font-weight: 600; }
+.workbench-home-swipe-surface { position: relative; touch-action: pan-y; }
+.workbench-home-swipe .workbench-home-card { background: var(--mc-surface, #f4f1e6); }
+.workbench-home-card-meta { padding-right: 88px; flex-wrap: wrap; overflow-wrap: anywhere; }
+.workbench-home-read-button { position: absolute; right: 16px; top: 14px; border: 0; border-radius: 4px; background: transparent; color: var(--mc-muted, #70776b); font: inherit; font-size: 12px; padding: 6px 4px; cursor: pointer; }
+.workbench-home-read-button:is(:hover, :focus-visible) { background: var(--mc-raised, #eef0e8); color: var(--mc-ink, #30352c); }
+.workbench-home-read-error { position: relative; margin: 0; padding: 8px 20px; background: var(--mc-surface, #f4f1e6); color: var(--mc-danger, #a32727); }

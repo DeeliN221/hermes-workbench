@@ -1,0 +1,226 @@
+/* Crafting table chrome, sharing the application palette with the navigation rail. */
+:root[data-workbench-shell="true"] .dashboard-global-nav {
+  box-sizing: border-box;
+  --dashboard-nav-surface: var(--mc-nav, #deddd5);
+  --dashboard-ink: var(--mc-ink, #30352c);
+  --dashboard-muted: var(--mc-muted, #64665a);
+  --dashboard-line: var(--mc-line, #a6a699);
+  --dashboard-line-soft: var(--mc-line-soft, #c7c7ba);
+  --dashboard-accent: var(--mc-accent, #466d2b);
+  --dashboard-active: var(--mc-active, #c3d1af);
+  --craft-slot: #aaa99f;
+  --craft-light: #e5e2d4;
+  --craft-shadow: #68685e;
+  padding: 12px 10px 12px;
+  border-right: 3px solid #555343;
+  background: var(--dashboard-nav-surface);
+  color: var(--dashboard-ink);
+  box-shadow: inset 2px 0 #f0eee4;
+}
+:root[data-workbench-shell="true"][data-workbench-theme="dark"] .dashboard-global-nav {
+  --dashboard-nav-surface: var(--mc-nav, #292c26);
+  --dashboard-ink: var(--mc-ink, #e6e6d5);
+  --dashboard-muted: var(--mc-muted, #b2b5a4);
+  --dashboard-line: var(--mc-line, #646a57);
+  --dashboard-line-soft: var(--mc-line-soft, #414738);
+  --dashboard-accent: var(--mc-accent, #aad66b);
+  --dashboard-active: var(--mc-active, #414f31);
+  --craft-slot: #53574c;
+  --craft-light: #818674;
+  --craft-shadow: #292e25;
+  box-shadow: inset 2px 0 #62664f;
+}
+.dashboard-global-nav .dashboard-nav-primary {
+  display: flex; flex-direction: column; gap: 0; min-height: 0;
+}
+.dashboard-crafting-grid {
+  display: grid; grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 7px; padding: 10px; flex-shrink: 0;
+  border: 3px solid #493523;
+  background: repeating-linear-gradient(0deg, #80603c 0 8px, #876740 8px 12px, #80603c 12px 26px);
+  box-shadow: inset 3px 3px #b49360, inset -3px -3px #5c4028, 0 2px #b6aa8e;
+}
+.dashboard-global-nav .dashboard-crafting-grid .dashboard-nav-pair,
+.dashboard-crafting-grid .codex-navigation-create-actions { display: contents; }
+.dashboard-global-nav .dashboard-crafting-grid :is(.dashboard-nav-pair > a, .dashboard-workspace-button, .codex-navigation-create-actions > button, .codex-navigation-create-actions > a, .workbench-profile-action > button) {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  width: 100%; height: auto; min-width: 0; min-height: 0; aspect-ratio: 1;
+  margin: 0; padding: 5px 2px; gap: 5px;
+  border: 2px solid #3e3427; border-radius: 0;
+  background: var(--craft-slot); color: var(--dashboard-ink);
+  box-shadow: inset 2px 2px var(--craft-light), inset -2px -2px var(--craft-shadow), 1px 2px #493523;
+  font: inherit; font-size: 12px; font-weight: 600; line-height: 1.1;
+  text-align: center; text-decoration: none; white-space: nowrap;
+  cursor: pointer; transition: none;
+}
+.dashboard-global-nav .dashboard-crafting-grid :is(a, button) > .crafting-icon {
+  width: clamp(23px, 2.2vw, 32px); height: clamp(23px, 2.2vw, 32px); flex: 0 0 auto;
+  filter: drop-shadow(1px 2px 0 #0003);
+}
+.dashboard-global-nav .dashboard-crafting-grid :is(a, button) > span { font-size: inherit; }
+.dashboard-global-nav .dashboard-crafting-grid :is(.dashboard-nav-pair > a, .dashboard-workspace-button, .codex-navigation-create-actions > button, .codex-navigation-create-actions > a, .workbench-profile-action > button):is(:hover, :focus-visible, [aria-current="page"]) {
+  background: var(--dashboard-active); color: var(--dashboard-ink);
+  outline: 2px solid var(--dashboard-accent); outline-offset: -4px;
+}
+.dashboard-global-nav .dashboard-crafting-grid :is(a, button):active {
+  box-shadow: inset 2px 2px var(--craft-shadow), inset -2px -2px var(--craft-light);
+}
+.dashboard-global-nav .dashboard-workbench-group { margin-top: 14px; }
+.dashboard-global-nav :is(.project-folder, .project-folder-heading, .project-temporary, .codex-session-item, .codex-session-row) { border-radius: 0; }
+.dashboard-global-nav .project-section-heading { position: relative; min-height: 40px; font-weight: 600; }
+.dashboard-global-nav .project-temporary { margin-top: 12px; }
+.dashboard-global-nav .crafting-theme-toggle {
+  display: grid; place-items: center; flex: 0 0 32px; width: 32px; height: 32px; min-height: 32px;
+  padding: 4px; border: 2px solid var(--craft-shadow); border-radius: 0;
+  background: var(--craft-slot); color: var(--dashboard-ink);
+  box-shadow: inset 2px 2px var(--craft-light), inset -2px -2px var(--craft-shadow);
+}
+.crafting-theme-toggle .crafting-icon { width: 20px; height: 20px; }
+.crafting-theme-toggle:focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: 2px; }
+.crafting-theme-error { position: absolute; right: 0; top: 100%; z-index: 2; padding: 6px; background: var(--dashboard-nav-surface); }
+.dashboard-global-nav .codex-session-item { color: var(--dashboard-ink); }
+@media (max-width: 800px) {
+  :root[data-workbench-shell="true"] .dashboard-global-nav { width: min(288px, calc(100vw - 32px)); }
+  .dashboard-global-nav .dashboard-crafting-grid :is(a, button) > .crafting-icon { width: 28px; height: 28px; }
+  .dashboard-global-nav .crafting-theme-toggle { width: 36px; height: 36px; flex-basis: 36px; }
+}
+
+/* Session components establish their own tokens; carry the rail palette through. */
+:root[data-workbench-shell="true"] .dashboard-global-nav .codex-sidebar {
+  --codex-ink: var(--dashboard-ink);
+  --codex-muted: var(--dashboard-muted);
+  --codex-surface: var(--dashboard-nav-surface);
+  --codex-surface-soft: var(--dashboard-active);
+  --codex-border: var(--dashboard-line);
+  --codex-accent-strong: var(--dashboard-accent);
+  --codex-accent-soft: var(--dashboard-active);
+}
+:root[data-workbench-shell="true"] .dashboard-global-nav .codex-session-row {
+  color: var(--dashboard-ink); border-radius: 0;
+}
+:root[data-workbench-shell="true"] .dashboard-global-nav .codex-session-row:is(:hover, .is-active) {
+  background: var(--dashboard-active); color: var(--dashboard-ink);
+}
+:root[data-workbench-shell="true"] .dashboard-global-nav .codex-session-row.is-active {
+  box-shadow: inset 3px 0 var(--dashboard-accent);
+}
+:root[data-workbench-shell="true"] .dashboard-global-nav .crafting-theme-toggle {
+  background: var(--craft-slot); border-color: var(--craft-shadow);
+}
+
+/* A compact crafting-table entry leaves the rail to profiles and projects. */
+.dashboard-global-nav .workbench-launcher {
+  display: grid; place-items: center; flex: 0 0 36px; width: 36px; height: 36px;
+  padding: 3px; border: 2px solid var(--craft-shadow); border-radius: 0;
+  background: var(--craft-slot); color: var(--dashboard-ink); cursor: pointer;
+  box-shadow: inset 2px 2px var(--craft-light), inset -2px -2px var(--craft-shadow);
+}
+.dashboard-global-nav .workbench-launcher .crafting-icon { width: 28px; height: 28px; }
+.dashboard-global-nav .workbench-launcher:is(:hover, :focus-visible) { outline: 2px solid var(--dashboard-accent); outline-offset: 2px; }
+.dashboard-global-nav .project-section-heading > .workbench-launcher + span { flex: 1; }
+.dashboard-global-nav .dashboard-workbench-group { margin-top: 0; }
+.dashboard-global-nav .workbench-profile-switcher { padding: 8px 2px 12px; }
+.workbench-project-placeholder { display: flex; align-items: center; gap: 8px; padding: 8px 2px; }
+.workbench-actions-dialog {
+  width: min(480px, calc(100vw - 24px)); max-height: calc(100dvh - 24px);
+  box-sizing: border-box; margin: auto; padding: 12px; overflow: auto;
+  border: 3px solid #493523; border-radius: 0; color: var(--dashboard-ink);
+  background: var(--dashboard-nav-surface);
+  box-shadow: inset 2px 2px var(--craft-light), inset -2px -2px var(--craft-shadow), 0 12px 48px #0006;
+}
+.workbench-actions-dialog::backdrop { background: var(--mc-backdrop, #24281eb3); }
+.workbench-actions-dialog > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.workbench-actions-dialog h2 { margin: 0; font: inherit; font-size: 18px; font-weight: 600; }
+.workbench-actions-close { width: 32px; height: 32px; padding: 0; border: 1px solid var(--dashboard-line); color: inherit; background: var(--craft-slot); font-size: 24px; cursor: pointer; }
+.dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid { padding: 10px; gap: 8px; }
+.dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid :is(a, button) { font-size: 14px; }
+.dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid :is(a, button) > span {
+  max-width: 100%; white-space: normal; overflow-wrap: anywhere;
+}
+.dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid :is(a, button) > .crafting-icon { width: 34px; height: 34px; }
+
+.dashboard-global-nav .project-section-heading { gap: 8px; }
+.workbench-actions-dialog .workbench-theme-error { margin: 8px 0 0; font-size: 13px; color: var(--mc-danger); }
+
+/* Mobile uses a direct action rail; desktop keeps the W-key crafting dialog. */
+:root[data-workbench-shell="true"] { --dashboard-action-width: 0px; }
+/* The action rail replaces the host's mobile brand header and its reserved space. */
+:root[data-workbench-shell="true"] header[class~="lg:hidden"]:has(button[aria-controls="app-sidebar"]) { display: none !important; }
+:root[data-workbench-shell="true"] [data-layout-variant] > div[class~="pt-14"] { padding-top: 0 !important; }
+:root[data-workbench-shell="true"] [data-layout-variant] > div[class~="mt-14"] { margin-top: 0 !important; }
+.dashboard-action-rail {
+  position: fixed; inset: 0 auto 0 0; z-index: 102;
+  display: flex; flex-direction: column; align-items: center;
+  width: var(--dashboard-action-width); box-sizing: border-box;
+  padding: max(4px, env(safe-area-inset-top)) 3px max(4px, env(safe-area-inset-bottom));
+  overflow-y: auto; overflow-x: hidden; scrollbar-width: none;
+  background: var(--mc-nav, #deddd5); color: var(--mc-ink, #30352c);
+  border-right: 1px solid var(--mc-line-soft, #c7c7ba);
+}
+.dashboard-rail-actions { display: flex; flex-direction: column; gap: 2px; width: 100%; }
+.dashboard-rail-actions :is(.dashboard-nav-pair, .codex-navigation-create-actions, .workbench-profile-action) { display: contents; }
+.dashboard-action-rail :is(.dashboard-nav-pair > a, .dashboard-workspace-button, .codex-navigation-create-actions > button, .workbench-profile-action > button) {
+  display: grid; place-items: center; flex: 0 0 40px;
+  width: 40px; height: 40px; min-height: 40px; box-sizing: border-box;
+  padding: 7px; margin: 0; border: 0; border-radius: 5px;
+  color: inherit; background: transparent; cursor: pointer; text-decoration: none;
+}
+.dashboard-action-rail :is(.dashboard-nav-pair > a, .dashboard-workspace-button, .codex-navigation-create-actions > button, .workbench-profile-action > button) > span { display: none; }
+.dashboard-action-rail .crafting-icon { width: 25px; height: 25px; }
+.dashboard-action-rail :is(a, button):is(:hover, [aria-current="page"]) { background: var(--mc-active, #c3d1af); }
+.dashboard-action-rail :is(a, button):focus-visible { outline: 2px solid var(--mc-accent, #466d2b); outline-offset: -2px; }
+.dashboard-action-rail .dashboard-mobile-toggle { display: none; }
+:root[data-workbench-shell="true"] .dashboard-global-nav {
+  left: var(--dashboard-action-width);
+  width: calc(var(--dashboard-nav-width) - var(--dashboard-action-width));
+}
+.workbench-profile-dialog {
+  width: min(360px, calc(100vw - 24px)); box-sizing: border-box;
+  margin: auto; padding: 16px; border: 1px solid var(--mc-line, #a6a699); border-radius: 8px;
+  background: var(--mc-surface, #f3f0e7); color: var(--mc-ink, #30352c);
+  font: 14px/1.5 system-ui, sans-serif;
+}
+.workbench-profile-dialog::backdrop { background: #0006; }
+.workbench-profile-dialog > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.workbench-profile-dialog > header button { width: 36px; height: 36px; border: 0; background: transparent; color: inherit; font-size: 24px; cursor: pointer; }
+.workbench-profile-dialog .workbench-profile-switcher { padding: 12px 0 0; border: 0; }
+@media (max-width: 800px) {
+  :root[data-workbench-shell="true"] { --dashboard-action-width: 48px; --dashboard-nav-width: var(--dashboard-action-width) !important; --dashboard-mobile-header-height: 0px; }
+  :root[data-workbench-shell="true"] .dashboard-global-nav { width: min(288px, calc(100vw - var(--dashboard-action-width))); }
+  .dashboard-action-rail .dashboard-mobile-toggle {
+    position: static; display: grid; flex: 0 0 40px;
+    width: 40px; height: 40px; margin: 0 0 4px; padding: 7px;
+    background: transparent;
+  }
+  :root[data-workbench-shell="true"] .dashboard-nav-backdrop { left: var(--dashboard-action-width); }
+  :root[data-workbench-shell="true"] #app-sidebar + div { margin-left: var(--dashboard-action-width); min-width: 0; }
+  :root[data-workbench-shell="true"][data-workbench-page="settings"] #app-sidebar + div { margin-left: calc(var(--dashboard-action-width) + var(--dashboard-settings-width)); }
+  :root[data-workbench-shell="true"][data-workbench-view="/chat"] .codex-center-header { padding-inline-start: 12px !important; }
+  :root[data-workbench-shell="true"] header[class~="lg:hidden"] { padding-left: 12px !important; }
+  :root[data-workbench-shell="true"] .dashboard-profile-page,
+  :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { left: var(--dashboard-action-width); }
+  :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { top: 0; }
+  :root[data-workbench-shell="true"] .dashboard-profile-page { top: 54px; }
+}
+.dashboard-action-rail > .workbench-theme-error {
+  position: fixed; left: 54px; bottom: 12px; z-index: 110;
+  width: min(320px, calc(100vw - 66px)); padding: 10px; margin: 0;
+  border: 1px solid var(--mc-line, #a6a699); border-radius: 6px;
+  background: var(--mc-surface, #f3f0e7); color: var(--mc-ink, #30352c);
+  font: 13px/1.5 system-ui, sans-serif;
+}
+
+.dashboard-crafting-grid .workbench-profile-action { display: contents; }
+.workbench-actions-dialog > header > a { margin-left: auto; margin-right: 12px; }
+.workbench-actions-dialog > header > a span { display: none; }
+.dashboard-rail-top {
+  display: flex; flex-direction: column; gap: 2px;
+  padding-bottom: 6px; margin-bottom: 6px;
+  border-bottom: 1px solid var(--mc-line-soft, #c7c7ba);
+}
+.dashboard-rail-top > a {
+  display: grid; place-items: center; width: 40px; height: 40px;
+  box-sizing: border-box; padding: 7px; border-radius: 5px; color: inherit;
+}
+.dashboard-rail-top > a > span { display: none; }
+.dashboard-action-rail .dashboard-rail-top .dashboard-mobile-toggle { margin-bottom: 0; }

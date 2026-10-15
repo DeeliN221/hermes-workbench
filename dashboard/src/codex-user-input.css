@@ -1,0 +1,13 @@
+.codex-user-input { display: grid; gap: 12px; padding: 16px; max-height: min(60vh, 560px); overflow: auto; border: 1px solid var(--mc-line, #8a927b); background: var(--mc-surface, #f1efe5); color: inherit; }
+.codex-user-input fieldset { min-width: 0; margin: 0; padding: 10px; border: 1px solid currentColor; }
+.codex-user-input legend { font-weight: 600; }
+.codex-user-input p { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.codex-user-input-option { display: flex; align-items: flex-start; gap: 8px; padding: 9px 4px; cursor: pointer; }
+.codex-user-input-option input { flex: 0 0 auto; margin-top: 4px; }
+.codex-user-input-option span { min-width: 0; overflow-wrap: anywhere; }
+.codex-user-input-option small { display: block; margin-top: 4px; opacity: .8; }
+.codex-user-input-free { display: grid; gap: 6px; margin-top: 8px; }
+.codex-user-input-free input { box-sizing: border-box; min-width: 0; width: 100%; padding: 8px; color: inherit; background: transparent; border: 1px solid currentColor; }
+.codex-user-input button { justify-self: start; padding: 8px 14px; border: 1px solid currentColor; }
+.codex-user-input button:disabled { opacity: .5; }
+.codex-user-input-open { align-self: flex-start; margin: 8px 16px; padding: 8px 12px; color: inherit; border: 1px solid currentColor; }

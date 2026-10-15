@@ -1,0 +1,84 @@
+import { chineseUI, uiText as sourceText } from './ui-locale';
+/** Load the actual installed roster; never disguise API failure as a default-only roster. */
+import type { FetchJSON } from './workbench-api';
+
+const AGENT_CHINESE_NAMES: Record<string, string> = {
+  "default": "默认 Agent",
+  "career-coach": "就业导师",
+  "finance-advisor": "经济顾问",
+  "health-advisor": "健康咨询师",
+  "learning-mentor": "清北名师",
+  "project-manager": "项目经理",
+  "social-advisor": "社交大师",
+  "travel-assistant": "旅行助理",
+  "writer": "大文豪"
+};
+
+/** Compact localized name for browser tabs. Custom profiles retain their name. */
+export function profileTabName(name: string): string {
+  return (chineseUI() ? AGENT_CHINESE_NAMES[name] : undefined) || name;
+}
+
+export function agentDisplayName(name: string): string {
+  const label = chineseUI() ? AGENT_CHINESE_NAMES[name] : undefined;
+  return label ? `${name}（${label}）` : name;
+}
+
+export async function loadKanbanProfiles(fetchJSON: FetchJSON, url: string): Promise<string[]> {
+  const payload = await fetchJSON<{ profiles: Array<{ name: string }> }>(url);
+  if (!Array.isArray(payload?.profiles)) throw new Error(sourceText("智能体列表格式异常", "Invalid agent list response"));
+  const names = [...new Set(payload.profiles.map(p => String(p?.name || '').trim()).filter(Boolean))];
+  if (!names.length) throw new Error(sourceText("未找到已安装的智能体", "No installed agents found"));
+  return names;
+}
+
+export async function populateKanbanAgentSelect(
+  select: HTMLSelectElement, actions: HTMLButtonElement[], host: HTMLElement,
+  load: () => Promise<string[]>,
+  preferred?: () => Promise<string>,
+): Promise<void> {
+  const status = document.createElement('div');
+  status.className = 'hti-kanban-agent-status';
+  status.setAttribute('role', 'status');
+  host.append(status);
+  let loading = false;
+  const refresh = async () => {
+    if (loading) return;
+    loading = true;
+    const previous = select.value;
+    select.disabled = true;
+    actions.forEach(button => { button.disabled = true; });
+    status.hidden = false;
+    status.setAttribute('role', 'status');
+    status.textContent = sourceText("正在读取智能体…", "Loading agents…");
+    const pending = document.createElement('option');
+    pending.textContent = sourceText("加载中…", "Loading…"); pending.value = '';
+    select.replaceChildren(pending);
+    try {
+      const [names, initial] = await Promise.all([load(), preferred ? preferred() : Promise.resolve(previous)]);
+      const chosen = select.dataset.userSelected ? previous : initial;
+      if (chosen && !names.includes(chosen)) throw new Error(`Configured agent is unavailable: ${chosen}`);
+      select.replaceChildren(...names.map(name => {
+        const option = document.createElement('option');
+        option.value = name;
+        option.textContent = agentDisplayName(name);
+        return option;
+      }));
+      select.value = chosen || (names.includes('default') ? 'default' : names[0]);
+      select.disabled = false;
+      actions.forEach(button => { button.disabled = false; });
+      status.hidden = true;
+    } catch (error) {
+      const failed = document.createElement('option');
+      failed.textContent = sourceText("智能体加载失败", "Failed to load agents"); failed.value = '';
+      select.replaceChildren(failed);
+      status.setAttribute('role', 'alert');
+      status.textContent = sourceText(`无法读取智能体：${String(error)} `, `Could not load agents: ${String(error)} `);
+      const retry = document.createElement('button');
+      retry.type = 'button'; retry.className = 'hti-kanban-action'; retry.textContent = sourceText("重试", "Retry");
+      retry.addEventListener('click', () => { void refresh(); });
+      status.append(retry);
+    } finally { loading = false; }
+  };
+  await refresh();
+}

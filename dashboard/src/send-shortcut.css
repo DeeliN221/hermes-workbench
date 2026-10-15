@@ -1,0 +1,47 @@
+.workbench-send-shortcut {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+  padding: 12px;
+  font-size: 13px;
+}
+.workbench-send-shortcut select {
+  width: 100%;
+  min-width: 0;
+  padding: 8px;
+  color: inherit;
+  background: var(--mc-surface, Canvas);
+  border: 1px solid var(--dashboard-line, #8886);
+  border-radius: 6px;
+}
+.workbench-send-shortcut small {
+  opacity: .7;
+  line-height: 1.5;
+}
+
+.dashboard-shortcuts-page {
+  left: calc(var(--dashboard-nav-width) + var(--dashboard-settings-width));
+  overflow-y: auto;
+}
+.workbench-shortcut-settings {
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: clamp(16px, 3vw, 40px);
+  box-sizing: border-box;
+}
+.workbench-shortcut-settings h1 { margin: 0 0 8px; font-size: 26px; }
+.workbench-shortcut-settings > p { margin: 0 0 24px; line-height: 1.6; color: var(--dashboard-muted); }
+.workbench-shortcut-settings .workbench-send-shortcut {
+  padding: 20px;
+  border: 1px solid var(--dashboard-line);
+  border-radius: 8px;
+  font-size: 14px;
+}
+.workbench-shortcut-settings select { max-width: 320px; font: inherit; }
+.workbench-shortcut-settings select:focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: 2px; }
+:root[data-workbench-page="custom"][data-workbench-view="/config"] .dashboard-settings-nav { box-sizing: border-box; }
+@media (max-width: 800px) {
+  .workbench-shortcut-settings { padding: 16px 0; }
+}

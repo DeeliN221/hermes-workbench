@@ -1,0 +1,12 @@
+{
+  "version": "1.2026.8",
+  "source": "https://github.com/plantuml/plantuml/releases/tag/v1.2026.8",
+  "archive_sha256": "ce892b85ef2465d77e8a2c52eb37558bbbb0aecf19fbd4ef4c7ddf73f9e8d16b",
+  "assets": {
+    "emoji.js": "29bc1feaf94d1570cf64621954e62c96537d740f9933a65bf69871ef306e5f24",
+    "openiconic.js": "f0ba6c6ce4431e73a7e98ff35f374ed49a26572bb433f30b5c0848b890ded313",
+    "plantuml.js": "4bf7e7eb250e488a419a0fa725822ab0af8640980dfd54ff52e91582d54fcbad",
+    "themes.js": "4df9039fe1f38bce984c7ed2b48bde6f385181a21112d8c4bacb9e9ffc99bc26",
+    "viz-global.js": "ef2cd8a08b5cf8b65e3634131052b41870ff30bb6fb23e23a87fd09d44666cba"
+  }
+}

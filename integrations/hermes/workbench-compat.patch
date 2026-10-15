@@ -1,0 +1,1936 @@
+diff --git a/agent/codex_runtime.py b/agent/codex_runtime.py
+index d3263b8f99..cb4cd4e297 100644
+--- a/agent/codex_runtime.py
++++ b/agent/codex_runtime.py
+@@ -329,6 +329,10 @@ def make_codex_app_server_event_bridge(agent) -> Callable[[dict], None]:
+             agent_cb(attr, f"{attr} raised", args=(text,))
+ 
+     def _fire_agent_message_completed(item: dict) -> None:
++        # Final answers belong to the final-delivery path. Sending them as
++        # interim text duplicates replies on non-streaming channels (Weixin).
++        if item.get("phase") == "final_answer":
++            return
+         text = item.get("text") or ""
+         # display.show_commentary=false keeps mid-turn narration off the interim path too (codex_responses contract).
+         if isinstance(text, str) and text.strip() and getattr(agent, "show_commentary", True):
+@@ -354,6 +358,10 @@ def make_codex_app_server_event_bridge(agent) -> Callable[[dict], None]:
+     def on_event(note: dict) -> None:
+         handler = handlers.get(note.get("method") or "") if isinstance(note, dict) else None
+         if handler is not None:
++            # Codex owns the tool loop: Hermes' normal activity touches are bypassed.
++            # Refresh only on work events, never transport keepalives/token counters.
++            agent_cb("_touch_activity", "codex activity callback raised",
++                     args=("codex " + note["method"],))
+             params = note.get("params")
+             handler(params if isinstance(params, dict) else {})
+     return on_event
+@@ -479,7 +487,10 @@ def run_codex_app_server_turn(agent, *, user_message: str, original_user_message
+                                   "without a truthful pre-compaction transcript boundary")
+     _ensure_codex_session(agent)
+     try:
+-        turn = agent._codex_session.run_turn(user_input=user_message)
++        # Cron already enforces inactivity through the agent activity clock. A
++        # second absolute 600s deadline would kill a healthy, progressing job.
++        turn_options = {"turn_timeout": None} if getattr(agent, "platform", None) == "cron" else {}
++        turn = agent._codex_session.run_turn(user_input=user_message, **turn_options)
+     except Exception as exc:
+         logger.exception("codex app-server turn failed")
+         _close_codex_session(agent)
+diff --git a/agent/transports/codex_app_server_session.py b/agent/transports/codex_app_server_session.py
+index effc28e69d..0717a3dcaf 100644
+--- a/agent/transports/codex_app_server_session.py
++++ b/agent/transports/codex_app_server_session.py
+@@ -181,12 +181,24 @@ class CodexAppServerSession:
+         """Spawn, handshake, and ``thread/start``; idempotent, returns the codex thread id."""
+         if self._thread_id is not None:
+             return self._thread_id
+-        if self._client is None:
+-            self._client = self._client_factory(codex_bin=self._codex_bin, codex_home=self._codex_home)
+-        self._client.initialize(client_name="hermes", client_title="Hermes Agent", client_version=_get_hermes_version())
++        # Slow cold starts can exceed 10s. Retry only the handshake, before any
++        # thread/turn or user side effects exist; retire the timed-out process first.
++        for attempt in range(2):
++            if self._client is None:
++                self._client = self._client_factory(codex_bin=self._codex_bin, codex_home=self._codex_home)
++            try:
++                self._client.initialize(client_name="hermes", client_title="Hermes Agent",
++                                        client_version=_get_hermes_version(), timeout=60.0)
++                break
++            except TimeoutError:
++                if attempt:
++                    raise
++                self._client.close()
++                self._client = None
++                logger.warning("codex initialize timed out; retrying once with a fresh process before thread/start")
+         # Permissions are NOT sent on thread/start: codex gates ``thread/start.permissions``
+         # behind experimentalApi + a matching ``[permissions]`` table in ~/.codex/config.toml.
+-        result = self._client.request("thread/start", {"cwd": self._cwd}, timeout=15)
++        result = self._client.request("thread/start", {"cwd": self._cwd}, timeout=30)
+         # Different codex versions serialize the id under thread.id / sessionId / threadId.
+         thread_obj = result.get("thread") or {}
+         thread_id = thread_obj.get("id") or thread_obj.get("sessionId") or result.get("sessionId") or result.get("threadId")
+@@ -324,7 +336,7 @@ class CodexAppServerSession:
+         return projection, aborted
+ 
+     def run_turn(
+-        self, user_input: Any, *, turn_timeout: float = 600.0,
++        self, user_input: Any, *, turn_timeout: Optional[float] = 600.0,
+         notification_poll_timeout: float = 0.25, post_tool_quiet_timeout: float = 90.0,
+     ) -> TurnResult:
+         """Send a user message and block until turn/completed, bridging approvals and projecting items.
+@@ -355,7 +367,7 @@ class CodexAppServerSession:
+         return result
+ 
+     def _run_started_turn(
+-        self, result: TurnResult, ts: dict, turn_timeout: float, notification_poll_timeout: float,
++        self, result: TurnResult, ts: dict, turn_timeout: Optional[float], notification_poll_timeout: float,
+         post_tool_quiet_timeout: float,
+     ) -> None:
+         """Drive an accepted ``turn/start`` to completion: watchdog, approvals, projection."""
+@@ -420,7 +432,7 @@ class CodexAppServerSession:
+             self._active_turn_id = None
+ 
+     def _drive_turn(
+-        self, result: TurnResult, *, turn_timeout: float, notification_poll_timeout: float,
++        self, result: TurnResult, *, turn_timeout: Optional[float], notification_poll_timeout: float,
+         timeout_label: str, on_server_request: Callable[[dict], bool],
+         on_note: Callable[[dict, str], bool], before_poll: Optional[Callable[[], bool]] = None,
+         pre_scope_filter: Optional[Callable[[dict, str], bool]] = None,
+@@ -434,7 +446,9 @@ class CodexAppServerSession:
+         return True to complete the turn. Deadline without completion interrupts and
+         retires the session.
+         """
+-        deadline = time.monotonic() + turn_timeout
++        # None delegates the deadline to the caller (cron inactivity watchdog).
++        # Explicit finite deadlines and compaction retain their original semantics.
++        deadline = float("inf") if turn_timeout is None else time.monotonic() + turn_timeout
+         turn_complete = False
+         while time.monotonic() < deadline and not turn_complete:
+             if self._interrupt_event.is_set():
+@@ -567,9 +581,9 @@ class CodexAppServerSession:
+         self._client.respond(rid, handler(self, params))
+ 
+     def _respond_elicitation(self, params: dict) -> dict:
+-        """MCP elicitation: auto-accept our own hermes-tools server (opted in by enabling the runtime;
++        """MCP elicitation: auto-accept our managed Hermes server names (opted in by enabling the runtime;
+         exposes nothing codex's shell can't do); decline others so the user opts in via codex's own flow."""
+-        action = "accept" if (params.get("serverName") or "") == "hermes-tools" else "decline"
++        action = "accept" if params.get("serverName") in {"hermes-tools", "hermes-mcp"} else "decline"
+         return {"action": action, "content": None, "_meta": None}
+ 
+     _SERVER_REQUEST_HANDLERS: dict[str, Callable[..., dict]] = {
+diff --git a/agent/transports/hermes_tools_mcp_server.py b/agent/transports/hermes_tools_mcp_server.py
+index 48909a026c..fe761c6391 100644
+--- a/agent/transports/hermes_tools_mcp_server.py
++++ b/agent/transports/hermes_tools_mcp_server.py
+@@ -12,6 +12,7 @@ import json
+ import logging
+ import os
+ import sys
++from pathlib import Path
+ from typing import Any, Optional
+ 
+ logger = logging.getLogger(__name__)
+@@ -47,11 +48,60 @@ EXPOSED_TOOLS: tuple[str, ...] = (
+     # Without them a codex-runtime worker can't report completion and hangs.
+     "kanban_complete", "kanban_block", "kanban_request_review", "kanban_request_changes", "kanban_comment",
+     "kanban_heartbeat", "kanban_show", "kanban_list",
++    "kanban_attach", "kanban_attach_url", "kanban_attachments",
+     # Orchestrator-only (the kanban tool gates them on HERMES_KANBAN_TASK unset).
+     "kanban_create", "kanban_unblock", "kanban_link",
+ )
+ 
+ 
++def _validate_handoff_artifacts(tool_name: str, args: dict) -> None:
++    """Keep MCP handoffs on the native attachment path before changing task state."""
++    if tool_name not in {"kanban_complete", "kanban_request_review"}:
++        return
++    from tools.kanban_tools import _board, _worker_guard
++
++    tid = _worker_guard(tool_name, args)
++    metadata = args.get("metadata") or {}
++    artifacts = args.get("artifacts")
++    if artifacts is None and isinstance(metadata, dict):
++        artifacts = metadata.get("artifacts")
++    if not isinstance(artifacts, list):
++        raise ValueError(
++            "Declare deliverable files in artifacts (absolute paths), not custom metadata "
++            "fields such as workbook. Use artifacts=[] only when there are no file deliverables. "
++            "The task has not changed; correct the handoff and retry."
++        )
++    # The native handler merges both lists; validate exactly that union.
++    if isinstance(metadata, dict) and isinstance(metadata.get("artifacts"), list):
++        artifacts = artifacts + metadata["artifacts"]
++    if not artifacts:
++        return
++    with _board(args.get("board")) as (kb, conn):
++        task = kb.get_task(conn, tid)
++        if task is None:
++            raise ValueError(f"Unknown task: {tid}")
++        workspace = kb._scratch_workspace(conn, tid)
++        managed = workspace is not None and kb._is_managed_scratch_path(workspace)
++        attached = {Path(a.stored_path).resolve() for a in kb.list_attachments(conn, tid)}
++        for raw in artifacts:
++            if not isinstance(raw, str) or not raw.strip():
++                raise ValueError("Each artifact must be an absolute file path.")
++            path = Path(raw.strip()).expanduser()
++            if not path.is_absolute() or not path.is_file():
++                raise ValueError(f"Artifact is not an existing absolute file: {raw}")
++            resolved = path.resolve()
++            if resolved in attached or (managed and resolved.is_relative_to(workspace.resolve())):
++                continue
++            raise ValueError(
++                f"Artifact is not registered as a downloadable task attachment: {raw}. "
++                + (f"Copy it into the task scratch workspace {workspace} and list that copy "
++                   "in artifacts, or " if managed else "")
++                + "use kanban_attach/kanban_attach_url then "
++                "kanban_attachments and pass its stored_path. Keep the original file. "
++                "The task has not changed; retry after fixing the handoff."
++            )
++
++
+ def _build_server() -> Any:
+     """Create the MCP server with Hermes tools attached (lazy imports: importable without ``mcp``)."""
+     try:
+@@ -87,7 +137,9 @@ def _build_server() -> Any:
+         def _dispatch(**kwargs: Any) -> str:
+             try:
+                 # Drop None so unset optionals aren't forwarded to the handler.
+-                return handle_function_call(tool_name, {k: v for k, v in kwargs.items() if v is not None})
++                args = {k: v for k, v in kwargs.items() if v is not None}
++                _validate_handoff_artifacts(tool_name, args)
++                return handle_function_call(tool_name, args)
+             except Exception as exc:
+                 logger.exception("tool %s raised", tool_name)
+                 return json.dumps({"error": str(exc), "tool": tool_name})
+@@ -105,6 +157,13 @@ def _build_server() -> Any:
+             logger.debug("skipping %s — not registered in this Hermes process", name)
+             continue
+         description = spec.get("description") or f"Hermes {name} tool"
++        if name in {"kanban_complete", "kanban_request_review"}:
++            description += (
++                " MCP handoffs must explicitly include artifacts: absolute paths for file "
++                "deliverables, or [] for no files. For automatic card attachments, copy files "
++                "into this task's scratch workspace before completing; files elsewhere must "
++                "already be attached via kanban_attach. Custom metadata fields do not attach files."
++            )
+         params_schema = spec.get("parameters") or {"type": "object", "properties": {}}
+         try:
+             mcp.add_tool(_make_handler(name, params_schema, description), name=name, description=description)
+diff --git a/apps/desktop/src/app/settings/connections-registry.test.tsx b/apps/desktop/src/app/settings/connections-registry.test.tsx
+index 6a5b4007f7..5f342a810e 100644
+--- a/apps/desktop/src/app/settings/connections-registry.test.tsx
++++ b/apps/desktop/src/app/settings/connections-registry.test.tsx
+@@ -1,7 +1,8 @@
+-import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
++import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
+ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+ 
+ import type { DesktopConnectionsRegistry } from '@/global'
++import { $connectionsRegistry } from '@/store/connections'
+ import { _resetFleetRosterForTests, refreshFleetRoster } from '@/store/fleet-roster'
+ import { $connection } from '@/store/session'
+ 
+@@ -20,6 +21,16 @@ const setLaunchMode = vi.fn()
+ const setPrimary = vi.fn()
+ const test = vi.fn()
+ 
++function deferred<T>() {
++  let resolve!: (value: T) => void
++
++  const promise = new Promise<T>(done => {
++    resolve = done
++  })
++
++  return { promise, resolve }
++}
++
+ const registry: DesktopConnectionsRegistry = {
+   connections: [
+     { id: 'local', kind: 'local', label: 'This device', tokenPreview: null, tokenSet: false },
+@@ -107,7 +118,7 @@ describe('ConnectionsRegistrySection', () => {
+ 
+     fireEvent.change(screen.getByPlaceholderText('Homelab'), { target: { value: 'Spark box' } })
+     fireEvent.change(screen.getByPlaceholderText('http://homelab.lan:9119'), {
+-      target: { value: 'http://spark.lan:9119' }
++      target: { value: 'http://node.example.test:9119' }
+     })
+     expect(saveButton.disabled).toBe(false)
+     fireEvent.click(saveButton)
+@@ -116,10 +127,46 @@ describe('ConnectionsRegistrySection', () => {
+     expect(save.mock.calls[0][0]).toMatchObject({
+       kind: 'remote',
+       label: 'Spark box',
+-      url: 'http://spark.lan:9119'
++      url: 'http://node.example.test:9119'
+     })
+   })
+ 
++  it('does not let a late initial registry snapshot erase a completed save', async () => {
++    const initial = deferred<DesktopConnectionsRegistry>()
++
++    const spark = {
++      authMode: 'token' as const,
++      id: 'spark',
++      kind: 'remote' as const,
++      label: 'Spark box',
++      tokenPreview: null,
++      tokenSet: false,
++      url: 'http://node.example.test:9119'
++    }
++
++    const savedRegistry = { ...registry, connections: [...registry.connections, spark] }
++
++    list.mockReturnValueOnce(initial.promise)
++    save.mockResolvedValueOnce({ connection: spark, ok: true, registry: savedRegistry })
++    render(<ConnectionsRegistrySection />)
++
++    // Management remains available while the baseline list request is in
++    // flight. Complete a real mutation before that older snapshot returns.
++    fireEvent.click(screen.getByText('Add connection'))
++    fireEvent.change(screen.getByPlaceholderText('Homelab'), { target: { value: 'Spark box' } })
++    fireEvent.change(screen.getByPlaceholderText('http://homelab.lan:9119'), {
++      target: { value: 'http://node.example.test:9119' }
++    })
++    fireEvent.click(screen.getByText('Save connection'))
++
++    await waitFor(() => expect(save).toHaveBeenCalledTimes(1))
++    expect($connectionsRegistry.get()?.connections.some(connection => connection.id === 'spark')).toBe(true)
++
++    // The pre-save baseline arrives late. Mutation truth must remain painted.
++    await act(async () => initial.resolve(registry))
++    expect(screen.getByText('Spark box')).toBeTruthy()
++  })
++
+   it('offers every kind on create and disables Local while the managed entry exists', async () => {
+     render(<ConnectionsRegistrySection />)
+ 
+diff --git a/apps/desktop/src/app/settings/connections-registry.tsx b/apps/desktop/src/app/settings/connections-registry.tsx
+index 8ae3056dd2..72d0106d2b 100644
+--- a/apps/desktop/src/app/settings/connections-registry.tsx
++++ b/apps/desktop/src/app/settings/connections-registry.tsx
+@@ -263,6 +263,9 @@ export function ConnectionsRegistrySection() {
+   const [signingIn, setSigningIn] = useState(false)
+   const [oauthConnected, setOauthConnected] = useState(false)
+   const probeSeq = useRef(0)
++  // A list request is only a baseline. Once a write returns newer registry
++  // truth, that older snapshot must not be allowed to publish over it.
++  const mutationRevisionRef = useRef(0)
+ 
+   const bridge = window.hermesDesktop?.connections
+ 
+@@ -273,6 +276,14 @@ export function ConnectionsRegistrySection() {
+     setConnectionsRegistry(next)
+   }, [])
+ 
++  const publishMutationRegistry = useCallback(
++    (next: DesktopConnectionsRegistry) => {
++      mutationRevisionRef.current += 1
++      publishRegistry(next)
++    },
++    [publishRegistry]
++  )
++
+   const editorUrl = editor?.kind === 'remote' ? coerceRemoteUrlScheme(editor.url) : ''
+   const editorWantsOauth = editor?.kind === 'remote' && editor.authMode === 'oauth'
+   const authProviderShape = deriveRemoteAuthProviderShape(authProbe?.providers, t.boot.failure.identityProvider)
+@@ -367,9 +378,14 @@ export function ConnectionsRegistrySection() {
+     }
+ 
+     setLoading(true)
++    const mutationRevision = mutationRevisionRef.current
+ 
+     try {
+-      publishRegistry(await bridge.list())
++      const next = await bridge.list()
++
++      if (mutationRevisionRef.current === mutationRevision) {
++        publishRegistry(next)
++      }
+     } catch (err) {
+       notifyError(err, s.loadFailed)
+     } finally {
+@@ -454,7 +470,7 @@ export function ConnectionsRegistrySection() {
+         }
+ 
+         const result = await bridge.save(payload)
+-        publishRegistry(result.registry)
++        publishMutationRegistry(result.registry)
+         setEditor(null)
+         setPlainTextConfirm(false)
+       } catch (err) {
+@@ -478,7 +494,7 @@ export function ConnectionsRegistrySection() {
+         setSaving(false)
+       }
+     },
+-    [bridge, editor, publishRegistry, registry?.connections, registry?.secureTokenStorage, s]
++    [bridge, editor, publishMutationRegistry, registry?.connections, registry?.secureTokenStorage, s]
+   )
+ 
+   const remove = useCallback(async () => {
+@@ -490,14 +506,14 @@ export function ConnectionsRegistrySection() {
+ 
+     try {
+       const result = await bridge.remove(removeTarget.id)
+-      publishRegistry(result.registry)
++      publishMutationRegistry(result.registry)
+     } catch (err) {
+       notifyError(err, s.removeFailed)
+     } finally {
+       setBusyId(null)
+       setRemoveTarget(null)
+     }
+-  }, [bridge, publishRegistry, removeTarget, s.removeFailed])
++  }, [bridge, publishMutationRegistry, removeTarget, s.removeFailed])
+ 
+   const makePrimary = useCallback(
+     async (id: string) => {
+@@ -509,14 +525,14 @@ export function ConnectionsRegistrySection() {
+ 
+       try {
+         const result = await bridge.setPrimary(id)
+-        publishRegistry(result.registry)
++        publishMutationRegistry(result.registry)
+       } catch (err) {
+         notifyError(err, s.saveFailed)
+       } finally {
+         setBusyId(null)
+       }
+     },
+-    [bridge, publishRegistry, s.saveFailed]
++    [bridge, publishMutationRegistry, s.saveFailed]
+   )
+ 
+   const setLaunchMode = useCallback(
+@@ -529,14 +545,14 @@ export function ConnectionsRegistrySection() {
+ 
+       try {
+         const result = await bridge.setLaunchMode(mode)
+-        publishRegistry(result.registry)
++        publishMutationRegistry(result.registry)
+       } catch (err) {
+         notifyError(err, s.saveFailed)
+       } finally {
+         setLaunchModeBusy(false)
+       }
+     },
+-    [bridge, publishRegistry, s.saveFailed]
++    [bridge, publishMutationRegistry, s.saveFailed]
+   )
+ 
+   const test = useCallback(
+diff --git a/hermes_cli/auth_codex.py b/hermes_cli/auth_codex.py
+index 169ad6958f..290b17cc28 100644
+--- a/hermes_cli/auth_codex.py
++++ b/hermes_cli/auth_codex.py
+@@ -83,6 +83,9 @@ def _load_auth_store_maybe_locked(lock: bool) -> Dict[str, Any]:
+ 
+ def _read_codex_tokens(*, _lock: bool = True) -> Dict[str, Any]:
+     """Read Codex OAuth tokens from Hermes auth store (~/.hermes/auth.json)."""
++    from hermes_cli import shared_codex
++    if shared_codex.path() is not None:
++        return shared_codex.read()
+     from hermes_cli.auth import _load_provider_state, _nonempty_str
+     auth_store = _load_auth_store_maybe_locked(_lock)
+     state = _load_provider_state(auth_store, "openai-codex")
+@@ -157,6 +160,9 @@ def _save_codex_tokens(
+     Only a token REFRESH passes ``write_through=True``: a fresh login or import under a profile
+     is the profile's own grant and must not overwrite the root account it was borrowing.
+     """
++    from hermes_cli import shared_codex
++    if shared_codex.path() is not None:
++        return shared_codex.save(tokens, last_refresh)
+     from hermes_cli.auth import (
+         _auth_file_path, _load_auth_store, _provider_state_transaction, _same_path,
+         _save_auth_store, _store_provider_state, _utc_now_z)
+@@ -453,6 +459,11 @@ def resolve_codex_runtime_credentials(
+     backup — gets a bare HTTP 401 ``Missing Authentication header`` from the wire instead of a usable
+     credential. See issue #32992.
+     """
++    from hermes_cli import shared_codex
++    if shared_codex.path() is not None:
++        shared = shared_codex.read()
++        return _codex_runtime_result(shared['tokens']['access_token'], source='shared-codex-file',
++                                     last_refresh=shared.get('last_refresh'))
+     from hermes_cli.auth import (
+         _auth_store_lock, _codex_access_token_is_expiring, _probe_codex_quota_restored,
+         _read_codex_tokens)
+@@ -679,6 +690,9 @@ def _pool_codex_access_token() -> str:
+     Fallback for ``resolve_codex_runtime_credentials`` when the singleton has no creds; reads
+     through ``read_credential_pool`` so a profile inherits the global-root pool (#34143).
+     """
++    from hermes_cli import shared_codex
++    if shared_codex.path() is not None:
++        return shared_codex.read()['tokens']['access_token']
+     from hermes_cli.auth import _nonempty_str, read_credential_pool
+     try:
+         for entry in _codex_pool_dicts(read_credential_pool("openai-codex")):
+diff --git a/hermes_cli/config_migrations.py b/hermes_cli/config_migrations.py
+index 7d14ea3fed..05b7d4ff69 100644
+--- a/hermes_cli/config_migrations.py
++++ b/hermes_cli/config_migrations.py
+@@ -7,6 +7,8 @@ step may only persist values that differ from the schema default (plus removals/
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import copy
+ import functools
+ import re
+@@ -268,7 +270,7 @@ def _installed_user_plugins(disabled: set) -> List[str]:
+     _c = _cfg()
+     found: List[str] = []
+     try:
+-        user_plugins_dir = _c.get_hermes_home() / "plugins"
++        user_plugins_dir = plugin_install_root(_c.get_hermes_home())
+         if user_plugins_dir.is_dir():
+             for child in sorted(user_plugins_dir.iterdir()):
+                 if not child.is_dir():
+diff --git a/hermes_cli/kanban_board_profiles.py b/hermes_cli/kanban_board_profiles.py
+new file mode 100644
+index 0000000000..217d9d9cdc
+--- /dev/null
++++ b/hermes_cli/kanban_board_profiles.py
+@@ -0,0 +1,22 @@
++"""Board-level routing defaults shared by task creation and dispatch."""
++
++from typing import Optional
++
++
++def validate_board_profile(name: Optional[str]) -> Optional[str]:
++    from hermes_cli.profiles import profile_exists
++
++    name = (name or "").strip() or None
++    if name and not profile_exists(name):
++        raise ValueError(f"Board default profile {name!r} does not exist")
++    return name
++
++
++def board_default_assignee(board: Optional[str], *, validate: bool = True) -> Optional[str]:
++    from hermes_cli import kanban_db as kb
++
++    meta = kb.read_board_metadata(board if board is not None else kb.get_current_board())
++    name = (meta.get("default_assignee") or "").strip() or None
++    # Keep broken bindings for dispatch's nonspawnable diagnostics; never use
++    # the global/default agent as a silent replacement.
++    return validate_board_profile(name) if validate else name
+diff --git a/hermes_cli/kanban_db.py b/hermes_cli/kanban_db.py
+index 91d6dc724f..14f07c930c 100644
+--- a/hermes_cli/kanban_db.py
++++ b/hermes_cli/kanban_db.py
+@@ -537,6 +537,7 @@ def read_board_metadata(board: Optional[str] = None) -> dict:
+         "icon": "",
+         "color": "",
+         "default_workdir": None,
++        "default_assignee": None,
+         # Project scope: new tasks inherit it (deterministic worktree + branch).
+         "project_id": None,
+         "created_at": None,
+@@ -561,6 +562,7 @@ def write_board_metadata(
+     board: Optional[str], *, name: Optional[str] = None, description: Optional[str] = None,
+     icon: Optional[str] = None, color: Optional[str] = None, archived: Optional[bool] = None,
+     default_workdir: Optional[str] = None, project_id: Optional[str] = None,
++    default_assignee: Optional[str] = None,
+ ) -> dict:
+     """Create/update ``board.json``; unmentioned fields are preserved, ``created_at``
+     set on first write. ``project_id``/``default_workdir``: ``None`` = unchanged,
+@@ -570,6 +572,9 @@ def write_board_metadata(
+     meta = read_board_metadata(slug)
+     # db_path is derived on every read; never persist it into board.json.
+     meta.pop("db_path", None)
++    if default_assignee is not None:
++        from hermes_cli.kanban_board_profiles import validate_board_profile
++        meta["default_assignee"] = validate_board_profile(default_assignee)
+     if name is not None:
+         meta["name"] = str(name).strip() or _default_board_display_name(slug)
+     for key, value in (("description", description), ("icon", icon), ("color", color)):
+@@ -595,12 +600,14 @@ def create_board(
+     slug: str, *, name: Optional[str] = None, description: Optional[str] = None,
+     icon: Optional[str] = None, color: Optional[str] = None, default_workdir: Optional[str] = None,
+     project_id: Optional[str] = None,
++    default_assignee: Optional[str] = None,
+ ) -> dict:
+     """Create board dir + DB + metadata (``mkdir -p`` semantics: existing board returns its metadata)."""
+     normed = _require_slug(slug)
+     meta = write_board_metadata(
+         normed, name=name, description=description, icon=icon, color=color,
+         default_workdir=default_workdir, project_id=project_id,
++        default_assignee=default_assignee,
+     )
+     # Touch the DB so list_boards() sees it immediately.
+     init_db(board=normed)
+@@ -1255,6 +1262,9 @@ def create_task(
+     model_override, provider_override = _validate_model_override(model_override, provider_override)
+     reasoning_effort = normalize_reasoning_effort(reasoning_effort)
+     assignee = _canonical_assignee(assignee)
++    if assignee is None:
++        from hermes_cli.kanban_board_profiles import board_default_assignee
++        assignee = board_default_assignee(board)
+     if not title or not title.strip():
+         raise ValueError("title is required")
+     if initial_status not in VALID_INITIAL_STATUSES:
+diff --git a/hermes_cli/kanban_db_dispatch.py b/hermes_cli/kanban_db_dispatch.py
+index 7a8f7a08a7..b7cfc10490 100644
+--- a/hermes_cli/kanban_db_dispatch.py
++++ b/hermes_cli/kanban_db_dispatch.py
+@@ -1812,7 +1812,8 @@ def _dispatch_once_locked(
+         failure_limit=failure_limit, spawn_fn=spawn_fn,
+         per_profile_cap=per_profile_cap, per_profile_running=per_profile_running,
+     )
+-    default_assignee = _resolve_default_assignee(default_assignee)
++    from hermes_cli.kanban_board_profiles import board_default_assignee
++    default_assignee = board_default_assignee(board, validate=False) or _resolve_default_assignee(default_assignee)
+     spawned = 0
+     for row in ready_rows:
+         if ready_budget is not None and spawned >= ready_budget:
+diff --git a/hermes_cli/plugin_dev.py b/hermes_cli/plugin_dev.py
+index 3718c7b631..5b2dd31f5f 100644
+--- a/hermes_cli/plugin_dev.py
++++ b/hermes_cli/plugin_dev.py
+@@ -3,6 +3,8 @@ check routes through the real runtime contracts instead of a parallel scanner.""
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import inspect
+ import os
+ import shutil
+@@ -192,7 +194,7 @@ def resolve_plugin_path(target: str | os.PathLike[str] | None = None) -> Path:
+ 
+     candidates: list[Path] = []
+     if _is_plugin_id(raw):
+-        candidates.append(get_hermes_home() / "plugins" / raw)
++        candidates.append(plugin_install_root(get_hermes_home()) / raw)
+         try:
+             from hermes_cli.plugins import get_bundled_plugins_dir
+             bundled = get_bundled_plugins_dir()
+diff --git a/hermes_cli/plugin_paths.py b/hermes_cli/plugin_paths.py
+new file mode 100644
+index 0000000000..c6b8e6348b
+--- /dev/null
++++ b/hermes_cli/plugin_paths.py
+@@ -0,0 +1,17 @@
++"""Resolve installed plugin and persistent data directories for either home layout."""
++from pathlib import Path
++
++
++def plugin_install_root(home: Path) -> Path:
++    """Use the grouped layout when its installation directory exists."""
++    home = Path(home)
++    nested = home / "plugins" / "dist"
++    return nested if nested.is_dir() else home / "plugins"
++
++
++def plugin_data_root(home: Path) -> Path:
++    """Keep data beside installations in grouped homes, preserving other profiles."""
++    home = Path(home)
++    if (home / "plugins" / "dist").is_dir():
++        return home / "plugins" / "data"
++    return home / "plugin-data"
+diff --git a/hermes_cli/plugins.py b/hermes_cli/plugins.py
+index 553f80a73b..888a0c17dc 100644
+--- a/hermes_cli/plugins.py
++++ b/hermes_cli/plugins.py
+@@ -10,6 +10,8 @@ and an ``__init__.py`` exposing ``register(ctx)``. Plugins register callbacks fo
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_data_root
++
+ import asyncio
+ import contextvars
+ import importlib.metadata
+@@ -1435,7 +1437,7 @@ class PluginManager(PluginLoaderMixin, PluginDispatchMixin, PluginLedgerMixin):
+                 continue
+             try:  # lazy: this is a startup probe, keep agent_plugins unimported unless needed
+                 from hermes_cli.agent_plugins import _discover_mcp
+-                if _discover_mcp(Path(manifest.path), get_hermes_home() / "plugin-data"
++                if _discover_mcp(Path(manifest.path), plugin_data_root(get_hermes_home())
+                                  / (manifest.skill_namespace or lookup_key), [], create_data=False):
+                     return True
+             except (OSError, RuntimeError, ValueError):
+diff --git a/hermes_cli/plugins_cmd.py b/hermes_cli/plugins_cmd.py
+index 4d946012c7..4383942035 100644
+--- a/hermes_cli/plugins_cmd.py
++++ b/hermes_cli/plugins_cmd.py
+@@ -2,6 +2,8 @@
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import functools
+ import json
+ import logging
+@@ -164,7 +166,7 @@ _SUPPORTED_MANIFEST_VERSION = 1
+ 
+ def _plugins_dir() -> Path:
+     """Return the user plugins directory, creating it if needed."""
+-    plugins = get_hermes_home() / "plugins"
++    plugins = plugin_install_root(get_hermes_home())
+     plugins.mkdir(parents=True, exist_ok=True)
+     return plugins
+ 
+@@ -422,7 +424,7 @@ _EXACT_COMMIT_RE = re.compile(r"^[0-9a-fA-F]{40}$")
+ 
+ 
+ def _install_metadata_path() -> Path:
+-    return get_hermes_home() / "plugins" / ".install-metadata.json"
++    return plugin_install_root(get_hermes_home()) / ".install-metadata.json"
+ 
+ 
+ def _read_install_metadata() -> dict[str, dict[str, object]]:
+diff --git a/hermes_cli/plugins_discovery.py b/hermes_cli/plugins_discovery.py
+index 29947aa8ae..b263883846 100644
+--- a/hermes_cli/plugins_discovery.py
++++ b/hermes_cli/plugins_discovery.py
+@@ -6,6 +6,8 @@ Split out of :mod:`hermes_cli.plugins`. Names that tests patch on the origin
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import importlib.metadata
+ import logging
+ from dataclasses import dataclass
+@@ -148,7 +150,7 @@ def collect_directory_manifests() -> List[PluginManifest]:
+     logger.debug("Scanning bundled plugins: %s", repo_plugins)
+     _scan("bundled (top-level)", repo_plugins, "bundled", {"memory", "context_engine", "platforms", "model-providers"})
+     _scan("bundled/platforms", repo_plugins / "platforms", "bundled")
+-    user_dir = get_hermes_home() / "plugins"
++    user_dir = plugin_install_root(get_hermes_home())
+     logger.debug("Scanning user plugins: %s", user_dir)
+     _scan("user", user_dir, "user")
+     if _origin._env_enabled("HERMES_ENABLE_PROJECT_PLUGINS"):
+diff --git a/hermes_cli/plugins_loader.py b/hermes_cli/plugins_loader.py
+index 788aeb744c..f8bc17bb82 100644
+--- a/hermes_cli/plugins_loader.py
++++ b/hermes_cli/plugins_loader.py
+@@ -7,6 +7,8 @@ through ``hermes_cli.plugins`` so tests that patch them on the origin keep worki
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_data_root
++
+ import hashlib
+ import importlib
+ import importlib.metadata
+@@ -388,7 +390,7 @@ class PluginLoaderMixin:
+         try:
+             from hermes_cli.agent_plugins import load_agent_plugin
+             package = load_agent_plugin(
+-                Path(manifest.path), get_hermes_home() / "plugin-data" / manifest.skill_namespace)
++                Path(manifest.path), plugin_data_root(get_hermes_home()) / manifest.skill_namespace)
+             ctx = PluginContext(manifest, self)
+             for diagnostic in package.diagnostics:
+                 logger.warning("Agent Plugin '%s' [%s]: %s", lookup_key, diagnostic.scope, diagnostic.message)
+diff --git a/hermes_cli/plugins_state.py b/hermes_cli/plugins_state.py
+index 5e7c7dbb1a..6319d27729 100644
+--- a/hermes_cli/plugins_state.py
++++ b/hermes_cli/plugins_state.py
+@@ -2,6 +2,8 @@
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_data_root
++
+ import json
+ import os
+ import re
+@@ -113,7 +115,7 @@ class PluginState:
+     @property
+     def data_dir(self) -> Path:
+         """Profile-scoped directory matching portable plugins' PLUGIN_DATA."""
+-        return get_hermes_home() / "plugin-data" / self._data_namespace
++        return plugin_data_root(get_hermes_home()) / self._data_namespace
+ 
+     @property
+     def path(self) -> Path:
+diff --git a/hermes_cli/runtime_provider.py b/hermes_cli/runtime_provider.py
+index ba712f0fab..04bc623cdc 100644
+--- a/hermes_cli/runtime_provider.py
++++ b/hermes_cli/runtime_provider.py
+@@ -519,6 +519,14 @@ def _refresh_nous_pool_entry(pool: CredentialPool, entry: Any, pool_api_key: str
+ def _resolve_from_pool(provider: str, requested_provider: str, model_cfg: Dict[str, Any], explicit_api_key, explicit_base_url,
+                        target_model) -> Optional[Dict[str, Any]]:
+     """Runtime from the provider's credential pool, or None to continue down the ladder."""
++    from hermes_cli import shared_codex
++    if provider == 'openai-codex' and shared_codex.path() is not None:
++        shared = shared_codex.read()
++        mode = _maybe_apply_codex_app_server_runtime(provider=provider, api_mode='codex_responses', model_cfg=model_cfg)
++        if mode != 'codex_app_server':
++            raise RuntimeError('Shared Codex authentication requires model.openai_runtime=codex_app_server')
++        return _runtime(provider, mode, DEFAULT_CODEX_BASE_URL, shared['tokens']['access_token'],
++                        source='shared-codex-file', requested_provider=requested_provider)
+     should_use_pool = provider != "openrouter" or _openrouter_should_use_pool(requested_provider, model_cfg, explicit_api_key,
+                                                                              explicit_base_url)
+     try:
+diff --git a/hermes_cli/security_audit.py b/hermes_cli/security_audit.py
+index 6358e5fc8c..4e1f0f3a95 100644
+--- a/hermes_cli/security_audit.py
++++ b/hermes_cli/security_audit.py
+@@ -6,6 +6,8 @@ Single-shot, on-demand, never daily — see ``references/security-disclosure-tri
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import argparse
+ import concurrent.futures
+ import json
+@@ -106,7 +108,7 @@ def _discover_plugins(hermes_home: Path) -> list[Component]:
+     """Python deps declared by plugins under ``~/.hermes/plugins``. Plugins typically don't install
+     into the venv, so their stated requirements are audit surface the venv scan misses.
+     """
+-    plugins_dir = hermes_home / "plugins"
++    plugins_dir = plugin_install_root(hermes_home)
+     if not plugins_dir.is_dir():
+         return []
+     out: list[Component] = []
+diff --git a/hermes_cli/shared_codex.py b/hermes_cli/shared_codex.py
+new file mode 100644
+index 0000000000..fb501fca28
+--- /dev/null
++++ b/hermes_cli/shared_codex.py
+@@ -0,0 +1,60 @@
++"""Opt-in shared Codex authority. Non-Codex credentials remain profile-local.
++
++Codex owns refresh for this app-server deployment; Hermes reads the same file
++instead of cloning a rotating OAuth grant into its own credential pool.
++"""
++from __future__ import annotations
++import json
++import os
++from pathlib import Path
++import tempfile
++import time
++
++
++def path():
++    value = os.environ.get('HERMES_CODEX_AUTH_FILE', '').strip()
++    return Path(value).expanduser().resolve() if value else None
++
++
++def read():
++    target = path()
++    if target is None:
++        return None
++    # Codex 0.157.1 truncates then writes in place; tolerate that short window.
++    for attempt in range(6):
++        try:
++            value = json.loads(target.read_text())
++            tokens = value.get('tokens', {})
++            if not all(isinstance(tokens.get(k), str) and tokens[k].strip()
++                       for k in ('access_token', 'refresh_token')):
++                raise ValueError('Shared Codex auth has no complete OAuth grant')
++            return {'tokens': tokens, 'last_refresh': value.get('last_refresh')}
++        except (OSError, ValueError):
++            if attempt == 5:
++                raise RuntimeError('Shared Codex authentication is unavailable; restore the shared account login') from None
++            time.sleep(0.05)
++
++
++def save(tokens, last_refresh=None):
++    target = path()
++    if target is None:
++        raise RuntimeError('Shared Codex auth is not configured')
++    # Re-authentication goes to the canonical target, never replaces a local link.
++    old = json.loads(target.read_text()) if target.exists() else {}
++    merged = dict(old.get('tokens') or {})
++    merged.update(tokens)
++    old.update(auth_mode='chatgpt', tokens=merged)
++    if last_refresh:
++        old['last_refresh'] = last_refresh
++    owner = target.stat() if target.exists() else None
++    fd, name = tempfile.mkstemp(prefix='.auth-', dir=target.parent)
++    try:
++        with os.fdopen(fd, 'w') as f:
++            json.dump(old, f, indent=2)
++            f.flush(); os.fsync(f.fileno())
++        os.chmod(name, 0o660)
++        if owner and os.geteuid() == 0:
++            os.chown(name, owner.st_uid, owner.st_gid)
++        os.replace(name, target)
++    finally:
++        if os.path.exists(name): os.unlink(name)
+diff --git a/hermes_cli/web_server_dashboard.py b/hermes_cli/web_server_dashboard.py
+index 5fdbb2e0b6..ee75a9185d 100644
+--- a/hermes_cli/web_server_dashboard.py
++++ b/hermes_cli/web_server_dashboard.py
+@@ -1,6 +1,8 @@
+ """Dashboard UI assets: SPA mount, theme normalisation/bootstrap CSS, dashboard-plugin discovery and the plugins-hub merge.
+ """
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import logging
+ import importlib.util
+ import json
+@@ -475,8 +477,8 @@ def _dashboard_plugin_search_dirs() -> List[tuple]:
+     # *is* the root), mirroring how ``hermes_cli.plugins`` resolves plugin install locations. The
+     # ``seen_names`` dedupe below keeps profile-local plugins (if any) authoritative over same-named root
+     # plugins.
+-    user_plugin_roots = [get_process_hermes_home() / "plugins"]
+-    root_plugins = get_default_hermes_root() / "plugins"
++    user_plugin_roots = [plugin_install_root(get_process_hermes_home())]
++    root_plugins = plugin_install_root(get_default_hermes_root())
+     if root_plugins.resolve(strict=False) != user_plugin_roots[0].resolve(strict=False):
+         user_plugin_roots.append(root_plugins)
+     search_dirs = [(d, "user") for d in user_plugin_roots]
+@@ -674,7 +676,7 @@ def _merged_plugins_hub(force_refresh: bool = False) -> Dict[str, Any]:
+     disabled_set = _get_disabled_set()
+     enabled_set = _get_enabled_set()
+     hidden_plugins: list = cfg_get(load_config(), "dashboard", "hidden_plugins", default=[]) or []
+-    plugins_root_resolved = (get_hermes_home() / "plugins").resolve()
++    plugins_root_resolved = (plugin_install_root(get_hermes_home())).resolve()
+     rows: List[Dict[str, Any]] = []
+ 
+     for name, version, description, source, dir_str, key in _discover_all_plugins():
+diff --git a/plugins/hermes-achievements/dashboard/plugin_api.py b/plugins/hermes-achievements/dashboard/plugin_api.py
+index 7da5a07906..1f690b01c6 100644
+--- a/plugins/hermes-achievements/dashboard/plugin_api.py
++++ b/plugins/hermes-achievements/dashboard/plugin_api.py
+@@ -6,6 +6,8 @@ Cold scans run on a background thread; ``/achievements`` serves the last snapsho
+ """
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root, plugin_data_root
++
+ import json
+ import math
+ import re
+@@ -150,7 +152,7 @@ def _data_dir() -> Path:
+         return plugin_data_dir("hermes-achievements")
+     except Exception:
+         # Standalone dashboard import (no plugins package on sys.path): same layout, computed locally.
+-        root = get_hermes_home() / "plugin-data" / "hermes-achievements"
++        root = plugin_data_root(get_hermes_home()) / "hermes-achievements"
+         root.mkdir(parents=True, exist_ok=True)
+         return root
+ 
+@@ -158,7 +160,7 @@ def _data_dir() -> Path:
+ def _data_file(name: str) -> Path:
+     path = _data_dir() / name
+     if not path.exists():
+-        legacy = get_hermes_home() / "plugins" / "hermes-achievements" / name
++        legacy = plugin_install_root(get_hermes_home()) / "hermes-achievements" / name
+         if legacy.exists():
+             try:
+                 path.write_text(legacy.read_text(encoding="utf-8"), encoding="utf-8")
+@@ -538,49 +540,103 @@ def _scan_meta(mode: str, total: int, *, rescanned: int = 0, reused: int = 0, sc
+     return meta
+ 
+ 
++def _profile_databases() -> List[tuple[str, Path]]:
++    """Return every live profile database, with a current-home fallback.
++
++    Achievements are installation-wide rather than profile-local. The dashboard plugin is
++    normally loaded by the default gateway, but named profiles keep independent ``state.db``
++    files under ``profiles/<name>``; using a bare ``SessionDB()`` therefore misses them.
++    """
++    try:
++        from hermes_cli.profiles import list_profiles
++        databases = [
++            (profile.name, Path(profile.path) / "state.db")
++            for profile in list_profiles()
++            if (Path(profile.path) / "state.db").is_file()
++        ]
++        if databases:
++            return databases
++    except Exception:
++        pass
++    return [("default", get_hermes_home() / "state.db")]
++
++
++def _checkpoint_session_key(profile_name: str, session_id: str) -> str:
++    """Namespace checkpoint rows because session ids are only profile-local identifiers."""
++    return f"{profile_name}::{session_id}"
++
++
+ def scan_sessions(limit: Optional[int] = None, progress_callback: Optional[Any] = None, progress_every: int = 250) -> Dict[str, Any]:
+-    """Scan Hermes sessions and build per-session achievement stats.
++    """Scan sessions across every live Hermes profile and build achievement stats.
+ 
+     ``limit=None`` (default) scans the ENTIRE history (SQLite ``LIMIT -1``); a former cap
+     of 200 silently shrank lifetime totals on long-running installs. The checkpoint stores
+-    per-session stats keyed by ``(started_at, last_active)`` fingerprint so warm scans only
+-    re-analyze changed sessions. ``progress_callback(partial_sessions, scanned_so_far,
+-    total)`` fires every ``progress_every`` sessions so background scans can publish
+-    intermediate snapshots.
++    per-session stats under a profile-qualified key and fingerprints ``(started_at,
++    last_active)`` so warm scans only re-analyze changed sessions. Duplicate session ids
++    left behind by profile migration are counted once (the newest copy wins).
++    ``progress_callback(partial_sessions, scanned_so_far, total)`` fires every
++    ``progress_every`` sessions so background scans can publish intermediate snapshots.
+     """
+     try:
+         from hermes_state import SessionDB
+ 
+-        # The scan only reads. A writable open here was a second writer connection (schema
+-        # init, write lock, close-time checkpoint) beside the dashboard's own store on every
+-        # scan, and counted toward the "live SessionDB handles" precursor (#100896).
+-        db = SessionDB(read_only=True)
+     except Exception as exc:
+         return {"sessions": [], "aggregate": {}, "error": f"Could not open SessionDB: {exc}", "scan_meta": _scan_meta("failed", 0)}
+ 
+     previous_sessions = load_checkpoint()["sessions"]  # load_checkpoint guarantees a dict
+     reused = rescanned = 0
+     db_limit = -1 if (limit is None or limit <= 0) else int(limit)
++    databases = _profile_databases()
++    opened: Dict[str, Any] = {}
++    selected: Dict[str, tuple[str, Dict[str, Any]]] = {}
++    profile_errors: Dict[str, str] = {}
+     try:
+-        sessions_meta = db.list_sessions_rich(limit=db_limit, include_children=True, project_compression_tips=False)
++        # Apply limits globally, not once per profile, and collapse copies left by migration.
++        for profile_name, db_path in databases:
++            try:
++                db = SessionDB(db_path=db_path, read_only=True)
++                opened[profile_name] = db
++                profile_sessions = db.list_sessions_rich(
++                    limit=-1, include_children=True, project_compression_tips=False)
++            except Exception as exc:
++                profile_errors[profile_name] = str(exc)
++                continue
++            for meta in profile_sessions:
++                sid = meta.get("id")
++                if not sid:
++                    continue
++                current = selected.get(sid)
++                current_last_active = float((current[1].get("last_active") if current else 0) or 0)
++                candidate_last_active = float(meta.get("last_active") or 0)
++                if current is None or candidate_last_active >= current_last_active:
++                    selected[sid] = (profile_name, meta)
++
++        sessions_meta = sorted(
++            selected.values(),
++            key=lambda item: float(item[1].get("last_active") or item[1].get("started_at") or 0),
++            reverse=True,
++        )
++        if db_limit > 0:
++            sessions_meta = sessions_meta[:db_limit]
+         total_sessions = len(sessions_meta)
+         sessions: List[Dict[str, Any]] = []
+         checkpoint_sessions: Dict[str, Any] = {}
+-        for idx, meta in enumerate(sessions_meta, start=1):
++        for idx, (profile_name, meta) in enumerate(sessions_meta, start=1):
+             sid = meta.get("id")
+             if not sid:
+                 continue
+             fp = session_fingerprint(meta)
+-            cached = previous_sessions.get(sid)
++            checkpoint_key = _checkpoint_session_key(profile_name, sid)
++            cached = previous_sessions.get(checkpoint_key)
+             cached = cached if isinstance(cached, dict) else {}
+             title = meta.get("title") or meta.get("preview")
+             if isinstance(cached.get("stats"), dict) and cached.get("fingerprint") == fp:
+                 stats = dict(cached["stats"])
+                 reused += 1
+             else:
+-                stats = analyze_messages(sid, title or "Untitled", db.get_messages(sid))
++                stats = analyze_messages(sid, title or "Untitled", opened[profile_name].get_messages(sid))
+                 rescanned += 1
+-            stats.update(session_id=sid, title=title or stats.get("title") or "Untitled", started_at=meta.get("started_at"), last_active=meta.get("last_active"), source=meta.get("source"))
++            stats.update(session_id=sid, profile_name=profile_name, title=title or stats.get("title") or "Untitled", started_at=meta.get("started_at"), last_active=meta.get("last_active"), source=meta.get("source"))
+             if meta.get("model"):
+                 # Checkpoint round-trips turn the set into a list; handle both.
+                 model = str(meta.get("model"))
+@@ -593,21 +649,26 @@ def scan_sessions(limit: Optional[int] = None, progress_callback: Optional[Any]
+                 else:
+                     stats["model_names"] = {model}
+             sessions.append(stats)
+-            checkpoint_sessions[sid] = {"fingerprint": fp, "stats": _json_safe(stats)}
++            checkpoint_sessions[checkpoint_key] = {"fingerprint": fp, "stats": _json_safe(stats)}
+             if progress_callback is not None and progress_every > 0 and (idx % progress_every == 0) and idx < total_sessions:
+                 try:
+                     progress_callback(list(sessions), idx, total_sessions)
+                 except Exception:
+                     pass  # Advisory — a broken publisher must never abort the scan.
+-        _write_json(CHECKPOINT_FILE, {"schema_version": 1, "generated_at": int(time.time()), "sessions": checkpoint_sessions})
++        _write_json(CHECKPOINT_FILE, {"schema_version": 2, "generated_at": int(time.time()), "sessions": checkpoint_sessions})
+     finally:
+-        db.close()
++        for db in opened.values():
++            db.close()
++    meta = _scan_meta(
++        "incremental" if reused > 0 else "full", len(sessions), rescanned=rescanned, reused=reused,
++        scanned_so_far=len(sessions), expected_total=total_sessions)
++    meta.update(profiles_scanned=len(opened), profiles_available=len(databases))
++    if profile_errors:
++        meta["profile_errors"] = profile_errors
+     return {
+         "sessions": sessions,
+         "aggregate": aggregate_stats(sessions),
+-        "scan_meta": _scan_meta(
+-            "incremental" if reused > 0 else "full", len(sessions), rescanned=rescanned, reused=reused,
+-            scanned_so_far=len(sessions), expected_total=total_sessions)}
++        "scan_meta": meta}
+ 
+ 
+ # Per-session bests: aggregate metric -> session stat key (also drives evidence_for).
+@@ -679,7 +740,7 @@ def evidence_for(definition: Dict[str, Any], sessions: List[Dict[str, Any]]) ->
+     if not sessions or key is None:
+         return None
+     s = max(sessions, key=lambda x: x.get(key, 0))
+-    return {"session_id": s.get("session_id"), "title": s.get("title"), "value": s.get(key, 0)}
++    return {"session_id": s.get("session_id"), "profile_name": s.get("profile_name"), "title": s.get("title"), "value": s.get(key, 0)}
+ 
+ 
+ # ---- Snapshot assembly ----
+diff --git a/plugins/hermes-achievements/tests/test_achievement_engine.py b/plugins/hermes-achievements/tests/test_achievement_engine.py
+index 2234209526..2d9002a469 100644
+--- a/plugins/hermes-achievements/tests/test_achievement_engine.py
++++ b/plugins/hermes-achievements/tests/test_achievement_engine.py
+@@ -1,6 +1,10 @@
+ import importlib.util
++import sys
++import tempfile
++import types
+ import unittest
+ from pathlib import Path
++from unittest.mock import patch
+ 
+ MODULE_PATH = Path(__file__).resolve().parents[1] / "dashboard" / "plugin_api.py"
+ spec = importlib.util.spec_from_file_location("plugin_api", MODULE_PATH)
+@@ -9,6 +13,59 @@ spec.loader.exec_module(plugin_api)
+ 
+ 
+ class AchievementEngineTests(unittest.TestCase):
++    def test_scan_aggregates_profiles_and_deduplicates_migrated_sessions(self):
++        rows = {
++            "default": [
++                {"id": "default-only", "title": "Default", "last_active": 10},
++                {"id": "migrated", "title": "Old copy", "last_active": 20},
++            ],
++            "writer": [
++                {"id": "writer-only", "title": "Writer", "last_active": 30},
++                {"id": "migrated", "title": "New copy", "last_active": 40},
++            ],
++        }
++
++        opened_databases = []
++
++        class FakeDB:
++            def __init__(self, db_path=None, read_only=False):
++                self.profile = Path(str(db_path)).parent.name
++                self.read_only = read_only
++                self.closed = False
++                opened_databases.append(self)
++
++            def list_sessions_rich(self, **_kwargs):
++                return rows[self.profile]
++
++            def get_messages(self, session_id):
++                return [{"role": "user", "content": f"{self.profile}:{session_id}"}]
++
++            def close(self):
++                self.closed = True
++
++        fake_state = types.ModuleType("hermes_state")
++        setattr(fake_state, "SessionDB", FakeDB)
++
++        with tempfile.TemporaryDirectory() as tmp, \
++                patch.dict(sys.modules, {"hermes_state": fake_state}), \
++                patch.object(plugin_api, "_profile_databases", return_value=[
++                    ("default", Path("/profiles/default/state.db")),
++                    ("writer", Path("/profiles/writer/state.db")),
++                ]), \
++                patch.object(plugin_api, "_data_dir", return_value=Path(tmp)):
++            scan = plugin_api.scan_sessions()
++
++        self.assertEqual(scan["aggregate"]["session_count"], 3)
++        self.assertEqual({db.profile for db in opened_databases}, set(rows))
++        self.assertTrue(all(db.read_only and db.closed for db in opened_databases))
++        self.assertEqual(scan["scan_meta"]["profiles_scanned"], 2)
++        migrated = next(s for s in scan["sessions"] if s["session_id"] == "migrated")
++        self.assertEqual(migrated["profile_name"], "writer")
++        self.assertEqual(migrated["title"], "New copy")
++        evidence = plugin_api.evidence_for(
++            {"threshold_metric": "max_messages_in_session"}, scan["sessions"])
++        self.assertEqual(evidence["profile_name"], "writer")
++
+     def test_tool_call_stats_detect_tool_names_and_errors(self):
+         messages = [
+             {"role": "assistant", "tool_calls": [{"function": {"name": "terminal"}}]},
+diff --git a/plugins/kanban/dashboard/dist/index.js b/plugins/kanban/dashboard/dist/index.js
+index dc582a7660..cf0dc05fd6 100644
+--- a/plugins/kanban/dashboard/dist/index.js
++++ b/plugins/kanban/dashboard/dist/index.js
+@@ -278,6 +278,8 @@
+ 
+   function readSelectedBoard() {
+     try {
++      const linked = new URLSearchParams(window.location.search).get("board");
++      if (linked && linked.trim()) return linked.trim();
+       const v = window.localStorage.getItem(LS_BOARD_KEY);
+       return (v || "").trim() || null;
+     } catch (_e) { return null; }
+@@ -285,6 +287,10 @@
+ 
+   function writeSelectedBoard(slug) {
+     try {
++      const url = new URL(window.location.href);
++      if (slug) url.searchParams.set("board", slug);
++      else url.searchParams.delete("board");
++      window.history.replaceState(window.history.state, "", url);
+       // Persist the user's dashboard-side board pin even for "default".
+       // Previously this stripped "default" to keep localStorage empty,
+       // but the fetch layer read that absence as "no opinion" and fell
+@@ -1147,6 +1153,7 @@
+       cursorRef.current = 0;
+       setLoading(true);
+       setBoard(nextSlug);
++      setSelectedTaskId(null);
+       writeSelectedBoard(nextSlug);
+       // Reset filters so stale search/tenant/assignee don't persist across boards.
+       setSearch("");
+@@ -2919,6 +2926,7 @@
+         colHelp || ""),
+       showCreate ? h(InlineCreate, {
+         columnName: props.column.name,
++        defaultAssignee: (props.boardMeta && props.boardMeta.default_assignee) || "",
+         allTasks: props.allTasks,
+         defaultWorkspaceKind: (props.boardMeta && props.boardMeta.default_workspace_kind) || "scratch",
+         defaultWorkspacePath: (props.boardMeta && props.boardMeta.default_workdir) || "",
+@@ -3164,7 +3172,7 @@
+   function InlineCreate(props) {
+     const { t } = useI18n();
+     const [title, setTitle] = useState("");
+-    const [assignee, setAssignee] = useState("");
++    const [assignee, setAssignee] = useState(props.defaultAssignee || "");
+     const [priority, setPriority] = useState(0);
+     const [parent, setParent] = useState("");
+     const [skills, setSkills] = useState("");
+diff --git a/plugins/kanban/dashboard/plugin_api.py b/plugins/kanban/dashboard/plugin_api.py
+index b15ed8af72..c6190a0317 100644
+--- a/plugins/kanban/dashboard/plugin_api.py
++++ b/plugins/kanban/dashboard/plugin_api.py
+@@ -358,6 +358,7 @@ def get_task(
+         _attach_diagnostics(task_d, _compute_task_diagnostics(conn, task_ids=[task_id]).get(task_id) or [])
+         return {
+             "task": task_d,
++            "board_default_assignee": kanban_db.read_board_metadata(board).get("default_assignee"),
+             "comments": [asdict(c) for c in kanban_db.list_comments(conn, task_id)],
+             "events": [asdict(e) for e in kanban_db.list_events(conn, task_id)],
+             "attachments": [_attachment_dict(a) for a in kanban_db.list_attachments(conn, task_id)],
+@@ -1241,6 +1242,7 @@ def model_options():
+ 
+ class CreateBoardBody(BaseModel):
+     slug: str
++    default_assignee: Optional[str] = None
+     name: Optional[str] = None
+     description: Optional[str] = None
+     icon: Optional[str] = None
+@@ -1252,6 +1254,7 @@ class CreateBoardBody(BaseModel):
+ 
+ 
+ class RenameBoardBody(BaseModel):
++    default_assignee: Optional[str] = None
+     name: Optional[str] = None
+     description: Optional[str] = None
+     icon: Optional[str] = None
+@@ -1278,7 +1281,8 @@ class ImportBoardBody(BaseModel):
+ 
+ def _board_display_kwargs(p: BaseModel) -> dict[str, Any]:
+     """Display-metadata fields shared by create_board / write_board_metadata."""
+-    return {"name": p.name, "description": p.description, "icon": p.icon, "color": p.color}
++    return {"name": p.name, "description": p.description, "icon": p.icon, "color": p.color,
++            "default_assignee": p.default_assignee}
+ 
+ 
+ def _resolve_project(ref: Optional[str]) -> tuple[Optional[str], Optional[str], Optional[str]]:
+@@ -1411,8 +1415,9 @@ def rename_board(slug: str, payload: RenameBoardBody):
+                 default_workdir = primary_path
+         else:
+             project_id = ""  # clear the scope
+-    meta = kanban_db.write_board_metadata(
+-        normed, default_workdir=default_workdir, project_id=project_id, **_board_display_kwargs(payload))
++    with _value_error_400():
++        meta = kanban_db.write_board_metadata(
++            normed, default_workdir=default_workdir, project_id=project_id, **_board_display_kwargs(payload))
+     return {"board": _annotate_board_meta(meta)}
+ 
+ 
+diff --git a/plugins/plugin_loader.py b/plugins/plugin_loader.py
+index 279b277c9d..4e9389454b 100644
+--- a/plugins/plugin_loader.py
++++ b/plugins/plugin_loader.py
+@@ -5,6 +5,8 @@ or an ABC-subclass fallback."""
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import contextlib
+ import importlib.machinery
+ import importlib.util
+@@ -29,7 +31,7 @@ def user_plugins_dir() -> Optional[Path]:
+     """Return ``$HERMES_HOME/plugins/`` or None if unavailable."""
+     try:
+         from hermes_constants import get_hermes_home
+-        d = get_hermes_home() / "plugins"
++        d = plugin_install_root(get_hermes_home())
+         return d if d.is_dir() else None
+     except Exception:
+         return None
+diff --git a/plugins/plugin_storage.py b/plugins/plugin_storage.py
+index d1ace9f41c..868d27b400 100644
+--- a/plugins/plugin_storage.py
++++ b/plugins/plugin_storage.py
+@@ -8,6 +8,8 @@ Usage: ``plugin_data_dir("my-plugin") / "state.json"``; ``plugin_db("my-plugin")
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_data_root
++
+ import re
+ import sqlite3
+ from pathlib import Path
+@@ -28,7 +30,7 @@ def plugin_data_dir(name: str) -> Path:
+     """Return (and create) ``<hermes home>/plugin-data/<name>/``; resolves ``get_hermes_home()`` on
+     every call so it follows the active profile — don't cache across profile switches."""
+     from hermes_constants import get_hermes_home
+-    root = get_hermes_home() / "plugin-data" / _validate_name(name)
++    root = plugin_data_root(get_hermes_home()) / _validate_name(name)
+     root.mkdir(parents=True, exist_ok=True)
+     return root
+ 
+diff --git a/providers/__init__.py b/providers/__init__.py
+index 59d1c75de8..14232c1afd 100644
+--- a/providers/__init__.py
++++ b/providers/__init__.py
+@@ -32,6 +32,8 @@ Usage::
+ 
+ from __future__ import annotations
+ 
++from hermes_cli.plugin_paths import plugin_install_root
++
+ import importlib
+ import importlib.util
+ import logging
+@@ -107,7 +109,7 @@ def _user_plugins_dir() -> Path | None:
+     try:
+         from hermes_constants import get_hermes_home
+ 
+-        d = get_hermes_home() / "plugins" / "model-providers"
++        d = plugin_install_root(get_hermes_home()) / "model-providers"
+         return d if d.is_dir() else None
+     except Exception:
+         return None
+@@ -123,7 +125,7 @@ def _installed_plugins_dir() -> Path | None:
+     try:
+         from hermes_constants import get_hermes_home
+ 
+-        d = get_hermes_home() / "plugins"
++        d = plugin_install_root(get_hermes_home())
+         return d if d.is_dir() else None
+     except Exception:
+         return None
+diff --git a/tests/agent/test_codex_cron_activity.py b/tests/agent/test_codex_cron_activity.py
+new file mode 100644
+index 0000000000..47b846c8d6
+--- /dev/null
++++ b/tests/agent/test_codex_cron_activity.py
+@@ -0,0 +1,40 @@
++from types import SimpleNamespace
++from unittest.mock import Mock
++import threading
++import pytest
++from agent.codex_runtime import make_codex_app_server_event_bridge
++from agent.transports.codex_app_server_session import CodexAppServerSession, TurnResult
++
++
++def test_work_events_refresh_activity_but_keepalives_do_not():
++    agent = SimpleNamespace(_touch_activity=Mock())
++    bridge = make_codex_app_server_event_bridge(agent)
++    bridge({'method': 'thread/tokenUsage/updated', 'params': {}})
++    agent._touch_activity.assert_not_called()
++    bridge({'method': 'item/agentMessage/delta', 'params': {'delta': 'research'}})
++    bridge({'method': 'item/completed', 'params': {'item': {'type': 'commandExecution', 'id': 'a', 'command': 'true'}}})
++    assert agent._touch_activity.call_count == 2
++
++
++@pytest.mark.parametrize('deadline, expected_interrupted', [(None, False), (600.0, True)])
++def test_cron_can_outlive_absolute_deadline_but_explicit_deadline_still_works(monkeypatch, deadline, expected_interrupted):
++    import agent.transports.codex_app_server_session as mod
++    clock = [0.0]
++    monkeypatch.setattr(mod.time, 'monotonic', lambda: clock[0])
++    session = CodexAppServerSession.__new__(CodexAppServerSession)
++    session._interrupt_event = threading.Event()
++    session._thread_id = 'thread'
++    session._subprocess_died = lambda result: False
++    session._issue_interrupt = Mock()
++    session._format_error_with_stderr = lambda text: text
++    notes = iter(['item/started', 'item/completed', 'turn/completed'])
++    def take_notification(timeout):
++        clock[0] += 400
++        return {'method': next(notes), 'params': {'threadId': 'thread', 'turnId': 'turn'}}
++    session._client = SimpleNamespace(take_server_request=lambda timeout: None, take_notification=take_notification)
++    result = TurnResult(turn_id='turn', thread_id='thread')
++    session._drive_turn(result, turn_timeout=deadline, notification_poll_timeout=0,
++                       timeout_label='turn', on_server_request=lambda req: False,
++                       on_note=lambda note, method: method == 'turn/completed')
++    assert result.interrupted is expected_interrupted
++    assert session._issue_interrupt.called is expected_interrupted
+diff --git a/tests/agent/transports/test_codex_mcp_approval.py b/tests/agent/transports/test_codex_mcp_approval.py
+new file mode 100644
+index 0000000000..0898fe05f9
+--- /dev/null
++++ b/tests/agent/transports/test_codex_mcp_approval.py
+@@ -0,0 +1,17 @@
++from unittest.mock import Mock
++import pytest
++from agent.transports.codex_app_server_session import CodexAppServerSession
++
++@pytest.mark.parametrize("server", ["hermes-tools", "hermes-mcp"])
++def test_managed_mcp_approval(server):
++    session = CodexAppServerSession()
++    session._client = Mock()
++    session._handle_server_request({"id": 17, "method": "mcpServer/elicitation/request", "params": {"serverName": server, "message": "Allow kanban_show?"}})
++    session._client.respond.assert_called_once_with(17, {"action": "accept", "content": None, "_meta": None})
++
++@pytest.mark.parametrize("server", ["external", "hermes-mcp-other", "", None])
++def test_unmanaged_mcp_approval(server):
++    session = CodexAppServerSession()
++    session._client = Mock()
++    session._handle_server_request({"id": 18, "method": "mcpServer/elicitation/request", "params": {"serverName": server}})
++    session._client.respond.assert_called_once_with(18, {"action": "decline", "content": None, "_meta": None})
+diff --git a/tests/agent/transports/test_codex_startup_retry.py b/tests/agent/transports/test_codex_startup_retry.py
+new file mode 100644
+index 0000000000..a1ee2b7275
+--- /dev/null
++++ b/tests/agent/transports/test_codex_startup_retry.py
+@@ -0,0 +1,36 @@
++from unittest.mock import patch
++import pytest
++from agent.transports.codex_app_server_session import CodexAppServerSession
++from agent.transports.codex_app_server import CodexAppServerError
++
++class Client:
++    def __init__(self, error=None): self.error=error; self.closed=False; self.calls=[]
++    def initialize(self, **kw):
++        self.calls.append(('initialize',kw))
++        if self.error: raise self.error
++    def close(self): self.closed=True
++    def request(self, method, params, timeout):
++        self.calls.append((method,params));return {'thread':{'id':'one'}}
++
++def test_timeout_restarts_before_any_turn_and_closes_first_client():
++    first,second=Client(TimeoutError('cold')),Client()
++    with patch('agent.transports.codex_app_server_session._get_hermes_version',return_value='test'):
++        session=CodexAppServerSession(client_factory=lambda **kw: first if not first.closed else second)
++        assert session.ensure_started()=='one'
++        assert first.closed
++        assert [x[0] for x in first.calls]==['initialize']
++        assert [x[0] for x in second.calls]==['initialize','thread/start']
++        assert second.calls[0][1]['timeout']>10
++        assert session.ensure_started()=='one'
++        assert len(second.calls)==2
++
++def test_retry_budget_and_protocol_errors():
++    clients=[]
++    def factory(**kw):
++        c=Client(TimeoutError('still cold'));clients.append(c);return c
++    with patch('agent.transports.codex_app_server_session._get_hermes_version',return_value='test'):
++        with pytest.raises(TimeoutError):CodexAppServerSession(client_factory=factory).ensure_started()
++        assert len(clients)==2
++        bad=Client(CodexAppServerError(-1,'bad config'))
++        with pytest.raises(CodexAppServerError):CodexAppServerSession(client_factory=lambda **kw:bad).ensure_started()
++        assert len(bad.calls)==1
+diff --git a/tests/agent/transports/test_mcp_kanban_handoff.py b/tests/agent/transports/test_mcp_kanban_handoff.py
+new file mode 100644
+index 0000000000..4725fbfa2f
+--- /dev/null
++++ b/tests/agent/transports/test_mcp_kanban_handoff.py
+@@ -0,0 +1,93 @@
++"""Real MCP dispatch must preserve file handoffs in native card attachments."""
++import asyncio
++import base64
++import json
++import os
++from pathlib import Path
++
++import pytest
++
++from hermes_cli import kanban_db as kb, kanban_db_connect as kbc, kanban_db_workspace as kbw
++from agent.transports.hermes_tools_mcp_server import _build_server
++
++
++@pytest.fixture
++def handoff(tmp_path, monkeypatch):
++    for key in tuple(os.environ):
++        if key.startswith('HERMES_KANBAN_') or key == 'HERMES_DELEGATED_CHILD_CONTEXT':
++            monkeypatch.delenv(key)
++    home = tmp_path / '.hermes'
++    home.mkdir()
++    monkeypatch.setenv('HERMES_HOME', str(home))
++    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
++    kb.init_db()
++    with kbc.connect() as conn:
++        tid = kb.create_task(conn, title='Export spreadsheet', assignee='test-worker')
++        ws = kbw.resolve_workspace(kb.get_task(conn, tid))
++        kbw.set_workspace_path(conn, tid, ws)
++        kb.claim_task(conn, tid)
++        run_id = kb.get_task(conn, tid).current_run_id
++    monkeypatch.setenv('HERMES_KANBAN_TASK', tid)
++    monkeypatch.setenv('HERMES_KANBAN_RUN_ID', str(run_id))
++    from tools.registry import invalidate_check_fn_cache
++    invalidate_check_fn_cache()
++    import model_tools
++    original_definitions = model_tools.get_tool_definitions
++    monkeypatch.setattr(model_tools, "get_tool_definitions",
++                        lambda **kw: original_definitions(enabled_toolsets=["kanban"], **kw))
++    server = _build_server()
++    def call(name, **args):
++        result = asyncio.run(server.call_tool(name, args))
++        return json.loads(result.content[0].text)
++    return tid, ws, call, server
++
++
++@pytest.mark.parametrize('tool', ['kanban_complete', 'kanban_request_review'])
++@pytest.mark.parametrize('mode', ['scratch', 'attached', 'no_files'])
++def test_mcp_handoff_uses_native_attachments(handoff, tool, mode):
++    tid, ws, call, server = handoff
++    payload = b'file handoff integrity fixture'
++    paths = []
++    if mode == 'scratch':
++        file = ws / 'report.xlsx'
++        file.write_bytes(payload)
++        paths = [str(file)]
++    elif mode == 'attached':
++        assert call('kanban_attach', filename='report.xlsx', content_base64=base64.b64encode(payload).decode())['ok']
++        call('kanban_attachments')
++        with kbc.connect() as conn:
++            paths = [kb.list_attachments(conn, tid)[0].stored_path]
++    result = call(tool, summary='Verified export', artifacts=paths)
++    assert result.get('ok'), result
++    with kbc.connect() as conn:
++        assert kb.get_task(conn, tid).status == ('done' if tool == 'kanban_complete' else 'review')
++        attachments = kb.list_attachments(conn, tid)
++        if mode == 'no_files':
++            assert attachments == []
++        else:
++            assert len(attachments) == 1
++            assert Path(attachments[0].stored_path).read_bytes() == payload
++            assert kb.latest_run(conn, tid).metadata['artifacts'] == [attachments[0].stored_path]
++
++
++@pytest.mark.parametrize('tool', ['kanban_complete', 'kanban_request_review'])
++def test_bad_handoff_keeps_task_running(handoff, tool, tmp_path, monkeypatch):
++    tid, ws, call, server = handoff
++    file = tmp_path / 'report.xlsx'
++    file.write_bytes(b'outside task workspace')
++    for args in [
++        {'metadata': {'workbook': str(file)}},
++        {'artifacts': [str(file)]},
++        {'artifacts': [], 'metadata': {'artifacts': [str(file)]}},
++        {'artifacts': [str(ws / 'missing.xlsx')]},
++    ]:
++        result = call(tool, summary='Exported', **args)
++        assert 'error' in result, result
++        with kbc.connect() as conn:
++            assert kb.get_task(conn, tid).status == 'running'
++            assert kb.list_attachments(conn, tid) == []
++    monkeypatch.setenv('HERMES_DELEGATED_CHILD_CONTEXT', '1')
++    result = call(tool, summary='No files', artifacts=[])
++    assert 'error' in result
++    with kbc.connect() as conn:
++        assert kb.get_task(conn, tid).status == 'running'
+diff --git a/tests/plugins/test_grouped_plugin_layout.py b/tests/plugins/test_grouped_plugin_layout.py
+new file mode 100644
+index 0000000000..9e9e7a55ff
+--- /dev/null
++++ b/tests/plugins/test_grouped_plugin_layout.py
+@@ -0,0 +1,53 @@
++import json
++import pytest
++from hermes_constants import set_hermes_home_override, reset_hermes_home_override
++from hermes_cli.plugin_paths import plugin_install_root, plugin_data_root
++
++@pytest.mark.parametrize('grouped', [False, True])
++def test_real_install_discovery_and_data_are_separate(tmp_path, grouped):
++    from hermes_cli.plugins_cmd import _plugins_dir
++    from hermes_cli.plugins_discovery import collect_directory_manifests
++    from plugins.plugin_storage import plugin_data_dir
++    from hermes_cli.plugins_state import PluginState
++    if grouped:
++        (tmp_path/'plugins/dist').mkdir(parents=True)
++    token=set_hermes_home_override(tmp_path)
++    try:
++        install=_plugins_dir()
++        plugin=install/'layout-probe';plugin.mkdir()
++        (plugin/'plugin.yaml').write_text('name: layout-probe\nversion: 1.0.0\ndescription: Layout probe\n')
++        actual=[m for m in collect_directory_manifests() if m.source=='user']
++        assert any(m.name=='layout-probe' for m in actual)
++        root=plugin_data_dir('layout-probe')
++        (root/'retained.json').write_text('{"value":1}')
++        assert install not in root.parents
++        assert PluginState('layout-probe', 'layout-probe').data_dir.parent == root.parent
++        assert install==plugin_install_root(tmp_path)
++        assert root.parent==plugin_data_root(tmp_path)
++        import shutil
++        shutil.rmtree(plugin)
++        assert json.loads((root/'retained.json').read_text())['value']==1
++        if grouped:
++            assert install==tmp_path/'plugins/dist'
++            assert root==tmp_path/'plugins/data/layout-probe'
++    finally:
++        reset_hermes_home_override(token)
++
++def test_profile_layout_is_independent(tmp_path):
++    (tmp_path/'plugins/dist').mkdir(parents=True)
++    profile=tmp_path/'profiles/other';profile.mkdir(parents=True)
++    assert plugin_install_root(profile)==profile/'plugins'
++    assert plugin_data_root(profile)==profile/'plugin-data'
++
++
++def test_dashboard_only_loads_dist(tmp_path, monkeypatch):
++    from hermes_cli import web_server_dashboard as dashboard
++    install=tmp_path/'plugins/dist'
++    for tree in ['dist', 'src', 'data']:
++        folder=tmp_path/'plugins'/tree/tree/'dashboard'
++        folder.mkdir(parents=True)
++        (folder/'manifest.json').write_text(json.dumps({'name':tree,'version':'1.0.0'}))
++    monkeypatch.setattr(dashboard,'get_process_hermes_home',lambda:tmp_path)
++    found=dashboard._discover_dashboard_plugins()
++    assert any(p['name']=='dist' and p['source']=='user' for p in found)
++    assert not any(p['name'] in ['src','data'] for p in found)
+diff --git a/tests/plugins/test_kanban_board_profiles.py b/tests/plugins/test_kanban_board_profiles.py
+new file mode 100644
+index 0000000000..c7c7c52b51
+--- /dev/null
++++ b/tests/plugins/test_kanban_board_profiles.py
+@@ -0,0 +1,68 @@
++"""Real REST/SQLite routing across boards, including unavailable profiles."""
++
++import importlib.util
++import sys
++from pathlib import Path
++
++import pytest
++from fastapi import FastAPI
++from fastapi.testclient import TestClient
++
++from hermes_cli import kanban_db as kb
++from hermes_cli import kanban_db_connect as kbc
++from hermes_cli import kanban_db_dispatch as kbd
++
++
++@pytest.fixture
++def client(tmp_path, monkeypatch):
++    home = tmp_path / '.hermes'
++    home.mkdir()
++    monkeypatch.setenv('HERMES_HOME', str(home))
++    monkeypatch.setenv('HERMES_KANBAN_HOME', str(home))
++    monkeypatch.setattr(Path, 'home', lambda: tmp_path)
++    for name in ('health-advisor', 'finance-advisor'):
++        (home / 'profiles' / name).mkdir(parents=True)
++    path = Path(__file__).resolve().parents[2] / 'plugins/kanban/dashboard/plugin_api.py'
++    spec = importlib.util.spec_from_file_location('kanban_board_profiles_api', path)
++    mod = importlib.util.module_from_spec(spec)
++    sys.modules[spec.name] = mod
++    spec.loader.exec_module(mod)
++    app = FastAPI()
++    app.include_router(mod.router)
++    with TestClient(app) as client:
++        yield client
++
++
++def test_board_routing_inherits_and_explicit_assignment_wins(client):
++    for slug, profile in [('health', 'health-advisor'), ('money', 'finance-advisor')]:
++        response = client.post('/boards', json={'slug': slug, 'default_assignee': profile})
++        assert response.status_code == 200, response.text
++        assert response.json()['board']['default_assignee'] == profile
++        created = client.post(f'/tasks?board={slug}', json={'title': 'inherited', 'triage': True})
++        assert created.status_code == 200, created.text
++        task = created.json()['task']
++        assert (task['assignee'], task['status']) == (profile, 'triage')
++        detail = client.get(f"/tasks/{task['id']}?board={slug}").json()
++        assert detail['board_default_assignee'] == profile
++        explicit = client.post(f'/tasks?board={slug}', json={'title': 'override', 'assignee': 'default', 'triage': True})
++        assert explicit.json()['task']['assignee'] == 'default'
++    assert client.patch('/boards/health', json={'name': 'Health'}).json()['board']['default_assignee'] == 'health-advisor'
++
++
++def test_dispatch_uses_board_default_and_never_substitutes_missing_profile(client):
++    kb.create_board('health')
++    with kbc.connect_closing(board='health') as conn:
++        tid = kb.create_task(conn, title='existing unassigned', board='health')
++        kb.write_board_metadata('health', default_assignee='health-advisor')
++        result = kbd.dispatch_once(conn, board='health', dry_run=True, default_assignee='finance-advisor')
++        assert any(t == tid and who == 'health-advisor' for t, who, _ in result.spawned)
++        # A profile removed after configuration must block routing, not use the global default.
++        from hermes_cli.profiles import get_profile_dir
++        get_profile_dir('health-advisor').rmdir()
++        result = kbd.dispatch_once(conn, board='health', dry_run=True, default_assignee='finance-advisor')
++        assert not result.spawned
++        assert result.skipped_nonspawnable
++    response = client.post('/tasks?board=health', json={'title': 'missing', 'triage': True})
++    assert response.status_code == 400
++    assert client.patch('/boards/health', json={'default_assignee': 'missing'}).status_code == 400
++    assert kb.read_board_metadata('health')['default_assignee'] == 'health-advisor'
+diff --git a/web/src/pages/SessionsPage.test.tsx b/web/src/pages/SessionsPage.test.tsx
+index a621835544..bbf5e1f521 100644
+--- a/web/src/pages/SessionsPage.test.tsx
++++ b/web/src/pages/SessionsPage.test.tsx
+@@ -1,8 +1,8 @@
+ // @vitest-environment jsdom
+ import { act } from "react";
+ import { createRoot, type Root } from "react-dom/client";
+-import { MemoryRouter } from "react-router";
+-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
++import { MemoryRouter, useLocation } from "react-router";
++import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+ 
+ const apiMocks = vi.hoisted(() => ({
+   getSessions: vi.fn(),
+@@ -35,6 +35,20 @@ let container: HTMLDivElement;
+ let root: Root;
+ (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
+ 
++const loadPageModules = () => Promise.all([
++  import("./SessionsPage"),
++  import("@/i18n"),
++  import("@/contexts/SystemActions"),
++  import("@/contexts/ProfileProvider"),
++  import("@/contexts/PageHeaderProvider"),
++]);
++let pageModules: Awaited<ReturnType<typeof loadPageModules>>;
++
++// Cold Vite transforms are setup work, not part of the interaction timeout.
++beforeAll(async () => {
++  pageModules = await loadPageModules();
++}, 60_000);
++
+ async function waitFor(cond: () => boolean, timeoutMs = 5000) {
+   const start = Date.now();
+   while (!cond()) {
+@@ -52,34 +66,39 @@ function click(el: Element | null) {
+ 
+ const button = (label: string) => document.querySelector(`button[aria-label="${label}"]`);
+ 
+-async function renderSessionsPage(rows: Record<string, unknown>[]) {
+-  // Page list uses limit 20; the overview tab's recent-cards fetch uses 50 —
+-  // keep the overview empty so the list view (with row actions) renders.
+-  apiMocks.getSessions.mockImplementation(async (limit: number) => ({
+-    sessions: limit >= 50 ? [] : rows,
+-    total: limit >= 50 ? 0 : rows.length,
+-    limit,
+-    offset: 0,
+-  }));
++function LocationProbe() {
++  const location = useLocation();
++  return <output data-testid="location">{`${location.pathname}${location.search}`}</output>;
++}
++
++async function renderSessionsPage(
++  rows: Record<string, unknown>[],
++  view: "list" | "overview" = "list",
++) {
++  apiMocks.getSessions.mockImplementation(async (limit: number) => {
++    const isOverviewRequest = limit >= 50;
++    const includeRows = isOverviewRequest === (view === "overview");
++    return {
++      sessions: includeRows ? rows : [],
++      total: includeRows ? rows.length : 0,
++      limit,
++      offset: 0,
++    };
++  });
+   const [{ default: SessionsPage }, { I18nProvider }, { SystemActionsProvider }, { ProfileProvider }, { PageHeaderProvider }] =
+-    await Promise.all([
+-      import("./SessionsPage"),
+-      import("@/i18n"),
+-      import("@/contexts/SystemActions"),
+-      import("@/contexts/ProfileProvider"),
+-      import("@/contexts/PageHeaderProvider"),
+-    ]);
++    pageModules;
+   container = document.createElement("div");
+   document.body.append(container);
+   root = createRoot(container);
+   await act(async () =>
+     root.render(
+       <I18nProvider>
+-        <MemoryRouter>
++        <MemoryRouter initialEntries={["/sessions"]}>
+           <SystemActionsProvider>
+             <ProfileProvider>
+               <PageHeaderProvider pluginTabs={[]}>
+                 <SessionsPage />
++                <LocationProbe />
+               </PageHeaderProvider>
+             </ProfileProvider>
+           </SystemActionsProvider>
+@@ -87,7 +106,11 @@ async function renderSessionsPage(rows: Record<string, unknown>[]) {
+       </I18nProvider>,
+     ),
+   );
+-  await waitFor(() => Boolean(button("Delete session")));
++  await waitFor(() =>
++    view === "overview"
++      ? container.textContent?.includes("Recent session") === true
++      : Boolean(button("Delete session")),
++  );
+ }
+ 
+ beforeEach(() => {
+@@ -150,5 +173,27 @@ describe("SessionsPage per-row profile routing (#99387)", () => {
+     );
+     await act(async () => click(confirm ?? null));
+     expect(apiMocks.deleteSession).toHaveBeenCalledWith("sid-guanli", "guanli");
+-  });
++  }, 15_000);
++});
++
++describe("SessionsPage overview session cards", () => {
++  it("opens the selected session in chat with one accessible card activation", async () => {
++    await renderSessionsPage([
++      { id: "sid-recent", profile: "default", source: "cli", model: null, title: "Recent session", started_at: 1, ended_at: 2,
++        last_active: 2, is_active: false, message_count: 2, tool_call_count: 0, input_tokens: 1, output_tokens: 1, preview: "hello" },
++    ], "overview");
++
++    const title = Array.from(container.querySelectorAll("span")).find(
++      (element) => element.textContent === "Recent session",
++    );
++    const cardButton = title?.closest<HTMLButtonElement>("button") ?? null;
++    expect(cardButton).not.toBeNull();
++
++    cardButton?.focus();
++    expect(document.activeElement).toBe(cardButton);
++    await act(async () => click(cardButton));
++    expect(container.querySelector('[data-testid="location"]')?.textContent).toBe(
++      "/chat?resume=sid-recent",
++    );
++  }, 15_000);
+ });
+diff --git a/web/src/pages/SessionsPage.tsx b/web/src/pages/SessionsPage.tsx
+index 8115cd5742..0ecb2461cd 100644
+--- a/web/src/pages/SessionsPage.tsx
++++ b/web/src/pages/SessionsPage.tsx
+@@ -813,6 +813,7 @@ function SessionsPagination({
+ }
+ 
+ export default function SessionsPage() {
++  const navigate = useNavigate();
+   const [sessions, setSessions] = useState<SessionInfo[]>([]);
+   const [total, setTotal] = useState(0);
+   const [page, setPage] = useState(0);
+@@ -2140,47 +2141,61 @@ export default function SessionsPage() {
+ 
+               <CardContent className="grid min-w-0 gap-3">
+                 {recentSessions.map((s) => (
++                  // Match OZW's card structure: navigation owns one native button,
++                  // while any card actions remain siblings and cannot bubble into it.
+                   <div
+                     key={s.id}
+-                    className="flex min-w-0 max-w-full flex-col gap-2 border border-border p-3 sm:flex-row sm:items-center sm:justify-between"
++                    className="min-w-0 max-w-full border border-border"
+                   >
+-                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+-                      <span
+-                        className={`font-mondwest normal-case min-w-0 truncate text-sm ${s.title ? "font-medium" : "text-muted-foreground italic"}`}
+-                      >
+-                        {s.title ??
+-                          (s.preview
+-                            ? s.preview.slice(0, 60)
+-                            : t.common.untitled)}
+-                      </span>
+-
+-                      <span className="min-w-0 break-words text-xs text-muted-foreground">
+-                        {s.model && (
+-                          <>
+-                            <span className="font-mono-ui">
+-                              {s.model.split("/").pop()}
+-                            </span>{" "}
+-                            ·{" "}
+-                          </>
++                    <button
++                      type="button"
++                      aria-label={
++                        s.title ??
++                        (s.preview ? s.preview.slice(0, 60) : t.common.untitled)
++                      }
++                      className="flex w-full min-w-0 max-w-full cursor-pointer flex-col gap-2 p-3 text-left transition-colors hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60 focus-visible:ring-inset sm:flex-row sm:items-center sm:justify-between"
++                      onClick={() =>
++                        navigate(`/chat?resume=${encodeURIComponent(s.id)}`)
++                      }
++                    >
++                      <span className="flex min-w-0 flex-1 flex-col gap-1">
++                        <span
++                          className={`font-mondwest normal-case min-w-0 truncate text-sm ${s.title ? "font-medium" : "text-muted-foreground italic"}`}
++                        >
++                          {s.title ??
++                            (s.preview
++                              ? s.preview.slice(0, 60)
++                              : t.common.untitled)}
++                        </span>
++
++                        <span className="min-w-0 break-words text-xs text-muted-foreground">
++                          {s.model && (
++                            <>
++                              <span className="font-mono-ui">
++                                {s.model.split("/").pop()}
++                              </span>{" "}
++                              ·{" "}
++                            </>
++                          )}
++                          {s.message_count} {t.common.msgs} ·{" "}
++                          {timeAgo(s.last_active)}
++                        </span>
++
++                        {s.preview && s.title && (
++                          <span className="font-mondwest normal-case min-w-0 max-w-full text-xs leading-snug text-text-tertiary [overflow-wrap:anywhere]">
++                            {s.preview}
++                          </span>
+                         )}
+-                        {s.message_count} {t.common.msgs} ·{" "}
+-                        {timeAgo(s.last_active)}
+                       </span>
+ 
+-                      {s.preview && s.title && (
+-                        <p className="font-mondwest normal-case min-w-0 max-w-full text-xs leading-snug text-text-tertiary [overflow-wrap:anywhere]">
+-                          {s.preview}
+-                        </p>
+-                      )}
+-                    </div>
+-
+-                    <Badge
+-                      tone="outline"
+-                      className="shrink-0 self-start text-xs sm:self-center"
+-                    >
+-                      <Database className="mr-1 h-3 w-3" />
+-                      {s.source ? sourceLabel(s.source) : "local"}
+-                    </Badge>
++                      <Badge
++                        tone="outline"
++                        className="shrink-0 self-start text-xs sm:self-center"
++                      >
++                        <Database className="mr-1 h-3 w-3" />
++                        {s.source ? sourceLabel(s.source) : "local"}
++                      </Badge>
++                    </button>
+                   </div>
+                 ))}
+               </CardContent>
+diff --git a/website/docs/user-guide/features/kanban.md b/website/docs/user-guide/features/kanban.md
+index 7ac47ba25f..57b9737465 100644
+--- a/website/docs/user-guide/features/kanban.md
++++ b/website/docs/user-guide/features/kanban.md
+@@ -1288,3 +1288,14 @@ Every transition appends a row to `task_events`. Each row carries an optional `r
+ ## Out of scope
+ 
+ Kanban is deliberately single-host. `~/.hermes/kanban.db` is a local SQLite file and the dispatcher spawns workers on the same machine. Running a shared board across two hosts is not supported — there's no coordination primitive for "worker X on host A, worker Y on host B," and the crash-detection path assumes PIDs are host-local. If you need multi-host, run an independent board per host and use `delegate_task` / a message queue to bridge them.
++
++### Board default profiles
++
++Each board can set `default_assignee` in its metadata, or through the board
++create/update API. New tasks without an explicit assignee inherit this profile;
++an explicit task assignee takes precedence. Dispatch also uses the board default
++for existing unassigned ready tasks before the global `kanban.default_assignee`.
++A removed profile is reported as unavailable rather than replaced by the global
++default. Setting the board field to an empty string clears the binding.
++Changing the board default does not reassign existing tasks or change their status.
++Multiple boards may share a profile while retaining separate task context.

@@ -1,0 +1,2 @@
+# Unified patches use a single space as the prefix for empty context lines.
+integrations/hermes/*.patch -whitespace

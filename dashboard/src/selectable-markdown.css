@@ -1,0 +1,9 @@
+/* Explicitly restore native selection inside the host's conversation UI. */
+.hti-rich-text,
+.hti-user-content,
+.hti-thinking-preview,
+.codex-message-body {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}

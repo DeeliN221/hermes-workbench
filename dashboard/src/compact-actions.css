@@ -1,0 +1,70 @@
+/* Preserve button semantics and tooltips while keeping the composer compact. */
+.codex-submit-actions :is(.codex-send, .codex-stop, .codex-writeback) {
+  width: 44px;
+  min-width: 44px;
+  height: 44px;
+  min-height: 44px;
+  padding: 0;
+  gap: 0;
+  flex: 0 0 44px;
+}
+
+/* Bare action icons retain their touch targets and keyboard focus indicator. */
+:root[data-workbench-shell="true"] .codex-submit-actions :is(.codex-send, .codex-stop),
+:root[data-workbench-shell="true"] .codex-submit-actions :is(.codex-send, .codex-stop):hover:not(:disabled) {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--codex-ink);
+}
+:root[data-workbench-shell="true"] .codex-submit-actions .codex-send:not(:disabled) {
+  color: var(--codex-accent-strong);
+}
+:root[data-workbench-shell="true"] .codex-submit-actions :is(.codex-send, .codex-stop):hover:not(:disabled) svg {
+  opacity: 0.75;
+}
+
+.workbench-settings-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.workbench-settings-heading h1 { margin: 0; }
+.workbench-language-control { position: relative; flex-shrink: 0; }
+.workbench-language-control > button {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid var(--dashboard-line);
+  background: var(--mc-surface, #fff);
+  color: inherit;
+  border-radius: 5px;
+  cursor: pointer;
+}
+.workbench-language-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 20;
+  min-width: 140px;
+  padding: 4px;
+  background: var(--mc-surface, #fff);
+  border: 1px solid var(--dashboard-line);
+  border-radius: 5px;
+  box-shadow: 0 4px 12px #0002;
+}
+.workbench-language-menu button {
+  display: block;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 12px;
+  text-align: left;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+}
+.workbench-language-menu button[aria-pressed="true"],
+.workbench-language-menu button:hover { background: var(--dashboard-active); }
