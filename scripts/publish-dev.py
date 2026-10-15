@@ -8,7 +8,7 @@ from pathlib import Path
 import shutil
 import tempfile
 import time
-from development_policy import load_policy
+from development_policy import load_policy, require_development_publish
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('source', type=Path, help='Dashboard directory containing manifest.json and dist/')
@@ -17,6 +17,7 @@ parser.add_argument('--backup-root', type=Path, default=Path(os.environ.get('HER
 args = parser.parse_args()
 target = args.target
 policy = load_policy()
+require_development_publish(policy)
 if policy:
     canonical = Path(policy['source']).resolve()
     if (Path(__file__).resolve().parent.parent != canonical

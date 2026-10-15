@@ -1,24 +1,42 @@
 # Development and managed instances
 
-## Development instance
+## Development and manual activation
 
-Record the authoritative source and existing plugin dashboard as absolute paths
-in a local JSON policy with `source` and `target` fields. Keep this file outside the
-repository. Set `HERMES_WORKBENCH_DEV_POLICY` to its location, or save it as
+For an everyday installation, set `"mode": "manual-release"` in its local
+policy (alongside the existing absolute `source` and `target` paths).
+`source` identifies the main checkout of one Git repository. Create feature branches
+with `git worktree add`; linked worktrees may build and test locally, while unrelated
+clones and recovery copies are rejected when this policy is present. Builds in the
+main checkout are also rejected, keeping the everyday service source untouched.
+
+```mermaid
+flowchart LR
+    W[Feature worktree] --> T[Local tests and preview]
+    T --> P[Reviewed PR]
+    P --> M[main]
+    M --> R[Verified GitHub release]
+    R --> U[User selects a version]
+    U --> I[Running instance]
+```
+
+Building, merging a PR, and publishing a release do not activate it. In
+`manual-release` mode, both `npm run deploy:dev` and the direct development
+publisher exit before building or writing installed assets. Use Settings → Version
+switching to explicitly install a published version. Keep the existing runtime
+unchanged while preparing a first managed migration; changing the policy alone
+does not convert an old development service into a full managed installation.
+
+Store the policy outside the repository at
 `$XDG_CONFIG_HOME/hermes-workbench/development.json` (default:
-`~/.config/hermes-workbench/development.json`). An explicitly configured missing
-policy is an error; `deploy:dev` always requires a policy.
+`~/.config/hermes-workbench/development.json`), or select it with
+`HERMES_WORKBENCH_DEV_POLICY`. Missing explicit policies and unknown modes fail
+closed. `deploy:dev` always requires a policy.
 
-Run `npm run deploy:dev` in the recorded source directory to type-check, test,
-build, verify provenance, and publish browser resources.
-Do not create another development checkout or build from an old recovery copy.
-Other installations can use the generic publisher described in `deploy/README.md`.
-
-The thin loader remains stable. Publishing verifies installed hashes and keeps
-rollback backups; browser loading and interaction still need validation. Backend
-changes take effect after the relevant development service restarts. Wait for
-active tasks to finish before a backend restart; never restart your own container
-while it is executing a task.
+Dedicated disposable development instances may keep `"mode": "development"`
+(the backward-compatible default) and use `npm run deploy:dev` from their configured
+source. Do not point such a policy at an everyday or managed instance. Backend
+changes in an everyday installation must travel with its selected full release,
+not a restart against a feature branch.
 
 ## Managed instance
 
