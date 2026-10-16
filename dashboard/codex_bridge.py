@@ -1848,8 +1848,9 @@ class CodexBridge:
             if existing is not None and not str(existing["thread_id"]).startswith("pending:"):
                 return existing
             workspace = self.workspace(profile, user, str(values.get("workspace_id") or values.get("workspaceId") or "") or None, values.get("cwd"))
-            session_scope = normalize_session_scope(values.get("session_scope", values.get("sessionScope")))
-            pending = existing or {"session_id": session_id, "thread_id": f"pending:{session_id}", "workspace_id": workspace["id"], "workspace_path": workspace["path"], "session_scope": session_scope, "execution_node_id": str(values.get("execution_node_id", values.get("executionNodeId")) or "")[:200], "status": "starting", "title": str(values.get("title") or "")[:80]}
+            session_scope = normalize_session_scope(values.get("sessionScope") or values.get("session_scope"))
+            execution_node_id = str(values.get("executionNodeId") or values.get("execution_node_id") or "")[:200]
+            pending = existing or {"session_id": session_id, "thread_id": f"pending:{session_id}", "workspace_id": workspace["id"], "workspace_path": workspace["path"], "session_scope": session_scope, "execution_node_id": execution_node_id, "status": "starting", "title": str(values.get("title") or "")[:80]}
             value = await self._initialize_session(user, profile, pending, values)
         return value
 
