@@ -34,6 +34,7 @@ from typing import Any, Protocol
 
 from codex_attachments import AttachmentStore
 from memory_context import build_codex_memory_instructions
+from session_scope import normalize_session_scope, policy_for_scope
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
 from pydantic import BaseModel
 
@@ -524,6 +525,7 @@ class BridgeStore:
                 CREATE TABLE IF NOT EXISTS codex_sessions (
                     user_id TEXT NOT NULL, profile TEXT NOT NULL, session_id TEXT NOT NULL,
                     thread_id TEXT NOT NULL, workspace_id TEXT NOT NULL, workspace_path TEXT NOT NULL,
+                    session_scope TEXT NOT NULL DEFAULT 'personal', execution_node_id TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'idle', title TEXT NOT NULL DEFAULT '', updated_at REAL NOT NULL,
                     PRIMARY KEY (user_id, profile, session_id)
                 );
@@ -581,6 +583,10 @@ class BridgeStore:
             session_columns = {str(row[1]) for row in self.connection.execute("PRAGMA table_info(codex_sessions)").fetchall()}
             if "title" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+            if "session_scope" not in session_columns:
+                self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN session_scope TEXT NOT NULL DEFAULT 'personal'")
+            if "execution_node_id" not in session_columns:
+                self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN execution_node_id TEXT NOT NULL DEFAULT ''")
             if "created_at" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN created_at REAL NOT NULL DEFAULT 0")
                 for row in self.connection.execute("SELECT user_id,profile,session_id,thread_id,updated_at FROM codex_sessions").fetchall():
@@ -700,13 +706,14 @@ class BridgeStore:
             try:
                 self.connection.execute(
                     """INSERT INTO codex_sessions
-                (user_id,profile,session_id,thread_id,workspace_id,workspace_path,status,title,updated_at,created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,profile,session_id) DO UPDATE SET
+                (user_id,profile,session_id,thread_id,workspace_id,workspace_path,session_scope,execution_node_id,status,title,updated_at,created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,profile,session_id) DO UPDATE SET
                 thread_id=excluded.thread_id,workspace_id=excluded.workspace_id,
-                workspace_path=excluded.workspace_path,status=excluded.status,
+                workspace_path=excluded.workspace_path,session_scope=excluded.session_scope,
+                execution_node_id=excluded.execution_node_id,status=excluded.status,
                 title=CASE WHEN excluded.title <> '' THEN excluded.title ELSE codex_sessions.title END,
                 updated_at=excluded.updated_at""",
-                    (user, profile, value["session_id"], value["thread_id"], value["workspace_id"], value["workspace_path"], value.get("status", "idle"), "" if value.get("title") == value["session_id"] else value.get("title", ""), now, now),
+                (user, profile, value["session_id"], value["thread_id"], value["workspace_id"], value["workspace_path"], normalize_session_scope(value.get("session_scope")), str(value.get("execution_node_id") or "")[:200], value.get("status", "idle"), "" if value.get("title") == value["session_id"] else value.get("title", ""), now, now),
                 )
                 self.connection.execute(
                     "INSERT OR IGNORE INTO codex_session_organization(user_id,profile,session_id) VALUES(?,?,?)",
@@ -1841,7 +1848,8 @@ class CodexBridge:
             if existing is not None and not str(existing["thread_id"]).startswith("pending:"):
                 return existing
             workspace = self.workspace(profile, user, str(values.get("workspace_id") or values.get("workspaceId") or "") or None, values.get("cwd"))
-            pending = existing or {"session_id": session_id, "thread_id": f"pending:{session_id}", "workspace_id": workspace["id"], "workspace_path": workspace["path"], "status": "starting", "title": str(values.get("title") or "")[:80]}
+            session_scope = normalize_session_scope(values.get("session_scope", values.get("sessionScope")))
+            pending = existing or {"session_id": session_id, "thread_id": f"pending:{session_id}", "workspace_id": workspace["id"], "workspace_path": workspace["path"], "session_scope": session_scope, "execution_node_id": str(values.get("execution_node_id", values.get("executionNodeId")) or "")[:200], "status": "starting", "title": str(values.get("title") or "")[:80]}
             value = await self._initialize_session(user, profile, pending, values)
         return value
 
@@ -1852,14 +1860,16 @@ class CodexBridge:
         creates a fresh empty thread; it never replays a possibly accepted turn.
         """
         pending = self.store.upsert_session(user, profile, {**pending, "status": "starting"})
+        policy = policy_for_scope(pending.get("session_scope"))
         params: dict[str, Any] = {
             "cwd": pending["workspace_path"],
             "approvalPolicy": values.get("approvalPolicy"),
-            # Codex app-server does not receive Hermes' native system prompt.
-            # Give every new thread the compact memory index and let Codex
-            # read only the relevant topic file when the task needs it.
-            "developerInstructions": build_codex_memory_instructions(),
         }
+        # Personal sessions may use the compact cross-session memory index.
+        # Repository sessions retain local context compaction but do not read
+        # the controlling Workbench's memory from an execution node.
+        if policy.cross_session_recall:
+            params["developerInstructions"] = build_codex_memory_instructions()
         for key in ("model", "sandbox", "serviceTier", "personality"):
             if values.get(key) is not None:
                 params[key] = values[key]
@@ -2481,6 +2491,10 @@ class SessionBody(BaseModel):
     workspaceId: str | None = None
     title: str | None = None
     approvalPolicy: Any = None
+    session_scope: str = "personal"
+    sessionScope: str | None = None
+    execution_node_id: str = ""
+    executionNodeId: str | None = None
 
 
 class GroupCreateBody(BaseModel):
