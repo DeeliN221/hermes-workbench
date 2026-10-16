@@ -63,6 +63,20 @@ def test_health_and_assets_are_ready_without_api_credentials(sidecar) -> None:
     assert script.headers["x-content-type-options"] == "nosniff"
 
 
+def test_capabilities_make_codex_the_only_new_chat_provider(sidecar) -> None:
+    """External Claude/Pi sessions are discoverable history, never new Workbench chats."""
+
+    _module, client = sidecar
+    response = client.get(
+        "/api/plugins/workbench/capabilities",
+        headers={"X-Hermes-Proxy-Secret": "proxy-secret", "Remote-User": "alice"},
+    )
+    assert response.status_code == 200
+    assert response.json()["newChatProviders"] == ["codex"]
+    assert response.json()["historyOnlyProviders"] == ["claude", "pi"]
+    assert response.json()["supportsExternalContinuation"] is False
+
+
 def test_thin_manifest_keeps_cached_asset_paths_without_an_in_process_api() -> None:
     """Initial migration works before Hermes naturally refreshes its plugin cache."""
 

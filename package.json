@@ -18,6 +18,7 @@
     "version:set": "python3 scripts/version.py",
     "release:package": "python3 scripts/package-release.py",
     "privacy:check": "python3 scripts/check-public-content.py",
+    "pr:check": "python3 scripts/check-pr-body.py",
     "history:check": "python3 scripts/check-history.py",
     "deploy:dev": "python3 scripts/deploy-dev.py",
     "prebuild": "python3 scripts/check-dev-source.py",

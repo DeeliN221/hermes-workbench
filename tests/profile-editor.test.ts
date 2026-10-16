@@ -10,7 +10,7 @@ describe('profile model inventory', () => {
     ] });
     expect(rows.map(row => row.slug)).toEqual(['openai-codex']);
   });
-  it('keeps authenticated custom providers without a catalog for manual model IDs', () => {
+  it('keeps authenticated compatible providers available for configuration', () => {
     expect(configuredProviders({ providers: [{ slug: 'local', authenticated: true }] }))
       .toEqual([{ slug: 'local', authenticated: true, models: [] }]);
   });
