@@ -10,6 +10,8 @@ executionNodeId + profile + sessionId + sessionScope + workspacePath
 
 The route is deliberately read-only. It does not acknowledge, mutate, compact, delete, or project a node transcript. The controller owns its local cursor and may later derive summaries, memory entries, or Kanban items from the replicated events.
 
+The companion `GET /api/plugins/workbench/codex/execution-nodes` route lists node identifiers observed for a profile. It is an index for navigation and health display, not a liveness claim; a node is considered live only after a replication request succeeds.
+
 Runtime context compaction remains a node responsibility. Replication carries the resulting durable event stream; it is not a second live agent controller and must never replay user turns.
 
 If a node restarts, the controller resumes from its last committed cursor. If the same batch is returned again, event sequence numbers make the retry idempotent.
