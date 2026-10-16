@@ -104,6 +104,9 @@ def build_bridge() -> CodexBridge:
 
     async def completed(session: dict[str, Any]) -> None:
         """Project completed history into the selected Hermes profile's durable store."""
+        if str(session.get('session_scope') or 'personal') == 'repository':
+            logger.info('Skipping Hermes projection for repository session=%s node=%s', session.get('session_id'), session.get('execution_node_id') or 'local')
+            return
         if not projection_root:
             return
         from codex_hermes import import_completed
