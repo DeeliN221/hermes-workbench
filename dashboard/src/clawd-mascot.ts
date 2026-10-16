@@ -16,7 +16,7 @@ function setClawdMascotEnabled(value: boolean): void {
   document.dispatchEvent(new Event('workbench-clawd-change'));
 }
 
-const crab = `<svg viewBox="0 0 64 48" aria-hidden="true" focusable="false" class="workbench-clawd-svg"><g fill="currentColor"><path d="M20 8h24v4h8v8h4v16h-8v8H16v-8H8V20h4v-8h8z"/><path d="M4 16h8v4H4zm48 0h8v4h-8zM8 36h8v4H8zm40 0h8v4h-8z"/></g><g fill="#242820"><rect x="20" y="16" width="8" height="8"/><rect x="36" y="16" width="8" height="8"/><rect x="28" y="28" width="8" height="4"/></g></svg>`;
+const crab = `<svg viewBox="0 0 64 48" aria-hidden="true" focusable="false" class="workbench-clawd-svg"><g fill="currentColor"><path d="M16 8h32v4h8v20h-8v4H16v-4H8V12h8z"/><path d="M12 32h8v12h-8zm12 0h8v16h-8zm16 0h8v16h-8zm12 0h8v12h-8z"/></g><g fill="#242820"><rect x="20" y="16" width="8" height="8"/><rect x="36" y="16" width="8" height="8"/></g></svg>`;
 
 function mascotMarkup(): string {
   return `<div ${MASCOT_ATTR} class="workbench-clawd" title="${uiText('Clawd 吉祥物', 'Clawd mascot')}"><span class="workbench-clawd-art">${crab}</span><span class="workbench-clawd-label">Clawd</span></div>`;
