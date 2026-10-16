@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="360" viewBox="0 0 1200 360" role="img" aria-labelledby="title desc">
+  <title id="title">Workbench body font fallback</title>
+  <desc id="desc">Before: generic system fallback can render Chinese with NSimSun. After: the theme explicitly prefers Microsoft YaHei for body text while monospace remains separate.</desc>
+  <rect width="1200" height="360" fill="#f5f7f7"/>
+  <style>
+    text { font-family: Arial, sans-serif; fill: #123e40; }
+    .label { font-size: 22px; font-weight: 700; }
+    .value { font-size: 18px; }
+  </style>
+  <text x="56" y="62" class="label">Before</text>
+  <text x="56" y="108" class="value">body → system-ui → browser fallback → NSimSun</text>
+  <text x="56" y="150" class="value">code / terminal → monospace stack</text>
+  <line x1="56" y1="184" x2="1144" y2="184" stroke="#9cc4c3"/>
+  <text x="56" y="244" class="label">After</text>
+  <text x="56" y="290" class="value">body → Microsoft YaHei UI → Microsoft YaHei → platform sans</text>
+  <text x="56" y="332" class="value">code / terminal → unchanged monospace stack</text>
+</svg>
