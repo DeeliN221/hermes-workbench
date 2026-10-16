@@ -33,3 +33,6 @@ import './compact-actions.css';
 
 import { installMobileSettings } from './mobile-settings';
 installMobileSettings();
+
+import { installClawdMascot } from './clawd-mascot';
+installClawdMascot();
