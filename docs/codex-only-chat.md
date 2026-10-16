@@ -15,5 +15,6 @@ CLI. The sidecar advertises this contract through `/api/plugins/workbench/capabi
 - `historyOnlyProviders` is `['claude', 'pi']`;
 - `supportsExternalContinuation` is `false`.
 
-The profile model editor applies the same rule and only exposes the
-authenticated `openai-codex` provider for new-chat configuration.
+The profile model editor still exposes authenticated providers. A provider
+such as DeepSeek may be configured when it is compatible with the Codex
+interface; this does not add a separate Claude/Pi web runtime.

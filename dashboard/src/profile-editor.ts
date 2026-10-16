@@ -7,12 +7,10 @@ export type EditorTab = 'description' | 'soul' | 'model';
 export type ProviderOption = { slug: string; name?: string; authenticated?: boolean; models?: string[] };
 export type ModelOptions = { providers: ProviderOption[]; provider?: string; model?: string };
 
-const WORKBENCH_CHAT_PROVIDER = 'openai-codex';
-
-/** Workbench starts conversations through Codex only; other providers remain terminal/history-only. */
+/** Only the scoped, authenticated inventory may populate the model picker. */
 export function configuredProviders(data: ModelOptions): ProviderOption[] {
   if (!Array.isArray(data.providers)) throw new Error(uiText('模型列表格式异常', 'Invalid model options response'));
-  return data.providers.filter(row => row.authenticated === true && row.slug === WORKBENCH_CHAT_PROVIDER)
+  return data.providers.filter(row => row.authenticated === true && typeof row.slug === 'string' && !!row.slug.trim())
     .map(row => ({ ...row, models: [...new Set((row.models || []).filter(model => typeof model === 'string' && !!model.trim()))] }));
 }
 
@@ -93,7 +91,7 @@ export function createProfileEditor(sdk: { React: any; hooks: any; fetchJSON: Fe
         loading ? h('p', { role: 'status' }, uiText('正在读取…', 'Loading…')) : null,
         error ? h('p', { role: 'alert' }, error, ' ', h('button', { type: 'button', disabled: busy, onClick: () => { setError(''); if (loadFailed) setEpoch((n: number) => n + 1); } }, uiText('重试', 'Retry'))) : null,
         !loading && activeTab === 'model' ? h('div', { className: 'workbench-profile-model-fields' },
-          h('p', null, uiText('Workbench 新建对话只使用 Codex。Claude 和 Pi 会话仅可从终端启动并在历史中查看。', 'Workbench starts new conversations with Codex only. Claude and Pi sessions are terminal-only and history can be viewed here.')),
+          h('p', null, uiText('网页对话通过 Codex 接口运行；兼容该接口的提供商（例如 DeepSeek）可以继续配置。Claude 和 Pi 会话仅可从终端启动并在历史中查看。', 'Web chats use the Codex interface; compatible providers such as DeepSeek can still be configured. Claude and Pi sessions are terminal-only and history can be viewed here.')),
           providers.length ? h('label', null, uiText('提供商', 'Provider'), h('select', { 'aria-label': uiText('提供商', 'Provider'), value: provider, disabled: busy, onChange: (event: any) => { const value = event.target.value; setProvider(value); setModel(providers.find((p: ProviderOption) => p.slug === value)?.models?.[0] || ''); } },
             !provider ? h('option', { value: '', disabled: true }, uiText('请选择已配置的提供商', 'Select a configured provider')) : null,
             providers.map((p: ProviderOption) => h('option', { key: p.slug, value: p.slug }, p.name || p.slug)))) : h('p', null, uiText('此档案没有已配置的模型提供商，请先完成提供商配置。', 'No configured providers for this profile. Configure a provider first.')),

@@ -10,9 +10,9 @@ describe('profile model inventory', () => {
     ] });
     expect(rows.map(row => row.slug)).toEqual(['openai-codex']);
   });
-  it('hides authenticated non-Codex providers from new-chat configuration', () => {
+  it('keeps authenticated compatible providers available for configuration', () => {
     expect(configuredProviders({ providers: [{ slug: 'local', authenticated: true }] }))
-      .toEqual([]);
+      .toEqual([{ slug: 'local', authenticated: true, models: [] }]);
   });
   it('deduplicates suggestions without mutating the shared API inventory', () => {
     const provider = { slug: 'openai-codex', authenticated: true, models: ['gpt-6.1-sol', 'gpt-6.1-sol', ''] };
