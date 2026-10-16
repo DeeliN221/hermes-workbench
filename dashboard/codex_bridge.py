@@ -2606,6 +2606,39 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
 
         return await service.history_preview(_user(request), _safe(profile, "profile"), _safe(session_id, "session"), min(max(turns, 1), _PREVIEW_TURN_LIMIT))
 
+    @router.get("/session/replication")
+    async def session_replication(request: Request, profile: str, session_id: str, after: int = 0, limit: int = 100) -> dict[str, Any]:
+        """Expose a read-only, cursor-based batch for a controlling Workbench.
+
+        The execution node remains the only writer. A controller can poll this
+        route, persist the returned cursor, and retry the same range safely.
+        """
+
+        user = _user(request)
+        normalized_profile = _safe(profile, "profile")
+        normalized_session = _safe(session_id, "session")
+        session = await asyncio.to_thread(service.store.session, user, normalized_profile, normalized_session)
+        if session is None:
+            raise HTTPException(status_code=404, detail="Session not found")
+        events = await asyncio.to_thread(
+            service.store.events, user, normalized_profile, normalized_session,
+            max(after, 0), min(max(limit, 1), _MAX_PAGE),
+        )
+        next_cursor = int(events[-1]["seq"]) if events else max(after, 0)
+        return {
+            "identity": {
+                "executionNodeId": str(session.get("execution_node_id") or ""),
+                "profile": normalized_profile,
+                "sessionId": normalized_session,
+                "sessionScope": str(session.get("session_scope") or "personal"),
+                "workspacePath": session.get("workspace_path", ""),
+            },
+            "after": max(after, 0),
+            "nextCursor": next_cursor,
+            "events": events,
+            "hasMore": len(events) >= min(max(limit, 1), _MAX_PAGE),
+        }
+
     @router.get("/session/goal")
     async def get_goal(request: Request, profile: str, session_id: str) -> dict[str, Any]:
         """Read the native goal for one identity-scoped session."""
