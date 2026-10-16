@@ -762,6 +762,27 @@ class BridgeStore:
                 result.append(value)
             return result
 
+    def execution_nodes(self, user: str, profile: str) -> list[dict[str, Any]]:
+        """List execution nodes observed in this user's session mappings."""
+
+        with self.lock:
+            rows = self.connection.execute(
+                """SELECT execution_node_id, COUNT(*) AS session_count,
+                    MAX(updated_at) AS updated_at
+                    FROM codex_sessions
+                    WHERE user_id=? AND profile=? AND execution_node_id <> ''
+                    GROUP BY execution_node_id ORDER BY updated_at DESC, execution_node_id""",
+                (user, profile),
+            ).fetchall()
+        return [
+            {
+                "id": str(row["execution_node_id"]),
+                "sessionCount": int(row["session_count"]),
+                "updatedAt": float(row["updated_at"]),
+            }
+            for row in rows
+        ]
+
     def groups(self, user: str, profile: str) -> list[dict[str, Any]]:
         """Return groups owned by one exact user and profile."""
 
@@ -2554,6 +2575,12 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
         """Return a page of identity-scoped session mappings."""
 
         return {"items": await asyncio.to_thread(service.store.list_sessions, _user(request), _safe(profile, "profile"), min(max(limit, 1), _MAX_PAGE), max(offset, 0), deleted, recent)}
+
+    @router.get("/execution-nodes")
+    async def execution_nodes(request: Request, profile: str = "default") -> dict[str, Any]:
+        """List execution nodes that have emitted sessions for this profile."""
+
+        return {"items": await asyncio.to_thread(service.store.execution_nodes, _user(request), _safe(profile, "profile"))}
 
     @router.get("/groups")
     async def groups(request: Request, profile: str = "default") -> dict[str, Any]:
