@@ -77,3 +77,16 @@ The renderer preserves each original capture at its native resolution and adds
 the browser controls, rounded corners, shadow, and background with HTML/CSS.
 The address `workbench.example` is illustrative. To use an existing Chromium
 binary, set `CHROMIUM_EXECUTABLE_PATH` when running the script.
+# Pull request body check
+
+GitHub PRs must pass the repository contract before publication. Save the
+proposed body to a file and run:
+
+```sh
+pnpm pr:check /tmp/pr-body.md
+```
+
+The checker requires an image as the first non-empty line, English text, and
+the `Behavior`, `Scope`, and `Validation` sections. It rejects test-count
+waterfalls and similar execution logs.
+
