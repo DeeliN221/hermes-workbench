@@ -171,9 +171,16 @@ def create_app(release_root: Path | None = None, *, codex_service: Any = None) -
         app.include_router(create_files_router(service), prefix=f"{_API_PREFIX}/codex")
 
     @app.get(f"{_API_PREFIX}/capabilities")
-    async def capabilities() -> dict[str, bool]:
+    async def capabilities() -> dict[str, Any]:
         """Declare chat ownership without probing or launching a model connection."""
-        return {"codexChat": getattr(app.state, "codex_bridge", None) is not None, "codexUserInput": True, "codexThreadReasoningConfig": True}
+        return {
+            "codexChat": getattr(app.state, "codex_bridge", None) is not None,
+            "codexUserInput": True,
+            "codexThreadReasoningConfig": True,
+            "newChatProviders": ["codex"],
+            "historyOnlyProviders": ["claude", "pi"],
+            "supportsExternalContinuation": False,
+        }
 
     @app.get("/health")
     async def health() -> dict[str, str]:

@@ -84,4 +84,8 @@ Prebuilt releases include the installer and require no Node.js, pnpm, or fronten
 The [installation guide](docs/installation.md) also covers upgrades and rollback.
 For source setup, tests, contributions, and releases, see the [developer guide](dev.md).
 
+Workbench's web chat creates Codex conversations only. Existing Claude Code or
+Pi sessions are history-only; continue them from their native terminal. See
+[the chat provider policy](docs/codex-only-chat.md).
+
 Licensed under [AGPL-3.0-only](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).
