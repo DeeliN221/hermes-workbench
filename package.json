@@ -1,6 +1,6 @@
 {
   "name": "hermes-workbench",
-  "version": "20261015-1",
+  "version": "20261017-1",
   "private": false,
   "description": "Minecraft-inspired workspace for Hermes Agent Dashboard",
   "license": "AGPL-3.0-only",
