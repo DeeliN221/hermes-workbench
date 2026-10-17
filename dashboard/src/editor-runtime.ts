@@ -5,6 +5,14 @@ import { json } from '@codemirror/lang-json';
 import { css } from '@codemirror/lang-css';
 import { html } from '@codemirror/lang-html';
 import { markdown } from '@codemirror/lang-markdown';
+import { cpp } from '@codemirror/lang-cpp';
+import { go } from '@codemirror/lang-go';
+import { java } from '@codemirror/lang-java';
+import { liquid } from '@codemirror/lang-liquid';
+import { php } from '@codemirror/lang-php';
+import { rust } from '@codemirror/lang-rust';
+import { sql } from '@codemirror/lang-sql';
+import { yaml } from '@codemirror/lang-yaml';
 import { HighlightStyle } from '@codemirror/language';
 import { tags } from '@lezer/highlight';
 export { EditorView, lineNumbers, highlightActiveLine, highlightActiveLineGutter } from '@codemirror/view';
@@ -19,6 +27,14 @@ export function codeLanguage(language: string) {
     case 'json': case 'jsonc': return json();
     case 'css': return css();
     case 'html': case 'htm': case 'xml': return html();
+    case 'c': case 'h': case 'cc': case 'cpp': case 'cxx': case 'hpp': return cpp();
+    case 'go': case 'golang': return go();
+    case 'java': return java();
+    case 'rs': case 'rust': return rust();
+    case 'sql': return sql();
+    case 'php': return php();
+    case 'yaml': case 'yml': return yaml();
+    case 'liquid': return liquid();
     default: return null;
   }
 }
@@ -28,6 +44,9 @@ export function fileLanguage(path: string) {
   if (/\.jsonc?$/i.test(path)) return [json()];
   if (/\.css$/i.test(path)) return [css()];
   if (/\.(?:html?|vue|svelte)$/i.test(path)) return [html()];
+  const extension = path.split('.').pop()?.toLowerCase() || '';
+  const language = codeLanguage(extension);
+  if (language) return [language];
   if (/\.(?:md|markdown|mdown|mdx)$/i.test(path)) return [markdown()];
   return [];
 }
