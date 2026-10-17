@@ -3,15 +3,10 @@ import { uiText as sourceText } from './ui-locale';
  * Provide an OZW-style workspace tree, read-only image previews, Markdown previews, and CodeMirror editing.
  * Scope every file operation to the session-bound workspace ID.
  */
-import { css } from '@codemirror/lang-css';
-import { html } from '@codemirror/lang-html';
-import { javascript } from '@codemirror/lang-javascript';
-import { json } from '@codemirror/lang-json';
-import { markdown } from '@codemirror/lang-markdown';
-import { python } from '@codemirror/lang-python';
 import { defaultHighlightStyle, syntaxHighlighting } from '@codemirror/language';
 import { EditorView, highlightActiveLine, highlightActiveLineGutter, lineNumbers } from '@codemirror/view';
 import { renderMarkdownHtml } from './transcript-components';
+import { fileLanguage } from './editor-runtime';
 import {
   getAssetUrl,
   isImagePath,
@@ -43,13 +38,7 @@ function fileIcon(entry: FileEntry, expanded = false): string {
 
 /** Select CodeMirror syntax support from the current file name. */
 function languageForPath(path: string): any[] {
-  if (/\.(?:js|jsx|mjs|cjs|ts|tsx)$/i.test(path)) return [javascript({ typescript: /\.(?:ts|tsx)$/i.test(path), jsx: /\.(?:jsx|tsx)$/i.test(path) })];
-  if (/\.py$/i.test(path)) return [python()];
-  if (/\.jsonc?$/i.test(path)) return [json()];
-  if (/\.css$/i.test(path)) return [css()];
-  if (/\.(?:html?|vue|svelte)$/i.test(path)) return [html()];
-  if (isMarkdownPath(path)) return [markdown()];
-  return [];
+  return fileLanguage(path);
 }
 
 /** Create a controlled editor using native CodeMirror packages only. */
