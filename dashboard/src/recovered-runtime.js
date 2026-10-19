@@ -4,6 +4,7 @@ import { EditorView as Te, lineNumbers as aS, highlightActiveLine as iS, highlig
   syntaxHighlighting as Su, defaultHighlightStyle as mS, codeHighlightStyle as O2,
   codeLanguage as w2, fileLanguage as AL, fileLanguage as fM } from './editor-runtime';
 import { normalizeSession as Ll, listCodexSessions as i0, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessage as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
+import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
 import { optionalNumber as pn, firstDefined as oi, timestamp as El, record as mt, text as Ae } from './api-values';
 import { cronList as Sn, cronSchedule as I5, cronTimezone as $0, cronForm as N5, cronPayload as Td, nativeCronPayload as B5, needsExtendedCron as z5, cronSessionId as T0, mergeCronHistory as E0, cronTimestamp as A0, listCronJobs as q5, listCronRuns as Z5, listCronExecutions as j5, createNativeCronJob as F5, createExtendedCronJob as H5, updateCronJob as V5, changeCronJobState as U5, deleteCronJob as Y5 } from './cron-api';
@@ -10809,7 +10810,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : kickoff ? kanbanChatContext.current.startRequest(Y.current) : Ji.current.trim(),
             U = cardShortcut ? [] : [...Zi.current],
             ee = L || (U.length ? S5 : "");
-          if (!ee || submittingRef.current || Ls || (yr && !qr) || yn || (L && cv(L))) return;
+          if (!ee || submittingRef.current || Ls || (yr && !qr) || yn) return;
+          if (!(await shouldSubmitComposerMessage(L, cv))) return;
           const steeringTurnId = yr ? qr : "";
           if (!ai.length) {
             Pt(runtimeText("模型配置尚未读取成功，请稍候或刷新后重试。", "Model settings have not loaded. Wait or refresh to retry."));
