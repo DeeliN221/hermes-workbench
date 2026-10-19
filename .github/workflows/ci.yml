@@ -25,6 +25,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm version:check
+      - run: python3 scripts/check-version-date.py
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm build

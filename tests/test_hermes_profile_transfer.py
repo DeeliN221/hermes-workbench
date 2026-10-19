@@ -2,6 +2,7 @@ import os
 import sqlite3
 import sys
 from pathlib import Path
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "dashboard"))
 from hermes_profile_transfer import transfer_projection
@@ -46,3 +47,13 @@ def test_projection_transfer_copies_rows_and_hides_source(tmp_path, monkeypatch)
     assert target_db.execute("SELECT content FROM messages_fts WHERE rowid=1").fetchone() == ("details",)
     source_db = sqlite3.connect(source / "state.db")
     assert source_db.execute("SELECT hidden, archived FROM sessions WHERE id='s1'").fetchone() == (1, 1)
+
+
+def test_projection_transfer_rejects_missing_target_database(tmp_path, monkeypatch):
+    root = tmp_path / "hermes"
+    source = root / "profiles" / "source"
+    source.mkdir(parents=True)
+    _db(source / "state.db")
+    monkeypatch.setenv("HERMES_WORKBENCH_HERMES_HOME", str(root))
+    with pytest.raises(RuntimeError, match="target Hermes profile database is missing"):
+        transfer_projection("source", "target", "s1")
