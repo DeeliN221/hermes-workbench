@@ -86,8 +86,15 @@ def transfer_projection(source_profile: str, target_profile: str, session_id: st
         session = source.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
         if session is None:
             return {"sessions": 0, "messages": 0}
-        if target.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone():
-            raise RuntimeError("target Hermes profile already contains this session")
+        existing_target = target.execute("SELECT 1 FROM sessions WHERE id=?", (session_id,)).fetchone()
+        if existing_target:
+            source_messages = source.execute("SELECT count(*) FROM messages WHERE session_id=?", (session_id,)).fetchone()[0]
+            target_messages = target.execute("SELECT count(*) FROM messages WHERE session_id=?", (session_id,)).fetchone()[0]
+            if source_messages != target_messages:
+                raise RuntimeError("target Hermes profile already contains a conflicting session")
+            if hide_source:
+                hide_projection(source_profile, session_id)
+            return {"sessions": 1, "messages": target_messages}
         target.execute("BEGIN")
         if "system_prompt_hash" in session.keys() and session["system_prompt_hash"] and "system_prompts" in _tables(source) and "system_prompts" in _tables(target):
             _copy_rows(source, target, "system_prompts", "hash=?", (session["system_prompt_hash"],), ignore=True)
