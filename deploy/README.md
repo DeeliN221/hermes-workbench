@@ -50,6 +50,70 @@ Developers can build from source and run `scripts/publish-dev.py dashboard
 own development plugin. The script refuses managed-release symlinks. Publishing
 browser files does not upgrade the backend or restart a service.
 
+### Local test environment
+
+This is the shortest complete setup for testing the Workbench interface from a
+source checkout. It uses a separate Hermes home and keeps the browser entrypoint
+on `localhost:9120`; `9119` is the native Hermes dashboard, `9451` is the
+Workbench sidecar, and `9450` is the Codex app-server.
+
+```sh
+export HERMES_HOME="$HOME/.hermes-workbench-test"
+export HERMES_WORKBENCH_HERMES_HOME="$HERMES_HOME"
+export HERMES_WORKBENCH_ALLOWED_USERS=local-dev
+export HERMES_DASHBOARD_TRUSTED_PROXY_SECRET=local-dev-workbench-secret
+export HERMES_WORKBENCH_PORT=9451
+export HERMES_WORKBENCH_HOST=127.0.0.1
+export HERMES_SOURCE=/path/to/hermes-agent
+mkdir -p "$HERMES_HOME/plugins"
+ln -sfn "$PWD" "$HERMES_HOME/plugins/workbench"
+cat > "$HERMES_HOME/config.yaml" <<'YAML'
+plugins:
+  enabled:
+    - workbench
+YAML
+pnpm install --frozen-lockfile
+pnpm build
+```
+
+Start these processes in separate terminals, using the Python environment that
+contains the Hermes Dashboard dependencies:
+
+```sh
+python dashboard/sidecar_app.py                         # 127.0.0.1:9451
+hermes dashboard --host 127.0.0.1 --port 9119 --skip-build --no-open
+nginx -c "$PWD/deploy/nginx.local-dev.conf.example"
+```
+
+If Codex chat is required, start the app-server on `ws://127.0.0.1:9450` and
+set `CODEX_APP_SERVER_ENDPOINT`, `CODEX_APP_SERVER_TOKEN_FILE`, and `CODEX_HOME`
+before starting the sidecar. With a local Codex binary and an authenticated
+`CODEX_HOME`, the command is:
+
+```sh
+export CODEX_HOME="$HERMES_HOME/codex-home"
+export CODEX_APP_SERVER_ENDPOINT=ws://127.0.0.1:9450
+export CODEX_APP_SERVER_TOKEN_FILE="$CODEX_HOME/ws-token"
+mkdir -p "$CODEX_HOME"
+codex app-server --listen "$CODEX_APP_SERVER_ENDPOINT" \
+  --ws-auth capability-token --ws-token-file "$CODEX_APP_SERVER_TOKEN_FILE"
+```
+
+Then open **http://localhost:9120/workbench**.
+The root path shows Hermes' native dashboard; `/workbench` is the Workbench tab.
+
+Verify the wiring before opening the browser:
+
+```sh
+curl http://127.0.0.1:9451/health
+curl http://127.0.0.1:9120/api/dashboard/plugins
+curl http://127.0.0.1:9120/api/plugins/workbench/capabilities
+```
+
+The plugin list must contain `workbench`, and the last request must report
+`codexChat: true` when the app-server is configured. Stop the test processes
+and remove `$HERMES_HOME` when the test is complete.
+
 Forks may set `HERMES_WORKBENCH_RELEASE_REPOSITORY=owner/repository` and
 `HERMES_WORKBENCH_PLUGIN_ROOT=/path/to/plugins/workbench`. The official repository
 URL is a public project identifier, not an instance identity. Releases are
