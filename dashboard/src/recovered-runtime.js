@@ -57102,7 +57102,7 @@ WARNING: This link could potentially be dangerous`)
             }
         },
         cv = t(
-          (L) => {
+          async (L) => {
             const U = L.trim().match(/^\/([a-z][a-z0-9-]*)(?:\s+([\s\S]*))?$/i);
             if (!U) return !1;
             const ee = U[1].toLowerCase(),
@@ -57112,7 +57112,26 @@ WARNING: This link could potentially be dangerous`)
             return (
               Pt(""),
               ee === "goal"
-                ? (Ot((ue) => (ue.startsWith("/") ? "" : ue)), Vd(ne))
+                ? (Ot((ue) => (ue.startsWith("/") ? "" : ue)),
+                  ne === "clear"
+                    ? (Y.current
+                        ? VL(i.fetchJSON, M, Y.current)
+                            .then(() => Pt(runtimeText("目标已清除。", "Goal cleared.")))
+                            .catch((ue) => Pt(String(ue)))
+                        : Pt(runtimeText("请先开始对话。", "Start a conversation first.")))
+                    : ["status", "show"].includes(ne.toLowerCase())
+                      ? Vd()
+                      : ["pause", "resume"].includes(ne.toLowerCase())
+                        ? (Y.current
+                            ? HL(i.fetchJSON, M, Y.current)
+                                .then((ue) => {
+                                  if (!ue) return Pt(runtimeText("当前会话没有目标。", "This session has no goal."));
+                                  const xe = ne.toLowerCase() === "pause" ? "paused" : "active";
+                                  return n0(i.fetchJSON, M, Y.current, { status: xe }).then(() => Pt(runtimeText(xe === "paused" ? "目标已暂停。" : "目标已启用。", xe === "paused" ? "Goal paused." : "Goal enabled.")));
+                                })
+                                .catch((ue) => Pt(String(ue)))
+                            : Pt(runtimeText("请先开始对话。", "Start a conversation first.")))
+                        : Vd(ne.replace(/^set\s+/i, "")))
                 : ee === "new"
                   ? (Ot((ue) => (ue.startsWith("/") ? "" : ue)), xr(""))
                   : ee === "model" || ee === "reasoning"
@@ -57137,7 +57156,7 @@ WARNING: This link could potentially be dangerous`)
               !0
             );
           },
-          [Bt, ai, Vd, M, xr, qr],
+          [Bt, ai, Vd, M, xr, qr, i.fetchJSON],
         ),
         hv = t(async (action = "message", answerText = "") => {
           const questionAnswer = action === "question-answer";
@@ -58239,7 +58258,7 @@ WARNING: This link could potentially be dangerous`)
                       e,
                       "p",
                       { className: "codex-options-note" },
-                      runtimeText("设置用于后续消息", "Applies to subsequent messages"),
+                      runtimeText("设置用于后续消息；也可直接输入 /goal clear、/goal status、/goal pause", "Applies to subsequent messages; or type /goal clear, /goal status, /goal pause"),
                     ),
                   )
                 : W(
