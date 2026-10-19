@@ -14,10 +14,6 @@ services:
       HERMES_WORKBENCH_RUNTIME_UID: ${WORKBENCH_UID:?Set WORKBENCH_UID}
       HERMES_WORKBENCH_RUNTIME_GID: ${WORKBENCH_GID:?Set WORKBENCH_GID}
       HERMES_WORKBENCH_ALLOWED_USERS: ${WORKBENCH_ALLOWED_USERS:?Set WORKBENCH_ALLOWED_USERS}
-      # Optional: map an authenticated dashboard operator to the owner of an
-      # existing shared Codex database (for example, zzl).  Authentication
-      # still uses Remote-User and the allowlist above.
-      HERMES_WORKBENCH_DATA_USER: ${WORKBENCH_DATA_USER:-}
       HERMES_DASHBOARD_TRUSTED_PROXY_SECRET: ${WORKBENCH_PROXY_SECRET:?Set WORKBENCH_PROXY_SECRET}
       HERMES_WORKBENCH_RELEASE_REPOSITORY: ${WORKBENCH_RELEASE_REPOSITORY:-DeeliN221/hermes-workbench}
       HERMES_WORKBENCH_PORT: "8787"
