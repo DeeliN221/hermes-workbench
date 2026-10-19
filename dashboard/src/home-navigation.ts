@@ -3,9 +3,16 @@ import { currentProfile, switchProfile } from './profile-scope';
 /** Let the host commit profile state before changing pathname to the selected chat. */
 export function openHomeConversation(path: string, profile: string, navigate: (path: string, profile: string) => void): void {
   if (currentProfile() === profile) { navigate(path, profile); return; }
+  const openedFromHome = ['/', '/home', '/sessions'].includes(window.location.pathname);
   if (!switchProfile(profile)) return;
   const pending = window.location.href;
   const finish = () => { if (window.location.href === pending) navigate(path, profile); };
+  // The custom recent-sessions page does not always render the native profile
+  // switcher. Let the URL/profile state commit before opening the chat route.
+  if (openedFromHome) {
+    requestAnimationFrame(() => requestAnimationFrame(finish));
+    return;
+  }
   const native = document.getElementById('hermes-profile-switcher');
   if (!native) { requestAnimationFrame(() => requestAnimationFrame(finish)); return; }
   const observer = new MutationObserver(check);

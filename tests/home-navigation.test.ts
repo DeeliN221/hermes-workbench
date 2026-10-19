@@ -28,4 +28,17 @@ describe('persistent chat home links', () => {
     dispose = installHomeChatNavigation('writer', select);
     expect(select.codex).toHaveBeenCalledWith('one');
   });
+
+  it('opens a cross-profile recent card after the custom home route switches scope', async () => {
+    history.replaceState(null, '', '/sessions?profile=default');
+    const navigate = vi.fn();
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
+      callback(0);
+      return 0;
+    });
+    const { openHomeConversation } = await import('../dashboard/src/home-navigation');
+    openHomeConversation('/chat?session=one', 'writer', navigate);
+    expect(navigate).toHaveBeenCalledWith('/chat?session=one', 'writer');
+    raf.mockRestore();
+  });
 });

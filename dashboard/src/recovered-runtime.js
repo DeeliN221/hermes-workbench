@@ -12432,6 +12432,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     }
     return function () {
       const S = new URLSearchParams(window.location.search),
+        paneProfile = currentProfile(S),
         b = S.get("hermesSession") ? "" : S.get("session") || "",
         p = S.get("hermesSession") || "",
         [m, O] = o(m5(b, p)),
@@ -12648,7 +12649,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               navigationActiveHermesSessionId:
                 j === 0 ? w[g]?.hermesSessionId || "" : void 0,
               onTargetChange: P,
-              profile: d,
+              profile: paneProfile,
             }),
           ),
         ),
