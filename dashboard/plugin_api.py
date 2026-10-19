@@ -1136,6 +1136,15 @@ async def profile_names() -> dict:
     return await asyncio.to_thread(read)
 
 
+@router.post('/recover-migrated-sessions')
+async def recover_migrated_sessions() -> dict:
+    """Restore Hermes projections after a completed cross-profile migration."""
+
+    from hermes_profile_transfer import recover_migrated_projections
+
+    return await asyncio.to_thread(recover_migrated_projections)
+
+
 @router.get('/session-prompts')
 async def home_session_prompts(profile: str = 'default', session_id: str = Query(min_length=1, max_length=256)) -> dict:
     from home_prompts import session_prompts

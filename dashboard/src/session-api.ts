@@ -72,6 +72,10 @@ export async function listSessions(
   profile: string,
   onPage?: (rows: HermesRecord[]) => void,
 ): Promise<SessionListResult> {
+  // Older profile moves could finish the Codex row update before the Hermes
+  // projection was initialized. Repair that durable state before reading the
+  // native session list so an already-migrated conversation is visible again.
+  await fetchJSON('/api/plugins/workbench/recover-migrated-sessions', { method: 'POST' }).catch(() => undefined);
   // The ordinary sessions endpoint may auto-archive; the cross-profile aggregation endpoint is explicitly read-only.
   const first = await sessionPage(fetchJSON, profile, 0);
   const firstRows = Array.isArray(first.sessions) ? first.sessions : [];
