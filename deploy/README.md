@@ -29,11 +29,6 @@ your authenticated Dashboard proxy. No host port is published. Check the rendere
 configuration with `docker compose --env-file .env -f compose.yaml config` before
 starting it. Rendered configuration contains secrets; do not publish its output.
 
-When an existing Codex database was created under a service account but the
-Dashboard authenticates a different operator, set `WORKBENCH_DATA_USER` to that
-database owner. `HERMES_WORKBENCH_ALLOWED_USERS` still controls who may enter;
-the mapping only selects the user key used for Workbench's Codex rows.
-
 ## Authenticated routing
 
 `Caddyfile.example` is a snippet, not a complete authentication configuration.

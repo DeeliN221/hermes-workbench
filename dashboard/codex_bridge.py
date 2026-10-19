@@ -2637,13 +2637,7 @@ def _user(request: Request | WebSocket) -> str:
     value = headers.get("remote-user") or headers.get("x-remote-user")
     if not value:
         raise HTTPException(status_code=401, detail="Missing trusted user identity")
-    authenticated_user = _safe(value.strip().lower(), "user")
-    # A mounted Workbench data directory can belong to a service account while
-    # the authenticated dashboard user is a different, explicitly allowed
-    # operator.  Keep the proxy identity for authorization and use this
-    # opt-in storage identity for the bridge's user-scoped rows.
-    storage_user = os.environ.get("HERMES_WORKBENCH_DATA_USER", "").strip().lower()
-    return _safe(storage_user, "data user") if storage_user else authenticated_user
+    return _safe(value.strip().lower(), "user")
 
 
 def create_router(bridge: CodexBridge | None = None) -> APIRouter:
