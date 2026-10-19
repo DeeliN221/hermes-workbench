@@ -9,6 +9,12 @@ import { sessionDisplayTitle } from './session-organization';
 import { decodeHermesStructuredContent, type HermesRecord } from './hermes-transcript';
 
 export type RecentSession = { id: string; title: string; source: 'Codex' | 'Hermes'; updated: number; status: string; workspace: string; profile: string; completedSeq: number; readSeq?: number; messageCount: number; historyId?: string };
+export function isScheduledSession(row: HermesRecord): boolean {
+  const source = String(row.source ?? '').trim().toLocaleLowerCase();
+  const id = String(row.id ?? row.session_id ?? '').trim().toLocaleLowerCase();
+  return source === 'cron' || id.startsWith('cron_');
+}
+
 export function activityTime(row: HermesRecord): number {
   for (const value of [row.updatedAt, row.updated_at, row.last_active, row.last_message_at, row.createdAt, row.created_at]) {
     if (value === null || value === undefined || value === '') continue;
@@ -25,7 +31,7 @@ export function recentSessions(codex: HermesRecord[], hermes: HermesRecord[], pr
     const id = String(row.id ?? row.session_id ?? '');
     const owner = String(row.profile || profile);
     const key = `${owner}:${source}:${id}`;
-    if (!id || row.deleted || row.archived || row.source === 'cron' || seen.has(key)) return [];
+    if (!id || row.deleted || row.archived || isScheduledSession(row) || seen.has(key)) return [];
     // The chat reader rejects Codex projections; only mapped Codex sessions are openable.
     if (source === 'Hermes' && row.source === 'codex') return [];
     seen.add(key);

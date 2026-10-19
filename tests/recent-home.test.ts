@@ -1,7 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { activityTime, recentSessions, promptPair, visibleRequest, loadPromptPair } from '../dashboard/src/recent-home';
+import { activityTime, isScheduledSession, recentSessions, promptPair, visibleRequest, loadPromptPair } from '../dashboard/src/recent-home';
 
 describe('recent home activity', () => {
+  it('recognizes scheduled sessions even when the Codex projection omits source metadata', () => {
+    expect(isScheduledSession({ source: 'cron', id: 'run-1' })).toBe(true);
+    expect(isScheduledSession({ id: 'cron_abc_20261017_120000' })).toBe(true);
+    expect(isScheduledSession({ id: 'chat_1' })).toBe(false);
+    expect(recentSessions([{ id: 'cron_abc_20261017_120000', title: 'No reply', updatedAt: 300 }], [], 'writer')).toEqual([]);
+  });
+
   it('orders old conversations by new activity across sources, without mixing IDs', () => {
     const rows = recentSessions([
       { id: 'old', title: 'Old', createdAt: 1, updatedAt: 200 },
