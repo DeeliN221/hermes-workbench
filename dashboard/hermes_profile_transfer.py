@@ -76,8 +76,10 @@ def transfer_projection(source_profile: str, target_profile: str, session_id: st
         return {"sessions": 0, "messages": 0}
     source_path = profile_home(source_profile) / "state.db"
     target_path = profile_home(target_profile) / "state.db"
-    if not source_path.is_file() or not target_path.is_file():
+    if not source_path.is_file():
         return {"sessions": 0, "messages": 0}
+    if not target_path.is_file():
+        raise RuntimeError(f"target Hermes profile database is missing: {target_path}")
     source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True, timeout=30)
     target = sqlite3.connect(target_path, timeout=30)
     source.row_factory = sqlite3.Row
