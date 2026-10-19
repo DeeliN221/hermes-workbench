@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from codex_attachments import AttachmentStore
+from hermes_profile_transfer import hide_projection, transfer_projection
 from memory_context import build_codex_memory_instructions
 from session_scope import normalize_session_scope, policy_for_scope
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -1070,6 +1071,11 @@ class BridgeStore:
             ).fetchone()
             if target is not None:
                 raise HTTPException(status_code=409, detail="Target profile already contains this session")
+            if os.environ.get("HERMES_WORKBENCH_HERMES_HOME", "").strip():
+                try:
+                    transfer_projection(source_profile, target_profile, session_id, hide_source=False)
+                except Exception as exc:
+                    raise HTTPException(status_code=409, detail=f"Hermes profile projection transfer failed: {exc}") from exc
             tables = (
                 "codex_sessions", "codex_session_organization", "codex_events",
                 "codex_reads", "codex_approvals", "codex_completion_hooks",
@@ -1096,6 +1102,13 @@ class BridgeStore:
             except Exception:
                 self.connection.rollback()
                 raise
+            if os.environ.get("HERMES_WORKBENCH_HERMES_HOME", "").strip():
+                try:
+                    hide_projection(source_profile, session_id)
+                except Exception as exc:
+                    # The Codex move is durable; leave the source projection
+                    # visible when its independent store cannot be hidden.
+                    logging.getLogger(__name__).warning("Source Hermes projection could not be hidden: %s", exc)
         result = self.session(user, target_profile, session_id)
         if result is None:
             raise RuntimeError("transferred session was not persisted")
