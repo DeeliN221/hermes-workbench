@@ -6247,6 +6247,34 @@ body[data-theme*="dark"] .hti-rich-markdown {
 .codex-command-card.is-error {
   border-color: var(--mc-danger, #fca5a5);
 }
+.codex-subagent-card {
+  min-width: 0;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--mc-line-soft, rgb(229 231 235 / 0.7));
+  border-left: 0.2rem solid var(--mc-accent, #6366f1);
+  border-radius: 0.25rem;
+  background: var(--mc-surface, #fff);
+}
+.codex-subagent-card.is-failed { border-left-color: var(--mc-danger, #dc2626); }
+.codex-subagent-heading,
+.codex-subagent-row {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+.codex-subagent-heading { flex-wrap: wrap; }
+.codex-subagent-tool,
+.codex-subagent-detail { color: var(--mc-muted, #6b7280); font-size: 0.75rem; }
+.codex-subagent-status { margin-left: auto; color: var(--mc-muted, #6b7280); font-size: 0.72rem; }
+.codex-subagent-status[data-subagent-status="running"] { color: var(--mc-accent, #4f46e5); }
+.codex-subagent-status[data-subagent-status="failed"] { color: var(--mc-danger, #b91c1c); }
+.codex-subagent-status[data-subagent-status="completed"] { color: var(--mc-success, #047857); }
+.codex-subagent-prompt { margin-top: 0.45rem; font-size: 0.78rem; overflow-wrap: anywhere; }
+.codex-subagent-list { display: grid; gap: 0.3rem; margin: 0.55rem 0 0; padding: 0; list-style: none; }
+.codex-subagent-row { padding: 0.3rem 0.4rem; border-radius: 0.2rem; background: rgb(148 163 184 / 0.1); }
+.codex-subagent-agent { font-weight: 600; overflow-wrap: anywhere; }
+.codex-subagent-detail { flex: 1 1 100%; margin-left: 0.25rem; overflow-wrap: anywhere; }
+.codex-subagent-empty { margin: 0.5rem 0 0; color: var(--mc-muted, #6b7280); font-size: 0.75rem; }
 .codex-command-input {
   margin: 0;
   padding: 0.4rem 0.75rem 0.4rem 2rem;

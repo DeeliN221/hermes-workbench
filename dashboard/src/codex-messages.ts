@@ -13,6 +13,13 @@ export interface ChatMessage {
   turnDurationMs?: number | null; turnStatus?: TurnStatus; turnStartedAt?: number; observedAt?: number;
   turnCompletedAt?: number; weeklyRemainingPercent?: number; suppressDeltas?: boolean; error?: boolean;
   submissionError?: unknown; runtimeError?: unknown; delivery?: unknown; questions?: unknown;
+  subagent?: {
+    tool: string;
+    prompt?: string;
+    receiverThreadIds: string[];
+    receiverAgents: unknown[];
+    agentsStates?: unknown;
+  };
 }
 export function messageStatus(value: unknown): MessageStatus | undefined {
   const status = text(value).toLowerCase();
@@ -74,20 +81,39 @@ export function normalizeMessage(value: unknown, fallbackId: string): ChatMessag
   const type = text(item.type), role = text(item.role), nested = record(item.message);
   const itemId = text(item.itemId ?? item.id, fallbackId);
   const user = type === 'userMessage' || role === 'user', reasoning = type === 'reasoning' || role === 'reasoning';
+  const collabAgent = type === 'collabAgentToolCall';
   const tool = role === 'tool' || ['commandExecution', 'fileChange', 'mcpToolCall', 'dynamicToolCall', 'webSearch', 'imageView', 'collabAgentToolCall'].includes(type);
+  const receiverThreadIdsValue = item.receiverThreadIds ?? item.receiver_thread_ids;
+  const receiverAgentsValue = item.receiverAgents ?? item.receiver_agents;
+  const receiverThreadIds: string[] = Array.isArray(receiverThreadIdsValue)
+    ? receiverThreadIdsValue.map((value: unknown) => text(value)).filter(Boolean)
+    : [];
+  const receiverAgents: unknown[] = Array.isArray(receiverAgentsValue) ? receiverAgentsValue : [];
+  const subagent = collabAgent ? {
+    tool: text(item.tool) || 'collaboration',
+    prompt: text(item.prompt) || undefined,
+    receiverThreadIds,
+    receiverAgents,
+    agentsStates: item.agentsStates ?? item.agents_states,
+  } : undefined;
   const inputContent = Array.isArray(item.content) && item.content.length ? item.content : item.text ?? item.content;
-  const result = tool ? item.result ?? item.aggregatedOutput ?? item.output ?? item.content : undefined;
+  const result = tool ? collabAgent ? item.result ?? item.agentsStates ?? item.agents_states : item.result ?? item.aggregatedOutput ?? item.output ?? item.content : undefined;
+  const collabSummary = collabAgent ? [
+    subagent?.tool,
+    subagent?.prompt,
+    subagent?.receiverThreadIds.length ? `${subagent.receiverThreadIds.length} subagent(s)` : '',
+  ].filter(Boolean).join(': ') : '';
   const content = user ? userContentText(inputContent) : reasoning
     ? Array.isArray(item.summary) ? item.summary.map(contentText).join('\n\n') : contentText(item.content)
-    : contentText(tool ? result : item.text ?? item.content);
+    : collabAgent ? collabSummary : contentText(tool ? result : item.text ?? item.content);
   const status = itemStatus(item), exitCode = optionalNumber(firstDefined(item, 'exitCode', 'exit_code'));
   const message: ChatMessage = {
     id: user ? text(item.clientId, role ? text(item.id, itemId) : itemId) : itemId, itemId,
     clientId: item.clientId, submissionError: item.submissionError, runtimeError: item.runtimeError,
     turnId: text(item.turnId) || undefined, role: user ? 'user' : reasoning ? 'reasoning' : tool ? 'tool' : role || 'assistant',
     delivery: item.delivery, questions: item.questions, content, status, phase: messagePhase(item.phase ?? nested.phase),
-    toolName: text(item.toolName ?? item.tool ?? (type === 'commandExecution' ? uiText('终端', 'Terminal') : tool ? type : '')) || undefined,
-    input: item.input ?? item.command ?? item.arguments ?? item.changes, result, exitCode,
+    toolName: text(item.toolName ?? (collabAgent ? 'collab_agent_tool_call' : item.tool) ?? (type === 'commandExecution' ? uiText('终端', 'Terminal') : tool ? type : '')) || undefined,
+    input: collabAgent ? subagent : item.input ?? item.command ?? item.arguments ?? item.changes, result, exitCode, subagent,
     durationMs: optionalNumber(firstDefined(item, 'durationMs', 'duration_ms')),
     turnDurationMs: optionalNumber(firstDefined(item, 'turnDurationMs', 'turn_duration_ms')),
     turnStatus: turnStatus(item.turnStatus), turnStartedAt: timestamp(firstDefined(item, 'turnStartedAt', 'turn_started_at')),
@@ -99,8 +125,15 @@ export function normalizeMessage(value: unknown, fallbackId: string): ChatMessag
   return message;
 }
 export function mergeMessage(previous: ChatMessage, next: ChatMessage): ChatMessage {
+  const subagent = next.subagent ?? previous.subagent;
   return normalizeMessage({
     ...previous, ...next, status: next.status ?? previous.status, phase: next.phase ?? previous.phase,
+    type: subagent ? 'collabAgentToolCall' : undefined,
+    tool: subagent?.tool,
+    prompt: subagent?.prompt,
+    receiverThreadIds: subagent?.receiverThreadIds,
+    receiverAgents: subagent?.receiverAgents,
+    agentsStates: subagent?.agentsStates,
     input: next.input !== undefined ? next.input : previous.input, toolName: next.toolName ?? previous.toolName,
     turnId: next.turnId ?? previous.turnId, exitCode: next.exitCode !== undefined ? next.exitCode : previous.exitCode,
     durationMs: next.durationMs !== undefined ? next.durationMs : previous.durationMs,
@@ -110,6 +143,7 @@ export function mergeMessage(previous: ChatMessage, next: ChatMessage): ChatMess
     turnCompletedAt: next.turnCompletedAt ?? previous.turnCompletedAt,
     weeklyRemainingPercent: next.weeklyRemainingPercent ?? previous.weeklyRemainingPercent,
     turnStartedAt: next.turnStartedAt !== undefined ? next.turnStartedAt : previous.turnStartedAt,
+    subagent,
   }, next.id)!; // A normalized message always contains an identity and content.
 }
 export function notification(value: unknown) {

@@ -6193,10 +6193,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       { TranscriptTimeline: o } = Jb(i),
       a = Zp(i),
       l = ER(i);
-    return function () {
+    return function ({ profile: routeProfile } = {}) {
       const u = new URLSearchParams(window.location.search),
         h = u.get("session") || "",
-        d = u.get("profile") || "default",
+        d = routeProfile || u.get("profile") || currentProfile() || "default",
         [f, S] = s(() => ({
           taskId: u.get("kanban_task") || "",
           board: u.get("kanban_board") || "",
@@ -9279,6 +9279,49 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const t = v0(i);
     return i.content && i.content !== t ? i.content : "";
   }
+  function subagentStatusLabel(i) {
+    return i === "running"
+      ? runtimeText("进行中", "In progress")
+      : i === "failed"
+        ? runtimeText("失败", "Failed")
+        : i === "completed"
+          ? runtimeText("已完成", "Completed")
+          : i === "pending"
+            ? runtimeText("等待中", "Pending")
+            : runtimeText("未知", "Unknown");
+  }
+  function subagentStateFor(i, e) {
+    const t = i?.agentsStates;
+    if (Array.isArray(t)) return t.find(r => String(r?.threadId ?? r?.thread_id ?? r?.id ?? "") === e);
+    if (t && typeof t === "object") return t[e] ?? t[e.replace(/-/g, "_")];
+    return void 0;
+  }
+  function SubagentProgressCard({ React: i, message: e }) {
+    const t = e.subagent || { tool: e.toolName || "collaboration", prompt: e.content, receiverThreadIds: [], receiverAgents: [] };
+    const r = e.status || "pending";
+    const n = Array.isArray(t.receiverAgents) ? t.receiverAgents : [];
+    const s = Array.isArray(t.receiverThreadIds) ? t.receiverThreadIds : [];
+    const o = Math.max(n.length, s.length);
+    const a = Array.from({ length: o }, (_, l) => {
+      const c = n[l], u = typeof c === "string" ? c : c?.name ?? c?.role ?? c?.nickname;
+      const h = s[l] || (typeof c === "object" ? c?.threadId ?? c?.thread_id : "");
+      const d = subagentStateFor(t, String(h || ""));
+      const f = typeof d === "string" ? d : d?.status;
+      const S = (f && (Rl(f) || "pending")) || (r === "completed" ? "completed" : r === "failed" ? "failed" : "running");
+      const b = typeof d === "string" ? "" : d?.message ?? d?.detail ?? d?.error ?? "";
+      return W(i, "li", { key: `${h || u || l}`, className: `codex-subagent-row is-${S}`, "data-subagent-thread": h || void 0 },
+        W(i, "span", { className: "codex-subagent-agent" }, u || h || runtimeText(`子代理 ${l + 1}`, `Subagent ${l + 1}`)),
+        W(i, "span", { className: "codex-subagent-status", "data-subagent-status": S }, subagentStatusLabel(S)),
+        b ? W(i, "span", { className: "codex-subagent-detail" }, String(b)) : null);
+    });
+    return W(i, "section", { className: `codex-subagent-card is-${r}`, "data-testid": "subagent-progress", "data-subagent-status": r },
+      W(i, "header", { className: "codex-subagent-heading" },
+        W(i, "strong", null, runtimeText("子代理任务", "Subagent task")),
+        W(i, "span", { className: "codex-subagent-tool" }, String(t.tool || "collaboration")),
+        W(i, "span", { className: "codex-subagent-status", "data-subagent-status": r }, subagentStatusLabel(r))),
+      t.prompt ? W(i, "div", { className: "codex-subagent-prompt" }, W(i, Ki, { React: i, content: String(t.prompt) })) : null,
+      o ? W(i, "ul", { className: "codex-subagent-list" }, ...a) : W(i, "p", { className: "codex-subagent-empty" }, runtimeText("等待子代理状态…", "Waiting for subagent status…")));
+  }
   function x5(i) {
     const e = Math.max(0, Math.floor(i / 1e3));
     if (e < 60) return runtimeText(`${e}秒`, `${e}s`);
@@ -9293,6 +9336,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return typeof i == "number" && Number.isFinite(i) && i >= 0 ? i : void 0;
   }
   function C5({ React: i, message: e }) {
+    if (e.subagent) return W(i, SubagentProgressCard, { React: i, message: e });
     const [t, r] = i.useState(""),
       [outputExpanded, setOutputExpanded] = i.useState(false),
       n = e.error === !0 || e.status === "failed",
@@ -9385,7 +9429,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       className: "codex-tool-list", "data-testid": "turn-tool-list",
       open: expanded,
       onToggle: event => setExpanded(event.currentTarget.open),
-    }, W(i, "summary", null, messages.length === 1 ? runtimeText("一次工具调用", "One tool call") : runtimeText(`${messages.length}次工具调用`, `${messages.length} tool calls`)),
+    }, W(i, "summary", null, messages.some(message => message.subagent)
+      ? runtimeText("子代理任务", "Subagent task")
+      : messages.length === 1 ? runtimeText("一次工具调用", "One tool call") : runtimeText(`${messages.length}次工具调用`, `${messages.length} tool calls`)),
     expanded ? W(i, "div", { className: "codex-tool-rows" },
       ...messages.map(message => W(i, C5, { key: message.id, React: i, message }))) : null);
   }
@@ -9703,10 +9749,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       navigationActiveSessionId: E,
       navigationActiveHermesSessionId: D,
       onTargetChange: A,
+      profile,
     }) {
       const sendShortcut = useSendShortcut(i);
       const R = new URLSearchParams(window.location.search),
-        M = s(currentProfile()).current,
+        M = profile || s(currentProfile()).current,
         H = R.get("hermesSession") || "",
         F = R.get("session") || "",
         j = S ?? F,
@@ -9989,6 +10036,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             ? xe.searchParams.set("session", L)
             : xe.searchParams.delete("session"),
             xe.searchParams.delete("hermesSession"),
+            xe.searchParams.set("profile", M),
             window.history.replaceState(null, "", xe));
         },
         [M],
@@ -10045,6 +10093,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             const ee = new URL(window.location.href);
             (ee.searchParams.delete("session"),
               ee.searchParams.set("hermesSession", U),
+              ee.searchParams.set("profile", M),
               window.history.replaceState(null, "", ee));
           },
           [M],
@@ -12594,6 +12643,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               navigationActiveHermesSessionId:
                 j === 0 ? w[g]?.hermesSessionId || "" : void 0,
               onTargetChange: P,
+              profile: d,
             }),
           ),
         ),
@@ -15009,7 +15059,7 @@ ${_e.description}`
               className: "dashboard-persistent-workbench",
               "data-chat-visible": h,
             },
-            i.React.createElement(o, { key: profile }),
+            i.React.createElement(o, { key: profile, profile }),
           ),
         )
       );
