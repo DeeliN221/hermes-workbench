@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from codex_attachments import AttachmentStore
+from hermes_profile_transfer import hide_projection, transfer_projection
 from memory_context import build_codex_memory_instructions
 from session_scope import normalize_session_scope, policy_for_scope
 from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisconnect
@@ -1038,6 +1039,79 @@ class BridgeStore:
         result = self.session(user, profile, session_id)
         if result is None:
             raise RuntimeError("updated session was not persisted")
+        return result
+
+    def transfer_session(self, user: str, source_profile: str, target_profile: str, session_id: str) -> dict[str, Any]:
+        """Move one inactive session and all of its profile-keyed records atomically.
+
+        Codex history, read state, requests, approvals, metrics, and Workbench
+        organization metadata share the same identity tuple.  Moving only the
+        visible session row would orphan that history, so this operation updates
+        every table in one transaction and clears the source profile's group.
+        """
+
+        if source_profile == target_profile:
+            raise HTTPException(status_code=400, detail="Source and target profiles must differ")
+        session_key = (user, source_profile, session_id)
+        with self.lock:
+            source = self.connection.execute(
+                "SELECT status FROM codex_sessions WHERE user_id=? AND profile=? AND session_id=?",
+                session_key,
+            ).fetchone()
+            if source is None:
+                raise HTTPException(status_code=404, detail="Session not found")
+            status = str(source["status"] or "").lower()
+            if status in {"running", "waiting", "active", "inprogress"}:
+                raise HTTPException(status_code=409, detail="Running or awaiting session cannot be transferred")
+            if self.has_active_approval(user, source_profile, session_id) or self.has_active_submission(user, source_profile, session_id):
+                raise HTTPException(status_code=409, detail="Session has active work and cannot be transferred")
+            target = self.connection.execute(
+                "SELECT 1 FROM codex_sessions WHERE user_id=? AND profile=? AND session_id=?",
+                (user, target_profile, session_id),
+            ).fetchone()
+            if target is not None:
+                raise HTTPException(status_code=409, detail="Target profile already contains this session")
+            if os.environ.get("HERMES_WORKBENCH_HERMES_HOME", "").strip():
+                try:
+                    transfer_projection(source_profile, target_profile, session_id, hide_source=False)
+                except Exception as exc:
+                    raise HTTPException(status_code=409, detail=f"Hermes profile projection transfer failed: {exc}") from exc
+            tables = (
+                "codex_sessions", "codex_session_organization", "codex_events",
+                "codex_reads", "codex_approvals", "codex_completion_hooks",
+                "codex_item_times", "codex_requests", "codex_response_metrics",
+            )
+            try:
+                self.connection.execute("BEGIN")
+                for table in tables:
+                    self.connection.execute(
+                        f"UPDATE {table} SET profile=? WHERE user_id=? AND profile=? AND session_id=?",
+                        (target_profile, user, source_profile, session_id),
+                    )
+                self.connection.execute(
+                    "UPDATE codex_session_organization SET group_id=NULL WHERE user_id=? AND profile=? AND session_id=?",
+                    (user, target_profile, session_id),
+                )
+                self.connection.commit()
+            except HTTPException:
+                self.connection.rollback()
+                raise
+            except sqlite3.IntegrityError as exc:
+                self.connection.rollback()
+                raise HTTPException(status_code=409, detail="Session transfer conflicts with target profile") from exc
+            except Exception:
+                self.connection.rollback()
+                raise
+            if os.environ.get("HERMES_WORKBENCH_HERMES_HOME", "").strip():
+                try:
+                    hide_projection(source_profile, session_id)
+                except Exception as exc:
+                    # The Codex move is durable; leave the source projection
+                    # visible when its independent store cannot be hidden.
+                    logging.getLogger(__name__).warning("Source Hermes projection could not be hidden: %s", exc)
+        result = self.session(user, target_profile, session_id)
+        if result is None:
+            raise RuntimeError("transferred session was not persisted")
         return result
 
     def all_sessions(self, user: str, profile: str) -> list[dict[str, Any]]:
@@ -2540,6 +2614,14 @@ class OrganizationBody(BaseModel):
     deleted: bool | None = None
 
 
+class SessionTransferBody(BaseModel):
+    """Input for moving one inactive conversation between profile scopes."""
+
+    source_profile: str
+    target_profile: str
+    session_id: str
+
+
 class GoalBody(BaseModel):
     """Native Codex goal fields accepted by the Workbench goal editor."""
 
@@ -2693,6 +2775,21 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
 
         values = body.model_dump(exclude_unset=True)
         return {"session": await service.update_organization(_user(request), _safe(profile, "profile"), _safe(session_id, "session"), values)}
+
+    @router.post("/session/transfer")
+    async def transfer_session(body: SessionTransferBody, request: Request, profile: str = "default") -> dict[str, Any]:
+        """Move one completed session without dropping profile-keyed history."""
+
+        target_profile = _safe(body.target_profile or profile, "profile")
+        if profile and _safe(profile, "profile") != target_profile:
+            raise HTTPException(status_code=400, detail="Target profile query does not match request body")
+        return {"session": await asyncio.to_thread(
+            service.store.transfer_session,
+            _user(request),
+            _safe(body.source_profile, "profile"),
+            target_profile,
+            _safe(body.session_id, "session"),
+        )}
 
     @router.post("/session/steer")
     @router.post("/session")

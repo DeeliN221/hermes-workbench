@@ -74,6 +74,22 @@ class SessionMetadataContract(unittest.TestCase):
         self.store = BridgeStore(self.path)
         self.assertEqual(self.store.session('qa', 'default', 'old')['created_at'], 100)
 
+    def test_transfer_moves_all_profile_keyed_history_and_clears_group(self):
+        session = self.create('transfer', '跨 profile 会话')
+        self.store.create_group('qa', 'default', '', '', '临时项目')
+        self.store.append_event('qa', 'default', 'transfer', 'history/turn', {'params': {'turn': {'id': 't1', 'status': 'completed'}}})
+        self.store.save_request('qa', 'default', 'transfer', 'request', status='completed', payload='{}')
+        moved = self.store.transfer_session('qa', 'default', 'learning-mentor', 'transfer')
+        self.assertEqual(moved['profile'], 'learning-mentor')
+        self.assertIsNone(self.store.session('qa', 'default', 'transfer'))
+        self.assertEqual(self.store.session('qa', 'learning-mentor', 'transfer')['title'], '跨 profile 会话')
+        self.assertEqual(self.store.connection.execute(
+            "select count(*) from codex_events where user_id='qa' and profile='learning-mentor' and session_id='transfer'"
+        ).fetchone()[0], 1)
+        self.assertEqual(self.store.connection.execute(
+            "select count(*) from codex_requests where user_id='qa' and profile='learning-mentor' and session_id='transfer'"
+        ).fetchone()[0], 1)
+
 
 class EmptyThreadContract(unittest.TestCase):
     def test_startup_metadata_does_not_make_a_fresh_thread_nonempty(self):

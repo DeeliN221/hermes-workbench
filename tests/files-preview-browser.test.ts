@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { renderMermaidBlocks } from '../dashboard/src/file-preview';
+import { openFilePreview, renderMermaidBlocks } from '../dashboard/src/file-preview';
 import { installFilesPreview } from '../dashboard/src/files-preview';
 
 describe('Files preview browser interaction', () => {
@@ -68,5 +68,38 @@ describe('Files preview browser interaction', () => {
     expect(await renderMermaidBlocks(root)).toBe(1);
     expect(render).toHaveBeenCalledWith(expect.stringMatching(/^hti-mermaid-/), 'graph LR\nA-->B');
     expect(root.querySelector('.hti-mermaid svg')).not.toBeNull();
+  });
+
+  it('enables Markdown editing only after the workspace write check succeeds', async () => {
+    window.history.replaceState(null, '', '/files');
+    const calls: Array<{ url: string; method: string }> = [];
+    (window as any).__HERMES_PLUGIN_SDK__ = {
+      authedFetch: vi.fn(async (url: string, init?: RequestInit) => {
+        calls.push({ url, method: init?.method || 'GET' });
+        if (init?.method === 'PUT') return new Response(JSON.stringify({ version: 'v2' }), { status: 200 });
+        return new Response(JSON.stringify({ content: '# Editable', version: 'v1' }), { status: 200 });
+      }),
+    };
+    await openFilePreview('notes.md', new Blob(['# Preview'], { type: 'text/markdown' }), 'text/markdown', undefined, '/opt/data/workspace/notes.md');
+    const edit = document.querySelector<HTMLButtonElement>('.hti-file-preview-edit')!;
+    await vi.waitFor(() => expect(edit.title).toBe('Edit file'));
+    edit.click();
+    expect(document.querySelector<HTMLTextAreaElement>('.hti-file-editor')?.value).toBe('# Editable');
+    const editor = document.querySelector<HTMLTextAreaElement>('.hti-file-editor')!;
+    editor.value = '# Changed';
+    editor.dispatchEvent(new Event('input', { bubbles: true }));
+    document.querySelector<HTMLButtonElement>('.hti-file-editor-actions .is-primary')!.click();
+    await vi.waitFor(() => expect(calls.some(call => call.method === 'PUT')).toBe(true));
+    expect(calls[0].url).toContain('/api/plugins/workbench/file?path=%2Fopt%2Fdata%2Fworkspace%2Fnotes.md');
+  });
+
+  it('keeps the pencil visible but disabled when the workspace denies writes', async () => {
+    (window as any).__HERMES_PLUGIN_SDK__ = {
+      authedFetch: vi.fn(async () => new Response(JSON.stringify({ detail: 'File is not writable' }), { status: 403 })),
+    };
+    await openFilePreview('readonly.md', new Blob(['# Read only'], { type: 'text/markdown' }), 'text/markdown', undefined, '/opt/data/workspace/readonly.md');
+    const edit = document.querySelector<HTMLButtonElement>('.hti-file-preview-edit')!;
+    await vi.waitFor(() => expect(edit.title).toContain('Write permission denied'));
+    expect(edit.title).toContain('Write permission denied');
   });
 });
