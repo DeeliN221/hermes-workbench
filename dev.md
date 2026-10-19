@@ -32,6 +32,8 @@ for versioning, isolated instances, manual updates, and rollback.
 Deployment templates are in `deploy/`. Copy `.env.example` and supply your own
 image, paths, and authentication settings; templates include no runtime image,
 identity provider, or credentials.
+For a source-checkout browser test, follow the [local test environment](deploy/README.md#local-test-environment)
+steps; the Workbench tab is served at `/workbench` through the local proxy.
 
 The repository starts from a reviewed source snapshot. Clone it afresh rather
 than merging old repository history. Existing private recovery copies remain

@@ -73,7 +73,16 @@ export async function listSessions(
   onPage?: (rows: HermesRecord[]) => void,
 ): Promise<SessionListResult> {
   // The ordinary sessions endpoint may auto-archive; the cross-profile aggregation endpoint is explicitly read-only.
-  const first = await sessionPage(fetchJSON, profile, 0);
+  let first = await sessionPage(fetchJSON, profile, 0);
+  // A completed profile move from an older build could leave its target
+  // projection hidden or absent. Repair that durable state when the migrated
+  // profile is empty, then read the list again.
+  if (!(first.sessions?.length || first.total)) {
+    const recovered = await fetchJSON<{ restored?: number; visible?: number }>(
+      '/api/plugins/workbench/recover-migrated-sessions', { method: 'POST' },
+    ).catch(() => ({ restored: 0, visible: 0 }));
+    if (Number(recovered.restored) + Number(recovered.visible) > 0) first = await sessionPage(fetchJSON, profile, 0);
+  }
   const firstRows = Array.isArray(first.sessions) ? first.sessions : [];
   const total = Number.isFinite(Number(first.total)) ? Math.max(0, Number(first.total)) : firstRows.length;
   onPage?.(firstRows);

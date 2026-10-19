@@ -45,6 +45,20 @@ in the host theme directories as described below. After the first setup,
 building from source. See [managed releases](managed-releases.md) for migration,
 health checks, and recovery.
 
+The Dashboard plugin must be enabled in the Hermes profile that serves it. Ensure
+the profile configuration contains:
+
+```yaml
+plugins:
+  enabled:
+    - workbench
+```
+
+The browser route is the plugin tab (`/workbench`) on the authenticated Hermes
+Dashboard origin. Opening the sidecar port directly only tests its API and health
+endpoint; it does not render the Workbench interface. For a complete source
+checkout test, see [Local test environment](../deploy/README.md#local-test-environment).
+
 ## File layout
 
 Release archives contain `plugin/`, `sidecar/`, themes, and extensions. Extract into

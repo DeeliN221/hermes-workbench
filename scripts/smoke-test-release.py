@@ -38,7 +38,7 @@ with tempfile.TemporaryDirectory() as temporary:
         store = ReleaseStore(destination)
         assert store.active() == version
         store.validate(version)
-        assert (plugin / 'dashboard').resolve() == store.target(version) / 'plugin/dashboard'
+        assert (plugin / 'dashboard').resolve() == (store.target(version) / 'plugin/dashboard').resolve()
         assert (destination / 'migration-backup/dashboard/previous.txt').read_text() == 'previous installation'
         assert (destination / 'bootstrap/combined_runtime.py').is_file()
         again = subprocess.run(command + ['--sha256', checksum], cwd=temp, capture_output=True, text=True)

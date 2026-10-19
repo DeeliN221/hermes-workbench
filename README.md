@@ -83,6 +83,8 @@ Prebuilt releases include the installer and require no Node.js, pnpm, or fronten
 
 The [installation guide](docs/installation.md) also covers upgrades and rollback.
 For source setup, tests, contributions, and releases, see the [developer guide](dev.md).
+The complete source-checkout browser setup is documented in the
+[local test environment guide](deploy/README.md#local-test-environment).
 
 Workbench's web chat creates Codex conversations only. Existing Claude Code or
 Pi sessions are history-only; continue them from their native terminal. See

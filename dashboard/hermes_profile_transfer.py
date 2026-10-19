@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import os
 import sqlite3
+import sys
 import uuid
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,39 @@ def profile_home(profile: str) -> Path:
         raise RuntimeError("HERMES_WORKBENCH_HERMES_HOME is not configured")
     root = Path(raw_root).expanduser()
     return root if profile == "default" else root / "profiles" / profile
+
+
+def _profile_names() -> list[str]:
+    """Return profile names whose Hermes stores can contain a projection."""
+
+    root = profile_home("default")
+    names = ["default"]
+    directory = root / "profiles"
+    if directory.is_dir() and not directory.is_symlink():
+        names.extend(
+            entry.name for entry in sorted(directory.iterdir())
+            if entry.is_dir() and not entry.is_symlink() and not entry.name.startswith(".")
+        )
+    return names
+
+
+def _initialize_profile_database(path: Path) -> None:
+    """Create a new profile database through Hermes' own schema initializer."""
+
+    source_text = os.environ.get("HERMES_SOURCE", "").strip()
+    if source_text:
+        source = Path(source_text).expanduser().resolve()
+        if str(source) not in sys.path:
+            sys.path.insert(0, str(source))
+    try:
+        from hermes_state import SessionDB
+    except (ImportError, AttributeError) as exc:
+        raise RuntimeError("Hermes SessionDB is unavailable; cannot initialize target profile") from exc
+    path.parent.mkdir(parents=True, exist_ok=True)
+    db = SessionDB(db_path=path)
+    close = getattr(db, "close", None)
+    if callable(close):
+        close()
 
 
 def _columns(conn: sqlite3.Connection, table: str) -> list[str]:
@@ -61,6 +95,28 @@ def hide_projection(profile: str, session_id: str) -> None:
         if updates:
             conn.execute(f"UPDATE sessions SET {','.join(f'{column}=1' for column in updates)} WHERE id=?", (session_id,))
             conn.commit()
+    finally:
+        conn.close()
+
+
+def _unhide_projection(profile: str, session_id: str) -> bool:
+    """Make a recovered target session visible in its profile list."""
+
+    path = profile_home(profile) / "state.db"
+    if not path.is_file():
+        return False
+    conn = sqlite3.connect(path, timeout=30)
+    try:
+        columns = _columns(conn, "sessions")
+        updates = [column for column in ("hidden", "archived") if column in columns]
+        if not updates:
+            return False
+        cursor = conn.execute(
+            f"UPDATE sessions SET {','.join(f'{column}=0' for column in updates)} WHERE id=?",
+            (session_id,),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
     finally:
         conn.close()
 
@@ -109,6 +165,12 @@ def transfer_projection(source_profile: str, target_profile: str, session_id: st
         }
         if "profile_name" in _columns(target, "sessions"):
             target.execute("UPDATE sessions SET profile_name=? WHERE id=?", (target_profile, session_id))
+        visible_columns = [column for column in ("hidden", "archived") if column in _columns(target, "sessions")]
+        if visible_columns:
+            target.execute(
+                f"UPDATE sessions SET {','.join(f'{column}=0' for column in visible_columns)} WHERE id=?",
+                (session_id,),
+            )
         if parent_id and target.execute("SELECT 1 FROM sessions WHERE id=?", (parent_id,)).fetchone() is None:
             target.execute("UPDATE sessions SET parent_session_id=NULL WHERE id=?", (session_id,))
         # Review records have independent primary keys.  Generate new IDs and
@@ -164,3 +226,71 @@ def transfer_projection(source_profile: str, target_profile: str, session_id: st
 
 def _tables(conn: sqlite3.Connection) -> set[str]:
     return {str(row[0]) for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+
+
+def recover_migrated_projections() -> dict[str, int]:
+    """Restore target Hermes rows left hidden or absent by an older migration.
+
+    The Codex bridge database is the durable record of a successful profile
+    move.  Earlier versions could move that row while skipping the Hermes
+    projection when the target ``state.db`` had not been initialized yet.
+    Scan the profile stores for the hidden source row and replay the same
+    verified copy, so an already completed migration becomes visible again.
+    """
+
+    raw_codex = os.environ.get("HERMES_WORKBENCH_CODEX_DB", "").strip()
+    if not raw_codex:
+        return {"restored": 0, "visible": 0, "skipped": 0}
+    codex_path = Path(raw_codex).expanduser()
+    if not codex_path.is_file():
+        return {"restored": 0, "visible": 0, "skipped": 0}
+    result = {"restored": 0, "visible": 0, "skipped": 0}
+    codex = sqlite3.connect(f"file:{codex_path}?mode=ro", uri=True, timeout=30)
+    try:
+        rows = codex.execute("SELECT DISTINCT profile, session_id FROM codex_sessions").fetchall()
+    finally:
+        codex.close()
+    names = _profile_names()
+    for target_profile, session_id in rows:
+        target_profile = str(target_profile)
+        session_id = str(session_id)
+        target_path = profile_home(target_profile) / "state.db"
+        try:
+            if not target_path.is_file():
+                _initialize_profile_database(target_path)
+            target_conn = sqlite3.connect(f"file:{target_path}?mode=ro", uri=True, timeout=30)
+            try:
+                target_row = target_conn.execute(
+                    "SELECT hidden, archived FROM sessions WHERE id=?", (session_id,)
+                ).fetchone()
+            finally:
+                target_conn.close()
+            if target_row is not None:
+                if any(int(value or 0) for value in target_row) and _unhide_projection(target_profile, session_id):
+                    result["visible"] += 1
+                continue
+            source_profile = None
+            for candidate in names:
+                if candidate == target_profile:
+                    continue
+                source_path = profile_home(candidate) / "state.db"
+                if not source_path.is_file():
+                    continue
+                source = sqlite3.connect(f"file:{source_path}?mode=ro", uri=True, timeout=30)
+                try:
+                    columns = set(_columns(source, "sessions"))
+                    where = "id=?" + (" AND source='codex'" if "source" in columns else "")
+                    found = source.execute(f"SELECT 1 FROM sessions WHERE {where}", (session_id,)).fetchone()
+                finally:
+                    source.close()
+                if found is not None:
+                    source_profile = candidate
+                    break
+            if source_profile is None:
+                result["skipped"] += 1
+                continue
+            transfer_projection(source_profile, target_profile, session_id)
+            result["restored"] += 1
+        except (OSError, RuntimeError, sqlite3.Error):
+            result["skipped"] += 1
+    return result

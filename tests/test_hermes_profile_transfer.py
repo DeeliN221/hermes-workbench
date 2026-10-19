@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "dashboard"))
-from hermes_profile_transfer import transfer_projection
+from hermes_profile_transfer import recover_migrated_projections, transfer_projection
 
 
 def _db(path: Path) -> None:
@@ -57,3 +57,28 @@ def test_projection_transfer_rejects_missing_target_database(tmp_path, monkeypat
     monkeypatch.setenv("HERMES_WORKBENCH_HERMES_HOME", str(root))
     with pytest.raises(RuntimeError, match="target Hermes profile database is missing"):
         transfer_projection("source", "target", "s1")
+
+
+def test_recover_migrated_projection_from_hidden_source(tmp_path, monkeypatch):
+    root = tmp_path / "hermes"
+    source = root / "profiles" / "source"
+    target = root / "profiles" / "target"
+    source.mkdir(parents=True)
+    target.mkdir(parents=True)
+    _db(source / "state.db")
+    _db(target / "state.db")
+    source_db = sqlite3.connect(source / "state.db")
+    source_db.execute("INSERT INTO sessions VALUES ('s1','source','codex',1,1)")
+    source_db.execute("INSERT INTO messages(session_id,role,content) VALUES ('s1','user','restored')")
+    source_db.commit(); source_db.close()
+    codex = root / "codex.sqlite3"
+    codex_db = sqlite3.connect(codex)
+    codex_db.execute("CREATE TABLE codex_sessions (profile TEXT, session_id TEXT)")
+    codex_db.execute("INSERT INTO codex_sessions VALUES ('target','s1')")
+    codex_db.commit(); codex_db.close()
+    monkeypatch.setenv("HERMES_WORKBENCH_HERMES_HOME", str(root))
+    monkeypatch.setenv("HERMES_WORKBENCH_CODEX_DB", str(codex))
+    assert recover_migrated_projections() == {"restored": 1, "visible": 0, "skipped": 0}
+    target_db = sqlite3.connect(target / "state.db")
+    assert target_db.execute("SELECT profile_name, hidden, archived FROM sessions WHERE id='s1'").fetchone() == ("target", 0, 0)
+    assert target_db.execute("SELECT content FROM messages WHERE session_id='s1'").fetchone() == ("restored",)

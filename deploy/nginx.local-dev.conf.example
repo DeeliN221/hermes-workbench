@@ -1,0 +1,28 @@
+events {}
+
+http {
+  map $http_upgrade $connection_upgrade {
+    default upgrade;
+    '' close;
+  }
+
+  server {
+    listen 9120;
+
+    location /api/plugins/workbench/ {
+      proxy_set_header X-Hermes-Proxy-Secret local-dev-workbench-secret;
+      proxy_set_header Remote-User local-dev;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+      proxy_pass http://127.0.0.1:9451;
+    }
+
+    location / {
+      proxy_set_header Host $http_host;
+      proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection $connection_upgrade;
+      proxy_pass http://127.0.0.1:9119;
+    }
+  }
+}
