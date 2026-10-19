@@ -88,7 +88,9 @@ proposed body to a file and run:
 pnpm pr:check /tmp/pr-body.md
 ```
 
-The checker requires an image as the first non-empty line, English text, and
-the `Behavior`, `Scope`, and `Validation` sections. It rejects test-count
-waterfalls and similar execution logs.
+The checker requires English text and the `Behavior`, `Scope`, and `Validation`
+sections. It does not require an image. Frontend changes should include relevant
+before and after screenshots under an optional `Visuals` section; backend-only
+changes can omit it. The checker rejects test-count waterfalls and similar
+execution logs.
 

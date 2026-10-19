@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the repository's GitHub PR body contract."""
+"""Validate the repository's text-only GitHub PR body contract."""
 
 from __future__ import annotations
 
@@ -13,10 +13,9 @@ FORBIDDEN_PATTERNS = ("Test Files", "Tests passed", "执行流水", "测试数�
 
 
 def validate(body: str) -> list[str]:
+    """Require useful English sections without forcing unrelated visual media."""
+
     errors: list[str] = []
-    lines = [line.strip() for line in body.splitlines() if line.strip()]
-    if not lines or not re.match(r"^!\[[^]]*\]\([^)]*\)$", lines[0]):
-        errors.append("the first non-empty line must be a Markdown image")
     if re.search(r"[\u4e00-\u9fff]", body):
         errors.append("GitHub PR bodies must use English")
     for heading in REQUIRED_HEADINGS:
