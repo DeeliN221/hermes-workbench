@@ -38,6 +38,7 @@ _catalog_lock = threading.Lock()
 _admission_lock = threading.Lock()
 _active_mutations = 0
 _catalog: tuple[float, list[dict]] = (0, [])
+_TERMINAL_THREAD_STATUSES = {'idle', 'notLoaded', 'systemError'}
 
 
 def managed_store() -> ReleaseStore | None:
@@ -63,6 +64,13 @@ def end_mutation() -> None:
     global _active_mutations
     with _admission_lock:
         _active_mutations -= 1
+
+
+def _thread_blocks_update(thread: dict) -> bool:
+    """Treat terminal thread states as idle while unknown states remain fail-closed."""
+
+    status = thread.get('status')
+    return not isinstance(status, dict) or status.get('type') not in _TERMINAL_THREAD_STATUSES
 
 
 async def _codex_busy() -> bool:
@@ -91,7 +99,9 @@ async def _codex_busy() -> bool:
             return True
         for tid in rows.get('data', []):
             thread = (await rpc('thread/read', {'threadId': tid, 'includeTurns': False}))['thread']
-            if thread.get('status', {}).get('type') not in ['idle', 'notLoaded']:
+            # A system error is a completed terminal state, not an active turn.
+            # Unknown statuses still block the restart to avoid interrupting work.
+            if _thread_blocks_update(thread):
                 return True
         return False
     finally:
