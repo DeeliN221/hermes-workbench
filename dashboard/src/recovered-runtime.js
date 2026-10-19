@@ -11316,8 +11316,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         ic = (L, U = !1) => {
           const ee = $5(L),
             ne = w0(L),
-            xe = ae === L.id,
-            ue = Z.filter(($e) => $e.id !== L.groupId);
+            xe = ae === L.id;
           return W(
             e,
             "div",
@@ -11449,47 +11448,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                             onClick: () => LM(L),
                           },
                           L.favorite ? runtimeText("取消收藏", "Remove favorite") : runtimeText("收藏", "Favorite"),
-                        ),
-                        ue.map(($e) =>
-                          W(
-                            e,
-                            "button",
-                            {
-                              key: $e.id,
-                              type: "button",
-                              role: "menuitem",
-                              "aria-label": runtimeText(`移到“${$e.name}”`, `Move to “${$e.name}”`),
-                              title: runtimeText(`移到“${$e.name}”`, `Move to “${$e.name}”`),
-                              onClick: () => dv(L, $e.id),
-                            },
-                            runtimeText(`移到“${$e.name}”`, `Move to “${$e.name}”`),
-                          ),
-                        ),
-                        L.groupId
-                          ? W(
-                              e,
-                              "button",
-                              {
-                                type: "button",
-                                role: "menuitem",
-                                onClick: () => dv(L, null),
-                              },
-                              runtimeText("移出当前项目", "Remove from current project"),
-                            )
-                          : null,
-                        W(
-                          e,
-                          "button",
-                          {
-                            type: "button",
-                            role: "menuitem",
-                            className: "codex-nearby-menu-item",
-                            disabled: !C,
-                            onClick: () => {
-                              (Ce(""), C?.(L.id));
-                            },
-                          },
-                          runtimeText("在旁边打开", "Open alongside"),
                         ),
                         W(
                           e,
@@ -12514,16 +12472,44 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               ((x.current = j), _(j));
               return;
             }
-          y.current.get(x.current)?.selectSession(F);
-        }, []),
+          const current = y.current.get(x.current);
+          if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
+            current.selectSession(F);
+            return;
+          }
+          if (!Xo(m)) {
+            setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
+            return;
+          }
+          const pane = { id: p5(m), initialSessionId: F, initialHermesSessionId: "" };
+          const panes = O5(m, pane, x.current);
+          O(panes);
+          v(currentState => ({ ...currentState, [pane.id]: { sessionId: F, hermesSessionId: "" } }));
+          x.current = pane.id;
+          _(pane.id);
+        }, [m, O, v, _]),
         A = t((F) => {
           for (const [j, Q] of y.current)
             if (Q.getTarget().hermesSessionId === F) {
               ((x.current = j), _(j));
               return;
             }
-          y.current.get(x.current)?.selectHermesHistory(F);
-        }, []),
+          const current = y.current.get(x.current);
+          if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
+            current.selectHermesHistory(F);
+            return;
+          }
+          if (!Xo(m)) {
+            setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
+            return;
+          }
+          const pane = { id: p5(m), initialSessionId: "", initialHermesSessionId: F };
+          const panes = O5(m, pane, x.current);
+          O(panes);
+          v(currentState => ({ ...currentState, [pane.id]: { sessionId: "", hermesSessionId: F } }));
+          x.current = pane.id;
+          _(pane.id);
+        }, [m, O, v, _]),
         R = t((workspaceId) => {
           y.current.get(x.current)?.startNewSession(workspaceId);
         }, []),

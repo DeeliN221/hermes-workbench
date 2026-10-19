@@ -79,7 +79,7 @@ export function removeRowsBeforeParent(root: ParentNode = document): number {
 }
 
 /** Read through the server's existing file policy; timeout includes response bodies. */
-export async function readManagedFile(path: string): Promise<{ name: string; blob: Blob; mime: string }> {
+export async function readManagedFile(path: string): Promise<{ name: string; blob: Blob; mime: string; path?: string }> {
   const sdk = (window as any).__HERMES_PLUGIN_SDK__;
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 15000);
@@ -113,7 +113,7 @@ export async function readManagedFile(path: string): Promise<{ name: string; blo
     }
     const blobResponse = await fetch(payload.data_url, { signal: controller.signal });
     if (!blobResponse.ok) throw new Error(uiText('文件内容解码失败', 'Could not decode file content'));
-    return { name: payload.name, blob: await blobResponse.blob(), mime: payload.mime_type || '' };
+    return { name: payload.name, blob: await blobResponse.blob(), mime: payload.mime_type || '', path };
   } catch (error) {
     if (controller.signal.aborted) throw new Error(uiText('文件读取超时，请重试', 'File read timed out. Please retry.'));
     throw error;
@@ -151,7 +151,7 @@ export function installFilesPreview(): void {
     const button = (event.target as Element | null)?.closest('button') as HTMLButtonElement | null;
     button?.setAttribute('aria-busy', 'true');
     void readManagedFile(path)
-      .then(file => openFilePreview(file.name, file.blob, file.mime))
+      .then(file => openFilePreview(file.name, file.blob, file.mime, undefined, file.path))
       .catch(error => {
         if (button) button.title = uiText(
           `预览失败：${error instanceof Error ? error.message : String(error)}`,

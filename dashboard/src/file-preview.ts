@@ -5,6 +5,7 @@ import { gfm, gfmHtml } from 'micromark-extension-gfm';
 import { uiText } from './ui-locale';
 
 type PreviewKind = 'markdown' | 'image' | 'pdf' | 'text' | 'download' | 'plantuml';
+type EditableDocument = { path: string; content: string; version: string };
 type MermaidAPI = {
   initialize: (config: Record<string, unknown>) => void;
   render: (id: string, definition: string, container?: Element) => Promise<{ svg: string; bindFunctions?: (element: Element) => void }>;
@@ -147,6 +148,138 @@ function previewActionIcon(pathData: string): SVGSVGElement {
   return svg;
 }
 
+class FileEditError extends Error {
+  constructor(public readonly status: number, message: string) {
+    super(message);
+  }
+}
+
+function authenticatedFetch(url: string, init?: RequestInit): Promise<Response> {
+  const sdk = (window as any).__HERMES_PLUGIN_SDK__;
+  return sdk?.authedFetch
+    ? sdk.authedFetch(url, init)
+    : fetch(url, { credentials: 'same-origin', ...init });
+}
+
+async function readEditableFile(path: string): Promise<EditableDocument> {
+  const response = await authenticatedFetch(`/api/plugins/workbench/file?path=${encodeURIComponent(path)}`);
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const payload = await response.clone().json();
+      detail = typeof payload?.detail === 'string' ? payload.detail : payload?.detail?.message || '';
+    } catch { /* The status is enough for non-JSON responses. */ }
+    throw new FileEditError(response.status, detail || uiText(`文件编辑不可用（${response.status}）`, `File editing is unavailable (${response.status})`));
+  }
+  const payload = await response.json() as Partial<EditableDocument>;
+  if (typeof payload.content !== 'string' || typeof payload.version !== 'string') {
+    throw new FileEditError(500, uiText('编辑接口未返回有效内容', 'The edit API returned invalid content'));
+  }
+  return { path, content: payload.content, version: payload.version };
+}
+
+async function saveEditableFile(document: EditableDocument, content: string): Promise<EditableDocument> {
+  const response = await authenticatedFetch(`/api/plugins/workbench/file?path=${encodeURIComponent(document.path)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content, version: document.version }),
+  });
+  if (!response.ok) {
+    let detail = '';
+    try {
+      const payload = await response.clone().json();
+      detail = typeof payload?.detail === 'string' ? payload.detail : payload?.detail?.message || '';
+    } catch { /* The status is enough for non-JSON responses. */ }
+    throw new FileEditError(response.status, detail || uiText(`文件保存失败（${response.status}）`, `Could not save file (${response.status})`));
+  }
+  const payload = await response.json() as Partial<EditableDocument>;
+  if (typeof payload.version !== 'string') throw new FileEditError(500, uiText('保存接口未返回版本', 'The save API returned no version'));
+  return { ...document, content, version: payload.version };
+}
+
+function editUnavailableMessage(error: unknown): string {
+  if (error instanceof FileEditError && error.status === 403) {
+    return uiText('没有写入权限，已禁用编辑', 'Write permission denied; editing is disabled');
+  }
+  return uiText('此文件当前不可编辑', 'This file cannot be edited');
+}
+
+function editButton(path: string | undefined): HTMLButtonElement {
+  const edit = document.createElement('button');
+  edit.type = 'button';
+  edit.className = 'hti-file-preview-edit hti-file-preview-action';
+  edit.disabled = true;
+  edit.title = path ? uiText('正在检查编辑权限…', 'Checking edit permission…') : uiText('此来源不支持编辑', 'Editing is unavailable for this source');
+  edit.setAttribute('aria-label', edit.title);
+  edit.append(previewActionIcon('M12 20h9M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z'));
+  return edit;
+}
+
+function renderEditor(
+  body: HTMLElement,
+  header: Element | null,
+  filename: string,
+  documentValue: EditableDocument,
+  edit: HTMLButtonElement,
+): void {
+  body.classList.remove('hti-rich-text');
+  body.classList.add('hti-file-editor-body');
+  body.replaceChildren();
+  edit.disabled = true;
+  edit.title = uiText('正在编辑', 'Editing');
+  const textarea = document.createElement('textarea');
+  textarea.className = 'hti-file-editor';
+  textarea.value = documentValue.content;
+  textarea.setAttribute('aria-label', uiText(`编辑 ${filename}`, `Edit ${filename}`));
+  const actions = document.createElement('div');
+  actions.className = 'hti-file-editor-actions';
+  const cancel = document.createElement('button');
+  cancel.type = 'button';
+  cancel.textContent = uiText('取消', 'Cancel');
+  const save = document.createElement('button');
+  save.type = 'button';
+  save.className = 'is-primary';
+  save.textContent = uiText('保存', 'Save');
+  const status = document.createElement('span');
+  status.className = 'hti-file-editor-status';
+  actions.append(status, cancel, save);
+  body.append(textarea, actions);
+  textarea.focus();
+  cancel.addEventListener('click', () => {
+    body.classList.remove('hti-file-editor-body');
+    body.classList.add('hti-rich-text');
+    body.replaceChildren();
+    body.innerHTML = micromark(documentValue.content, {
+      allowDangerousHtml: false,
+      extensions: [gfm(), memorySectionExtension],
+      htmlExtensions: [gfmHtml()],
+    });
+    void Promise.all([renderMermaidBlocks(body), renderPlantUMLBlocks(body)]);
+    edit.disabled = false;
+    edit.title = uiText('编辑文件', 'Edit file');
+    edit.setAttribute('aria-label', edit.title);
+    edit.addEventListener('click', () => renderEditor(body, header || null, filename, documentValue, edit), { once: true });
+    header?.removeAttribute('data-hti-file-editing');
+  });
+  save.addEventListener('click', () => {
+    save.disabled = true;
+    cancel.disabled = true;
+    status.textContent = uiText('保存中…', 'Saving…');
+    void saveEditableFile(documentValue, textarea.value).then(saved => {
+      documentValue = saved;
+      cancel.click();
+      status.textContent = uiText('已保存', 'Saved');
+    }).catch(error => {
+      status.textContent = error instanceof FileEditError && error.status === 409
+        ? uiText('文件已在别处修改，请重新打开后再保存', 'The file changed elsewhere. Reopen it before saving.')
+        : String(error);
+      save.disabled = false;
+      cancel.disabled = false;
+    });
+  });
+  header?.setAttribute('data-hti-file-editing', 'true');
+}
+
 function previewShell(filename: string, navigate = false): { overlay: HTMLElement; body: HTMLElement } {
   const current = document.getElementById('hti-file-preview');
   if (navigate && current) {
@@ -204,7 +337,7 @@ export function showFilePreviewLoading(filename: string, navigate = false): HTML
 }
 
 /** Open a safe, theme-aware in-page preview while preserving native downloads. */
-export async function openFilePreview(filename: string, blob: Blob, contentType = blob.type, existingBody?: HTMLElement): Promise<void> {
+export async function openFilePreview(filename: string, blob: Blob, contentType = blob.type, existingBody?: HTMLElement, path?: string): Promise<void> {
   const kind = filePreviewKind(filename, contentType);
   const body = existingBody || previewShell(filename).body;
   body.replaceChildren();
@@ -219,6 +352,8 @@ export async function openFilePreview(filename: string, blob: Blob, contentType 
   download.className = 'hti-file-preview-download hti-file-preview-action';
   header?.insertBefore(download, header.lastElementChild);
   if (kind === 'markdown') {
+    const edit = editButton(path);
+    header?.insertBefore(edit, download);
     body.classList.add('hti-rich-text');
     body.innerHTML = micromark(await blob.text(), {
       allowDangerousHtml: false,
@@ -226,6 +361,18 @@ export async function openFilePreview(filename: string, blob: Blob, contentType 
       htmlExtensions: [gfmHtml()],
     });
     await Promise.all([renderMermaidBlocks(body), renderPlantUMLBlocks(body)]);
+    if (path) {
+      void readEditableFile(path).then(documentValue => {
+        edit.disabled = false;
+        edit.title = uiText('编辑文件', 'Edit file');
+        edit.setAttribute('aria-label', edit.title);
+        edit.addEventListener('click', () => renderEditor(body, header || null, filename, documentValue, edit), { once: true });
+      }).catch(error => {
+        edit.disabled = true;
+        edit.title = editUnavailableMessage(error);
+        edit.setAttribute('aria-label', edit.title);
+      });
+    }
   } else if (kind === 'plantuml') {
     body.classList.add('hti-rich-text');
     const pre = document.createElement('pre');
