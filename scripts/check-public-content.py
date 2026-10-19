@@ -39,7 +39,10 @@ def main():
     # Also inspect project-generated browser assets after building.
     dist = ROOT / 'dashboard/dist'
     if dist.exists():
-        files.extend(p for p in dist.rglob('*') if p.is_file() and p.name != 'mermaid.min.js')
+        files.extend(
+            p for p in dist.rglob('*')
+            if p.is_file() and p.name not in {'mermaid.min.js', 'build-provenance.json'}
+        )
     errors = []
     for path in files:
         if path.name == 'pnpm-lock.yaml' or path.name.upper().startswith(('LICENSE', 'NOTICE', 'COPYING')):
