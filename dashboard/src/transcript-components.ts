@@ -482,9 +482,23 @@ function UnmatchedToolCard({ React, tool }: { React: ReactRuntime; tool: ChatMes
 /** Render subagent task summaries and prompts in the card, with results in separate output. */
 function SubagentToolCard({ React, tool }: { React: ReactRuntime; tool: ChatMessage }): any {
   const input = toolInputRecord(tool.toolInput);
-  const type = firstToolString(input, ['agent_type', 'subagent_type', 'type', 'name']) || 'agent';
+  const type = firstToolString(input, ['tool', 'agent_type', 'subagent_type', 'type', 'name']) || 'agent';
   const description = firstToolString(input, ['description', 'task', 'task_name', 'title']) || 'delegated task';
   const prompt = firstToolString(input, ['prompt', 'message', 'instructions']);
+  const status = tool.status || 'pending';
+  const states = input.agentsStates;
+  const stateFor = (threadId: string) => Array.isArray(states)
+    ? states.find((entry: any) => String(entry?.threadId ?? entry?.thread_id ?? entry?.id ?? '') === threadId)
+    : states && typeof states === 'object' ? (states as any)[threadId] : undefined;
+  const receivers = Array.isArray(input.receiverThreadIds) ? input.receiverThreadIds.map(String) : [];
+  const receiverNodes = receivers.map((threadId: string, index: number) => {
+    const state: any = stateFor(threadId);
+    const stateName = String(state?.status || state || (status === 'completed' ? 'completed' : status === 'failed' ? 'failed' : 'running')).toLowerCase();
+    const label = stateName.includes('fail') ? '失败' : stateName.includes('complete') ? '已完成' : stateName.includes('run') ? '进行中' : '等待中';
+    return element(React, 'li', { key: threadId || index, className: `hti-subagent-row is-${stateName}`, 'data-subagent-status': stateName },
+      element(React, 'code', null, threadId), element(React, 'span', null, label),
+      state?.message ? element(React, 'span', null, String(state.message)) : null);
+  });
   return element(React, 'div', {
     className: 'hti-semantic-tool hti-tool-subagent-card',
     'data-component': 'ToolCallCard',
@@ -497,7 +511,8 @@ function SubagentToolCard({ React, tool }: { React: ReactRuntime; tool: ChatMess
         element(React, 'span', { className: 'hti-tool-name' }, 'Subagent'),
         element(React, 'span', { className: 'hti-tool-separator' }, '/'),
         element(React, 'span', { className: 'hti-tool-title' }, `${type}: ${description}`)),
-      prompt ? element(React, 'div', { className: 'hti-subagent-prompt' }, element(React, RichText, { React, content: prompt })) : null),
+      prompt ? element(React, 'div', { className: 'hti-subagent-prompt' }, element(React, RichText, { React, content: prompt })) : null,
+      receiverNodes.length ? element(React, 'ul', { className: 'hti-subagent-list' }, ...receiverNodes) : null),
     element(React, SemanticOutput, { React, tool }));
 }
 
@@ -537,7 +552,7 @@ function knownToolFamily(name: unknown): 'command' | 'read' | 'write' | 'edit' |
   if (['edit', 'edit_file', 'apply_patch', 'applypatch'].includes(normalized)) return 'edit';
   if (['grep', 'glob', 'search', 'web_search', 'websearch'].includes(normalized)) return 'search';
   if (['update_plan', 'exit_plan_mode', 'exitplanmode', 'plan'].includes(normalized)) return 'plan';
-  if (['agent', 'task', 'subagent', 'spawn_agent', 'spawn_subagent', 'delegate_to_agent'].includes(normalized)) return 'subagent';
+  if (['agent', 'task', 'subagent', 'spawn_agent', 'spawn_subagent', 'delegate_to_agent', 'collab_agent_tool_call', 'collabagenttoolcall', 'spawnagent', 'sendinput', 'resumeagent', 'wait', 'closeagent', 'sendmessage', 'followuptask', 'interruptagent', 'listagents'].includes(normalized)) return 'subagent';
   return null;
 }
 
