@@ -1,60 +1,10 @@
 import { uiText } from './ui-locale';
 
-/** Public PlantUML Server used when an instance has no renderer override. */
-export const DEFAULT_PLANTUML_RENDER_ENDPOINT = 'https://www.plantuml.com/plantuml/svg';
+type PlantUMLAPI = { renderToString: (lines: string[], success: (svg: string) => void, failure: (error: string) => void, options?: { dark: boolean }) => void };
+const RUNTIME_URL = '/dashboard-plugins/workbench/dist/plantuml/runtime.js';
+let runtimeLoad: Promise<PlantUMLAPI> | undefined;
 
-type WorkbenchRuntimeConfig = { plantumlEndpoint?: unknown };
-type DashboardConfig = { dashboard?: { workbench?: { plantuml_endpoint?: unknown } } };
-
-let configuredEndpoint: string | undefined;
-let configLoad: Promise<string | undefined> | undefined;
-
-/** Drop the cached instance endpoint after a settings change. */
-export function clearPlantUMLConfigCache(): void {
-  configuredEndpoint = undefined;
-  configLoad = undefined;
-}
-
-function normalizeEndpoint(value: unknown): string | undefined {
-  if (typeof value !== 'string' || !value.trim()) return undefined;
-  try {
-    const url = new URL(value.trim());
-    if (url.protocol !== 'http:' && url.protocol !== 'https:') return undefined;
-    return url.toString().replace(/\/$/, '');
-  } catch {
-    return undefined;
-  }
-}
-
-async function loadConfiguredEndpoint(): Promise<string | undefined> {
-  const response = await fetch('/api/config', {
-    cache: 'no-store',
-    credentials: 'same-origin',
-    headers: { Accept: 'application/json' },
-  });
-  if (!response.ok) return undefined;
-  const config = await response.json() as DashboardConfig;
-  return normalizeEndpoint(config.dashboard?.workbench?.plantuml_endpoint);
-}
-
-/** Resolve an instance-specific endpoint without baking private hosts into the bundle. */
-export async function getPlantUMLRenderEndpoint(): Promise<string> {
-  const runtime = (globalThis as typeof globalThis & { __HERMES_WORKBENCH_CONFIG__?: WorkbenchRuntimeConfig })
-    .__HERMES_WORKBENCH_CONFIG__?.plantumlEndpoint;
-  const runtimeEndpoint = normalizeEndpoint(runtime);
-  if (runtimeEndpoint) return runtimeEndpoint;
-  const build = (import.meta.env.VITE_PLANTUML_RENDER_ENDPOINT as string | undefined);
-  const buildEndpoint = normalizeEndpoint(build);
-  if (buildEndpoint) return buildEndpoint;
-  if (configuredEndpoint) return configuredEndpoint;
-  configLoad ??= loadConfiguredEndpoint().catch(() => undefined);
-  const loaded = await configLoad;
-  if (loaded) configuredEndpoint = loaded;
-  else configLoad = undefined;
-  return loaded || DEFAULT_PLANTUML_RENDER_ENDPOINT;
-}
-
-// Serialize chat and file-preview requests so the server is not overloaded.
+// The upstream engine keeps only one pending request. Serialize all surfaces.
 let queue: Promise<unknown> = Promise.resolve();
 const pending = new WeakMap<HTMLElement, Promise<void>>();
 
@@ -62,32 +12,39 @@ export function isPlantUMLLanguage(language: string): boolean {
   return /^(?:plantuml|puml|uml)$/.test(language.toLowerCase());
 }
 
-function encodePlantUML(source: string): string {
-  const bytes = new TextEncoder().encode(source);
-  // PlantUML's hex form keeps CJK bytes exact without client-side compression.
-  // Keep the GET URL below common 8 KiB proxy and Jetty request-line limits.
-  if (bytes.length > 3500) throw new Error(uiText('图表源码过长，请拆分为多幅图。', 'Diagram source is too long; split it into smaller diagrams.'));
-  let hex = '';
-  for (const byte of bytes) hex += byte.toString(16).padStart(2, '0');
-  return `~h${hex}`;
+function loadRuntime(): Promise<PlantUMLAPI> {
+  const loaded = (window as unknown as { workbenchPlantUML?: PlantUMLAPI }).workbenchPlantUML;
+  if (loaded) return Promise.resolve(loaded);
+  if (runtimeLoad) return runtimeLoad;
+  runtimeLoad = new Promise((resolve, reject) => {
+    const script = document.createElement('script');
+    script.type = 'module';
+    script.src = RUNTIME_URL;
+    script.addEventListener('load', () => {
+      const api = (window as unknown as { workbenchPlantUML?: PlantUMLAPI }).workbenchPlantUML;
+      if (api) resolve(api);
+      else reject(new Error('PlantUML runtime is unavailable'));
+    }, { once: true });
+    script.addEventListener('error', () => reject(new Error('Could not load PlantUML runtime')), { once: true });
+    document.head.append(script);
+  });
+  return runtimeLoad.catch(error => { runtimeLoad = undefined; throw error; });
 }
 
 export function renderPlantUML(source: string, dark: boolean): Promise<string> {
-  // Do not let the server fetch arbitrary remote includes from user content.
+  // The browser engine has no access to local files. Do not fetch remote includes.
   if (/^\s*!(?:include\w*|import)\b/im.test(source)) {
-    return Promise.reject(new Error(uiText('渲染暂不支持 !include 或 !import，请将定义写在图表内。', 'Rendering does not support !include or !import. Inline the definitions.')));
+    return Promise.reject(new Error(uiText('本地渲染暂不支持 !include 或 !import，请将定义写在图表内。', 'Local rendering does not support !include or !import. Inline the definitions.')));
   }
+  if (source.length > 100_000) return Promise.reject(new Error(uiText('图表源码超过 100,000 字符。', 'Diagram source exceeds 100,000 characters.')));
   const result = queue.then(async () => {
-    // Keep the canvas transparent in both themes after any source-level skinparam.
-    const lines = source.split(/\r\n|\r|\n/).flatMap(line => /^\s*@end\w*/i.test(line)
-      ? ['skinparam backgroundColor transparent', line] : [line]);
-    const endpoint = await getPlantUMLRenderEndpoint();
-    const encoded = encodePlantUML(lines.join('\n'));
-    const response = await fetch(`${endpoint}/${encoded}`, { method: 'GET' });
-    if (!response.ok) throw new Error(`PlantUML server returned HTTP ${response.status}`);
-    const svg = await response.text();
-    if (!/<svg\b/i.test(svg)) throw new Error('PlantUML server returned an invalid SVG');
-    return svg;
+    const api = await loadRuntime();
+    return new Promise<string>((resolve, reject) => {
+      // Apply after source themes so both light and dark canvases stay transparent.
+      const lines = source.split(/\r\n|\r|\n/).flatMap(line => /^\s*@end\w*/i.test(line)
+        ? ['skinparam backgroundColor transparent', line] : [line]);
+      api.renderToString(lines, resolve, error => reject(new Error(error)), { dark });
+    });
   });
   queue = result.catch(() => undefined);
   return result;

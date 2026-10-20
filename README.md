@@ -47,8 +47,9 @@ and check recent runs from the same page.
 ### Files and diagrams
 
 Read formatted Markdown, switch to source, or download a file from the preview.
-Mermaid and PlantUML diagrams render in chat and file previews; UML files can
-also be opened directly.
+Mermaid and PlantUML diagrams render in chat and file previews. PlantUML is
+rendered offline in the browser, so diagram source does not leave the instance;
+UML files can also be opened directly.
 
 ![Formatted workspace README with preview and file controls](assets/showcase/files-preview.png)
 

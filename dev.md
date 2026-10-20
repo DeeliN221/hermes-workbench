@@ -42,15 +42,15 @@ separate from this public project.
 ### UML diagrams
 
 Markdown chat and file previews render `plantuml`, `puml`, and `uml` fences
-through the public PlantUML Server by default. An instance can override the
-endpoint without changing the bundle by defining
-`window.__HERMES_WORKBENCH_CONFIG__ = { plantumlEndpoint: "https://.../svg" }`
-before rendering. The recommended deployment setting is `dashboard.workbench.plantuml_endpoint`
-in the instance's Hermes `config.yaml`; Workbench reads it from `/api/config`
-and falls back to the public server when it is absent or invalid. A private
-deployment can point this at its own PlantUML Server so its CJK font fallback
-stays correct. A build can also set
-`VITE_PLANTUML_RENDER_ENDPOINT` as the default for that build.
+with the bundled PlantUML browser engine. The engine is loaded lazily from
+`dashboard/vendor/plantuml/runtime.js` only when a diagram is present, so the
+diagram source stays in the browser and no rendering server is required.
+Remote `!include` and `!import` directives are rejected because the browser
+engine cannot safely resolve them; inline the definitions instead. Source is
+limited to 100,000 characters. The generated SVG uses the browser's sans-serif
+fallback, so CJK labels render with the system CJK font without bundling one.
+The browser build does not include the `@startdot`, `@startditaa`, or
+`@startsalt` extensions.
 `.puml`, `.plantuml`, and `.uml` files also open as diagrams.
 
 ````markdown
