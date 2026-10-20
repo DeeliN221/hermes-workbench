@@ -93,7 +93,8 @@
   --theme-code-text: var(--mc-ink) !important;
 }
 :root[data-workbench-shell="true"] ::selection {
-  color: var(--mc-ink); background: var(--mc-active);
+  /* Keep selected text distinct from the green user-message surface. */
+  color: var(--mc-on-accent); background: var(--mc-warning);
 }
 :root[data-workbench-shell="true"] :is(.codex-composer, .codex-session-search-dialog,
   .codex-settings-dialog, .codex-goal-dialog, .dashboard-cron-modal) {
