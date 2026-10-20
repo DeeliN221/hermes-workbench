@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- Render PlantUML locally with the bundled browser engine instead of a remote server.
+- Keep diagram source inside the browser and remove the PlantUML endpoint setting.
+
 ## Fresh public source snapshot
 
 - Rebuild the public repository under DeeliN221 with one initial commit.
