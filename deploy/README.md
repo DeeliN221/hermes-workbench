@@ -54,3 +54,20 @@ Forks may set `HERMES_WORKBENCH_RELEASE_REPOSITORY=owner/repository` and
 `HERMES_WORKBENCH_PLUGIN_ROOT=/path/to/plugins/workbench`. The official repository
 URL is a public project identifier, not an instance identity. Releases are
 manually selected by users; CI never deploys to your host.
+
+## PlantUML rendering
+
+Workbench uses the public PlantUML Server by default. An instance with its own
+server can configure it in the Hermes `config.yaml`:
+
+```yaml
+dashboard:
+  workbench:
+    plantuml_endpoint: https://plantuml.example.com/svg
+```
+
+The value must be an absolute HTTP(S) URL. Workbench reads it from `/api/config`;
+missing or invalid values fall back to the public server. A self-hosted server
+is useful when the instance needs a particular CJK font fallback. Diagrams are
+sent as UTF-8 hex GET URLs; each source is limited to 3500 bytes so the request
+stays below common proxy limits. Split larger diagrams into smaller views.
