@@ -35,9 +35,30 @@ class PreviewLoadingContract(unittest.IsolatedAsyncioTestCase):
         result = await self.bridge.history_preview('qa', 'default', 'session')
         self.assertFalse(result['cached'])
         self.assertEqual(result['turns'], [])
+        self.assertEqual(result['lastError'], '')
         with self.assertRaises(HTTPException) as raised:
             await self.bridge.history_preview('other', 'default', 'session')
         self.assertEqual(raised.exception.status_code, 404)
+
+    async def test_empty_preview_returns_the_terminal_turn_error(self):
+        self.append('turn/completed', {'turn': {
+            'id': 'failed-turn', 'status': 'failed',
+            'error': {'message': 'Selected model is at capacity. Please try a different model.'},
+        }})
+        result = await self.bridge.history_preview('qa', 'default', 'session')
+        self.assertFalse(result['cached'])
+        self.assertEqual(result['turns'], [])
+        self.assertEqual(result['lastError'], 'Selected model is at capacity. Please try a different model.')
+
+    async def test_empty_preview_clears_an_older_error_after_a_successful_turn(self):
+        self.append('turn/completed', {'turn': {
+            'id': 'failed-turn', 'status': 'failed',
+            'error': {'message': 'Selected model is at capacity. Please try a different model.'},
+        }})
+        self.append('turn/completed', {'turn': {'id': 'successful-turn', 'status': 'completed'}})
+        result = await self.bridge.history_preview('qa', 'default', 'session')
+        self.assertFalse(result['cached'])
+        self.assertEqual(result['lastError'], '')
 
     async def test_recent_turns_use_index_and_do_not_decode_older_items(self):
         for n in range(12):

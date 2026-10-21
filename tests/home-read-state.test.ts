@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { activityVersion, cardIdentity, cardWasRead, markCardRead, readMarkers } from '../dashboard/src/home-read-state';
+import { activityVersion, cardIdentity, cardWasRead, fetchReadMarkers, markCardRead, readMarkers } from '../dashboard/src/home-read-state';
 import { recentSessions } from '../dashboard/src/recent-home';
 
 beforeEach(() => localStorage.clear());
@@ -11,6 +11,10 @@ describe('home read acknowledgement', () => {
     const fetchJSON = vi.fn().mockResolvedValue({ readSeq: 12 });
     const markers = await markCardRead(fetchJSON, row);
     expect(fetchJSON).toHaveBeenCalledWith('/api/plugins/workbench/codex/session/read?profile=writer&session_id=one', expect.objectContaining({ method: 'POST', body: '{"readSeq":12}' }));
+    expect(fetchJSON).toHaveBeenCalledWith('/api/plugins/workbench/home-read-state', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ profile: 'writer', source: 'Codex', session_id: 'one', activity_version: activityVersion(row) }),
+    }));
     expect(cardWasRead(row, readMarkers('writer'))).toBe(true);
     expect(cardWasRead({ ...row, completedSeq: 13 }, markers)).toBe(false);
     expect(cardWasRead({ ...row, updated: 101000 }, markers)).toBe(true);
@@ -32,13 +36,32 @@ describe('home read acknowledgement', () => {
     await expect(markCardRead(vi.fn().mockRejectedValue(new Error('offline')), row)).rejects.toThrow('offline');
     expect(cardWasRead(row, readMarkers('writer'))).toBe(false);
   });
-  it('persists Hermes read state without invoking the Codex endpoint', async () => {
+  it('persists Hermes read state on the server and in the local cache', async () => {
     const row = recentSessions([], [{ id: 'history', updated_at: 100, message_count: 2 }], 'writer')[0];
-    const fetchJSON = vi.fn();
+    const fetchJSON = vi.fn().mockResolvedValue({ item: { profile: 'writer', source: 'Hermes', session_id: 'history', activity_version: activityVersion(row) } });
     const markers = await markCardRead(fetchJSON, row);
-    expect(fetchJSON).not.toHaveBeenCalled();
+    expect(fetchJSON).toHaveBeenCalledWith('/api/plugins/workbench/home-read-state', expect.objectContaining({
+      method: 'POST',
+      body: JSON.stringify({ profile: 'writer', source: 'Hermes', session_id: 'history', activity_version: activityVersion(row) }),
+    }));
     expect(cardWasRead({ ...row, updated: row.updated + 5000 }, readMarkers('writer'))).toBe(true);
     expect(cardWasRead({ ...row, messageCount: 3 }, markers)).toBe(false);
+  });
+  it('loads Hermes acknowledgements written by another device', async () => {
+    const row = recentSessions([], [{ id: 'history', updated_at: 100, message_count: 2 }], 'writer')[0];
+    const fetchJSON = vi.fn().mockResolvedValue({ items: [
+      { profile: 'writer', source: 'Hermes', session_id: 'history', activity_version: activityVersion(row) },
+      { profile: '', source: 'Hermes', session_id: 'missing-profile', activity_version: '["v2",1]' },
+    ] });
+    const markers = await fetchReadMarkers(fetchJSON, new AbortController().signal);
+    expect(fetchJSON).toHaveBeenCalledWith('/api/plugins/workbench/home-read-state', expect.objectContaining({ signal: expect.any(AbortSignal) }));
+    expect(cardWasRead(row, markers)).toBe(true);
+    expect(markers).not.toHaveProperty(JSON.stringify(['', 'Hermes', 'missing-profile']));
+  });
+  it('keeps Hermes unread when the server rejects the acknowledgement', async () => {
+    const row = recentSessions([], [{ id: 'history', updated_at: 100, message_count: 2 }], 'writer')[0];
+    await expect(markCardRead(vi.fn().mockRejectedValue(new Error('offline')), row)).rejects.toThrow('offline');
+    expect(cardWasRead(row, readMarkers('writer'))).toBe(false);
   });
   it('omits non-openable Codex projections while retaining ordinary history', () => {
     const rows = recentSessions([{ id: 'same' }], [

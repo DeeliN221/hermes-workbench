@@ -25,7 +25,7 @@ export async function loadHomeProfiles(fetchJSON: FetchJSON, signal: AbortSignal
     };
     await Promise.all([
       codexSessions(read, profile, signal, rows => { codex = rows; update(); }, true),
-      listSessions(read, profile, rows => { hermes = rows; update(); }),
+      listSessions(read, profile, rows => { hermes = rows; update(); }, ['kanban']),
     ].map(async request => {
       try { await request; } catch { failed.add(profile); publish(); }
     }));

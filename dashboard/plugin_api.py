@@ -62,8 +62,10 @@ _RESIZE_PREFIX = "\x1b[RESIZE:"
 _ORGANIZATION_STATE_DIR = ".hermes-workbench"
 _ORGANIZATION_DB_NAME = "session-organization.sqlite3"
 _KANBAN_SESSION_LINKS_TABLE = "kanban_session_links"
+_HOME_READ_STATE_TABLE = "home_read_state"
 _MAX_PROFILE_LENGTH = 128
 _MAX_SESSION_ID_LENGTH = 256
+_MAX_READ_ACTIVITY_LENGTH = 256
 _MAX_DISPLAY_NAME_LENGTH = 120
 _MAX_COLLECTION_LENGTH = 80
 _MAX_TAGS = 8
@@ -175,6 +177,15 @@ class KanbanActivityBody(BaseModel):
     tail_bytes: int = Field(default=8192, ge=512, le=16384)
 
 
+class HomeReadStateBody(BaseModel):
+    """One acknowledged recent-home card, stored outside the browser."""
+
+    profile: str = Field(default="default", max_length=_MAX_PROFILE_LENGTH)
+    source: str = Field(min_length=1, max_length=16)
+    session_id: str = Field(min_length=1, max_length=_MAX_SESSION_ID_LENGTH)
+    activity_version: str = Field(min_length=1, max_length=_MAX_READ_ACTIVITY_LENGTH)
+
+
 def _workspace_root() -> Path:
     """Resolve the single configured Workbench root for this dashboard."""
 
@@ -266,6 +277,22 @@ def _open_organization_db() -> sqlite3.Connection:
                 PRIMARY KEY (board, task_id, profile, session_id)
             )
             """
+        )
+        connection.execute(
+            f"""
+            CREATE TABLE IF NOT EXISTS {_HOME_READ_STATE_TABLE} (
+                profile TEXT NOT NULL,
+                source TEXT NOT NULL,
+                session_id TEXT NOT NULL,
+                activity_version TEXT NOT NULL,
+                updated_at REAL NOT NULL,
+                PRIMARY KEY (profile, source, session_id)
+            )
+            """
+        )
+        connection.execute(
+            f"CREATE INDEX IF NOT EXISTS idx_{_HOME_READ_STATE_TABLE}_updated "
+            f"ON {_HOME_READ_STATE_TABLE} (updated_at DESC)"
         )
         # A task owns one durable conversation. Older releases allowed several
         # rows per task; retain only the newest before installing the invariant.
@@ -391,6 +418,102 @@ def _organization_row(row: sqlite3.Row) -> dict[str, Any]:
         "summary": str(row["summary"] or ""),
         "updated_at": float(row["updated_at"]),
     }
+
+
+def _normalize_home_read_state(body: HomeReadStateBody) -> dict[str, Any]:
+    """Validate one read acknowledgement before it reaches SQLite."""
+
+    profile = _clean_identifier(body.profile or "default", label="Profile", maximum=_MAX_PROFILE_LENGTH)
+    source = _clean_identifier(body.source, label="Source", maximum=16)
+    if source not in {"Codex", "Hermes"}:
+        raise HTTPException(status_code=400, detail="Source must be Codex or Hermes")
+    session_id = _clean_identifier(body.session_id, label="Session ID", maximum=_MAX_SESSION_ID_LENGTH)
+    activity_version = str(body.activity_version or "").strip()
+    if not activity_version or len(activity_version) > _MAX_READ_ACTIVITY_LENGTH:
+        raise HTTPException(status_code=400, detail="Read activity version is invalid")
+    if any(ord(character) < 32 for character in activity_version):
+        raise HTTPException(status_code=400, detail="Read activity version contains control characters")
+    return {
+        "profile": profile,
+        "source": source,
+        "session_id": session_id,
+        "activity_version": activity_version,
+    }
+
+
+def _home_read_state_row(row: sqlite3.Row) -> dict[str, Any]:
+    """Return the stable JSON shape used by the recent-home client."""
+
+    return {
+        "profile": str(row["profile"]),
+        "source": str(row["source"]),
+        "session_id": str(row["session_id"]),
+        "activity_version": str(row["activity_version"]),
+        "updated_at": float(row["updated_at"]),
+    }
+
+
+def _list_home_read_state(profile: str = "") -> list[dict[str, Any]]:
+    """List cross-device acknowledgements, optionally for one profile."""
+
+    normalized_profile = ""
+    if profile:
+        normalized_profile = _clean_identifier(profile, label="Profile", maximum=_MAX_PROFILE_LENGTH)
+    connection = _open_organization_db()
+    try:
+        if normalized_profile:
+            rows = connection.execute(
+                f"""
+                SELECT profile, source, session_id, activity_version, updated_at
+                FROM {_HOME_READ_STATE_TABLE}
+                WHERE profile = ?
+                ORDER BY updated_at DESC
+                LIMIT 10000
+                """,
+                (normalized_profile,),
+            ).fetchall()
+        else:
+            rows = connection.execute(
+                f"""
+                SELECT profile, source, session_id, activity_version, updated_at
+                FROM {_HOME_READ_STATE_TABLE}
+                ORDER BY updated_at DESC
+                LIMIT 10000
+                """
+            ).fetchall()
+        return [_home_read_state_row(row) for row in rows]
+    finally:
+        connection.close()
+
+
+def _save_home_read_state(body: HomeReadStateBody) -> dict[str, Any]:
+    """Upsert the activity version the operator acknowledged on any device."""
+
+    item = _normalize_home_read_state(body)
+    updated_at = time.time()
+    connection = _open_organization_db()
+    try:
+        connection.execute(
+            f"""
+            INSERT INTO {_HOME_READ_STATE_TABLE}
+                (profile, source, session_id, activity_version, updated_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(profile, source, session_id) DO UPDATE SET
+                activity_version = excluded.activity_version,
+                updated_at = excluded.updated_at
+            """,
+            (
+                item["profile"],
+                item["source"],
+                item["session_id"],
+                item["activity_version"],
+                updated_at,
+            ),
+        )
+        connection.commit()
+        return {**item, "updated_at": updated_at}
+    finally:
+        connection.close()
 
 
 def _list_session_organization(profile: str) -> list[dict[str, Any]]:
@@ -831,6 +954,20 @@ async def get_kanban_sessions(task_id: str, board: str = "") -> dict[str, Any]:
     """Return Workbench conversations explicitly associated with one Kanban task."""
 
     return {"items": await asyncio.to_thread(_list_or_migrate_kanban_session_links, task_id, board)}
+
+
+@router.get("/home-read-state")
+async def get_home_read_state(profile: str = "") -> dict[str, Any]:
+    """Return recent-home read acknowledgements shared across devices."""
+
+    return {"items": await asyncio.to_thread(_list_home_read_state, profile)}
+
+
+@router.post("/home-read-state")
+async def post_home_read_state(body: HomeReadStateBody) -> dict[str, Any]:
+    """Persist one recent-home acknowledgement for every device."""
+
+    return {"item": await asyncio.to_thread(_save_home_read_state, body)}
 
 
 @router.put("/kanban-sessions")
