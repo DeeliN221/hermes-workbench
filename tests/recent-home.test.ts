@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityTime, isScheduledSession, recentSessions, promptPair, visibleRequest, loadPromptPair } from '../dashboard/src/recent-home';
+import { activityTime, isInternalSession, isKanbanRunSession, isScheduledSession, recentSessions, promptPair, visibleRequest, loadPromptPair } from '../dashboard/src/recent-home';
 
 describe('recent home activity', () => {
   it('recognizes scheduled sessions even when the Codex projection omits source metadata', () => {
@@ -7,6 +7,17 @@ describe('recent home activity', () => {
     expect(isScheduledSession({ id: 'cron_abc_20261017_120000' })).toBe(true);
     expect(isScheduledSession({ id: 'chat_1' })).toBe(false);
     expect(recentSessions([{ id: 'cron_abc_20261017_120000', title: 'No reply', updatedAt: 300 }], [], 'writer')).toEqual([]);
+  });
+
+  it('hides Kanban worker runs even when their source or title casing varies', () => {
+    expect(isKanbanRunSession({ source: 'kanban', id: 'run-1' })).toBe(true);
+    expect(isKanbanRunSession({ created_source: 'kanban', id: 'run-2' })).toBe(true);
+    expect(isKanbanRunSession({ id: 'run-3', title: 'work kanban task t_e32c1716 #3' })).toBe(true);
+    expect(isKanbanRunSession({ id: 'run-4', title: 'Work on kanban task t_715fea9c' })).toBe(true);
+    expect(isKanbanRunSession({ id: 'run-5', title: 'Complete Kanban task t_bdc784f0' })).toBe(true);
+    expect(isKanbanRunSession({ id: 'chat-1', title: 'How does the kanban task view work?' })).toBe(false);
+    expect(isInternalSession({ source: 'cron', id: 'run-6' })).toBe(true);
+    expect(recentSessions([], [{ source: 'kanban', id: 'run-1', title: 'work kanban task t_e32c1716' }], 'default')).toEqual([]);
   });
 
   it('orders old conversations by new activity across sources, without mixing IDs', () => {

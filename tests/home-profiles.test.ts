@@ -25,6 +25,17 @@ describe('cross-profile home', () => {
     expect(result.rows).toHaveLength(1);
     expect(result.failed).toEqual(['writer']);
   });
+  it('excludes Kanban worker runs at the home session request', async () => {
+    const urls: string[] = [];
+    const read = async <T>(url: string): Promise<T> => {
+      urls.push(url);
+      if (url === '/api/plugins/workbench/profile-names') return { profiles: [{ name: 'default' }] } as T;
+      if (url.includes('/codex/sessions')) return { items: [] } as T;
+      return { sessions: [], total: 0 } as T;
+    };
+    await loadHomeProfiles(read, new AbortController().signal, { initialProfile: 'default' });
+    expect(urls.find(url => url.startsWith('/api/profiles/sessions'))).toContain('exclude_sources=cron,kanban');
+  });
   it('renders the current profile before a delayed roster or archive and still finds active old sessions', async () => {
     let releaseRoster!: () => void, releaseArchive!: () => void;
     const roster = new Promise<void>(resolve => { releaseRoster = resolve; });

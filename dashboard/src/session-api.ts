@@ -55,9 +55,10 @@ async function sessionPage(
   fetchJSON: FetchJSON,
   profile: string,
   offset: number,
+  excludeSources: string[],
 ): Promise<SessionsResponse> {
   return await fetchJSON<SessionsResponse>(
-    `/api/profiles/sessions?limit=${SESSION_PAGE_SIZE}&offset=${offset}&archived=include&order=recent&profile=${query(profile)}&exclude_sources=cron`,
+    `/api/profiles/sessions?limit=${SESSION_PAGE_SIZE}&offset=${offset}&archived=include&order=recent&profile=${query(profile)}&exclude_sources=${excludeSources.join(',')}`,
   );
 }
 
@@ -71,9 +72,11 @@ export async function listSessions(
   fetchJSON: FetchJSON,
   profile: string,
   onPage?: (rows: HermesRecord[]) => void,
+  excludeSources: string[] = [],
 ): Promise<SessionListResult> {
+  const excluded = [...new Set(['cron', ...excludeSources.filter(Boolean)])];
   // The ordinary sessions endpoint may auto-archive; the cross-profile aggregation endpoint is explicitly read-only.
-  let first = await sessionPage(fetchJSON, profile, 0);
+  let first = await sessionPage(fetchJSON, profile, 0, excluded);
   // A completed profile move from an older build could leave its target
   // projection hidden or absent. Repair that durable state when the migrated
   // profile is empty, then read the list again.
@@ -81,7 +84,7 @@ export async function listSessions(
     const recovered = await fetchJSON<{ restored?: number; visible?: number }>(
       '/api/plugins/workbench/recover-migrated-sessions', { method: 'POST' },
     ).catch(() => ({ restored: 0, visible: 0 }));
-    if (Number(recovered.restored) + Number(recovered.visible) > 0) first = await sessionPage(fetchJSON, profile, 0);
+    if (Number(recovered.restored) + Number(recovered.visible) > 0) first = await sessionPage(fetchJSON, profile, 0, excluded);
   }
   const firstRows = Array.isArray(first.sessions) ? first.sessions : [];
   const total = Number.isFinite(Number(first.total)) ? Math.max(0, Number(first.total)) : firstRows.length;
@@ -91,7 +94,7 @@ export async function listSessions(
   for (let offset = SESSION_PAGE_SIZE; offset < readableTotal; offset += SESSION_PAGE_SIZE) {
     offsets.push(offset);
   }
-  const remaining = await Promise.all(offsets.map(offset => sessionPage(fetchJSON, profile, offset)));
+  const remaining = await Promise.all(offsets.map(offset => sessionPage(fetchJSON, profile, offset, excluded)));
   const seen = new Set<string>();
   const sessions = [first, ...remaining].flatMap(page => Array.isArray(page.sessions) ? page.sessions : [])
     .filter(row => {

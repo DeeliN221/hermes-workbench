@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Exclude Kanban worker runs from recent home so task retries no longer appear as unread conversations.
 - Render PlantUML locally with the bundled browser engine instead of a remote server.
 - Keep diagram source inside the browser and remove the PlantUML endpoint setting.
 

@@ -15,6 +15,19 @@ export function isScheduledSession(row: HermesRecord): boolean {
   return source === 'cron' || id.startsWith('cron_');
 }
 
+/** Worker runs belong to a Kanban task, not to the operator's conversation list. */
+export function isKanbanRunSession(row: HermesRecord): boolean {
+  const source = `${row.source ?? ''} ${row.created_source ?? ''}`.toLocaleLowerCase();
+  if (source.split(/[\s,]+/).includes('kanban')) return true;
+  // Older rows can lose their source marker in a projection; the generated
+  // worker title still carries the stable task id.
+  return /^(?:work(?: on)?|complete)\s+kanban task\b/i.test(String(row.title ?? '').trim());
+}
+
+export function isInternalSession(row: HermesRecord): boolean {
+  return isScheduledSession(row) || isKanbanRunSession(row);
+}
+
 export function activityTime(row: HermesRecord): number {
   for (const value of [row.updatedAt, row.updated_at, row.last_active, row.last_message_at, row.createdAt, row.created_at]) {
     if (value === null || value === undefined || value === '') continue;
@@ -31,7 +44,7 @@ export function recentSessions(codex: HermesRecord[], hermes: HermesRecord[], pr
     const id = String(row.id ?? row.session_id ?? '');
     const owner = String(row.profile || profile);
     const key = `${owner}:${source}:${id}`;
-    if (!id || row.deleted || row.archived || isScheduledSession(row) || seen.has(key)) return [];
+    if (!id || row.deleted || row.archived || isInternalSession(row) || seen.has(key)) return [];
     // The chat reader rejects Codex projections; only mapped Codex sessions are openable.
     if (source === 'Hermes' && row.source === 'codex') return [];
     seen.add(key);
