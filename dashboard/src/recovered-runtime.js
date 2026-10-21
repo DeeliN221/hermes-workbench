@@ -1,5 +1,6 @@
 import { createWorkbenchTerminal } from './terminal-runtime';
 import { renderMarkdownSource as S2 } from './markdown-source';
+import { reconcileMarkdownHtml } from './markdown-html';
 import { EditorView as Te, lineNumbers as aS, highlightActiveLine as iS, highlightActiveLineGutter as cS,
   syntaxHighlighting as Su, defaultHighlightStyle as mS, codeHighlightStyle as O2,
   codeLanguage as w2, fileLanguage as AL, fileLanguage as fM } from './editor-runtime';
@@ -4320,6 +4321,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       const c = n(null),
         { content: a, streaming: l } = useSelectableMarkdown(t, c, incomingContent, incomingStreaming),
         markdownHtml = t.useMemo(() => ({ __html: S2(a) }), [a]),
+        renderedContent = n(""),
         u = n(null),
         h = n(null),
         d = n(0),
@@ -4364,6 +4366,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         r(() => {
           const p = c.current;
           if (!p) return;
+          // Streaming updates can leave the parsed HTML behind the message
+          // snapshot, truncating the last fenced block. Reconcile the DOM
+          // before enhancement so PlantUML and Mermaid see the full source.
+          reconcileMarkdownHtml(p, a, renderedContent);
           const m = u.current !== a,
             O = h.current !== l;
           ((u.current = a), (h.current = l));
