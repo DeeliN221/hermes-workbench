@@ -72,4 +72,18 @@ describe('OZW request cards', () => {
     expect(await loadPromptPair(read, 'writer', row, new AbortController().signal)).toEqual({first:'Cached request',latest:'Cached request',partial:true});
     expect(urls[0]).toBe('/api/plugins/workbench/codex/session/preview?profile=writer&session_id=one&turns=8');
   });
+  it('surfaces a terminal error instead of claiming an uncached prompt', async () => {
+    const row = recentSessions([{ id: 'one', status: 'failed' }], [], 'writer')[0];
+    const read = async <T>(): Promise<T> => ({ turns: [], lastError: 'Selected model is at capacity. Please try a different model.' }) as T;
+    expect(await loadPromptPair(read, 'writer', row, new AbortController().signal)).toEqual({
+      first: '', latest: '', partial: true, error: 'Selected model is at capacity. Please try a different model.',
+    });
+  });
+  it('keeps a prompt and its failed-turn error together', async () => {
+    const row = recentSessions([{ id: 'one', status: 'failed' }], [], 'writer')[0];
+    const read = async <T>(): Promise<T> => ({ turns: [{ items: [{ type: 'userMessage', content: 'Run the task' }], error: { message: 'serverOverloaded' } }] }) as T;
+    expect(await loadPromptPair(read, 'writer', row, new AbortController().signal)).toEqual({
+      first: 'Run the task', latest: 'Run the task', partial: true, error: 'serverOverloaded',
+    });
+  });
 });

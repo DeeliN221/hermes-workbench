@@ -1308,6 +1308,40 @@ class BridgeStore:
             snapshot_seq = self.event_highwater(user, profile, session_id)
             return {"turns": turns, "snapshotSeq": snapshot_seq}
 
+    def latest_turn_error(self, user: str, profile: str, session_id: str) -> str:
+        """Return the newest terminal error without loading a full transcript."""
+
+        with self.lock:
+            rows = self.connection.execute(
+                """SELECT payload FROM codex_events
+                   WHERE user_id=? AND profile=? AND session_id=?
+                     AND method IN ('turn/completed','history/turn-status','error')
+                   ORDER BY seq DESC LIMIT 50""",
+                (user, profile, session_id),
+            ).fetchall()
+        for row in rows:
+            try:
+                params = json.loads(row["payload"]).get("params", {})
+            except (TypeError, ValueError, AttributeError):
+                continue
+            if not isinstance(params, dict):
+                continue
+            error = params.get("error")
+            if isinstance(error, dict):
+                message = str(error.get("message") or "").strip()
+                if message:
+                    return message[:1000]
+            turn = params.get("turn")
+            if not isinstance(turn, dict):
+                continue
+            # The newest terminal turn decides. A later success must clear an
+            # older capacity error instead of leaving it on the card forever.
+            if str(turn.get("status") or "") not in {"completed", "failed", "interrupted"}:
+                continue
+            turn_error = turn.get("error")
+            return str(turn_error.get("message") or "").strip()[:1000] if isinstance(turn_error, dict) else ""
+        return ""
+
     def pending_approvals(self, user: str, profile: str, session_id: str) -> list[dict[str, Any]]:
         """Return only unresolved approval requests owned by this session."""
 
@@ -2183,10 +2217,16 @@ class CodexBridge:
                 "hasMore": False,
                 "readSeq": self.store.read_progress(user, profile, session_id),
                 "cached": True,
+                "lastError": "",
             }
         preview = await asyncio.to_thread(self.store.cached_history_preview, user, profile, session_id, limit)
         if preview is None:
-            return {"cached": False, "session": session, "turns": []}
+            return {
+                "cached": False,
+                "session": session,
+                "turns": [],
+                "lastError": await asyncio.to_thread(self.store.latest_turn_error, user, profile, session_id),
+            }
         preview["turns"] = await asyncio.to_thread(response_metrics.decorate_turns, self.store, (user, profile, session_id), preview["turns"])
         terminal_turns = {
             str(turn.get("id"))
@@ -2210,6 +2250,11 @@ class CodexBridge:
             "hasMore": False,
             "readSeq": self.store.read_progress(user, profile, session_id),
             "cached": True,
+            "lastError": next((
+                str(turn.get("error", {}).get("message") or "").strip()
+                for turn in reversed(preview["turns"])
+                if isinstance(turn.get("error"), dict) and turn["error"].get("message")
+            ), ""),
         }
 
     async def _persist_history(self, session: dict[str, Any], connection: JsonRpcConnection, turns: list[dict[str, Any]], entries: list[Any], marker_indexes: list[int]) -> None:

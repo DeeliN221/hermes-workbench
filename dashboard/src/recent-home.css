@@ -29,6 +29,7 @@
 .workbench-home-request { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 15px; line-height: 1.6; }
 .workbench-home-ellipsis { margin: 4px 0; color: var(--mc-muted, #70776b); }
 .workbench-home-request-status { margin: 0; color: var(--mc-muted, #70776b); }
+.workbench-home-request-error { margin: 0; color: var(--mc-danger, #a32727); font-size: 14px; line-height: 1.5; overflow-wrap: anywhere; }
 .dashboard-owned-page:focus { outline: none; }
 
 .workbench-home-swipe { position: relative; overflow: hidden; border-radius: 16px; background: #32764c; }

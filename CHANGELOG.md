@@ -3,6 +3,8 @@
 ## Unreleased
 
 - Exclude Kanban worker runs from recent home so task retries no longer appear as unread conversations.
+- Persist recent-home read state on the server so acknowledgements follow the account across browsers.
+- Show terminal Codex turn errors on recent cards instead of claiming the request is not cached.
 - Render PlantUML locally with the bundled browser engine instead of a remote server.
 - Keep diagram source inside the browser and remove the PlantUML endpoint setting.
 
