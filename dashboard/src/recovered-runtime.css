@@ -9871,6 +9871,18 @@ dialog.codex-session-search-dialog-backdrop::backdrop {
   border-radius: 8px;
   box-shadow: none;
 }
+/* A single pane has enough room for the full transcript and composer. Keep
+   the narrower centered column only when panes are side by side. */
+.codex-multi-pane[data-pane-count="1"] .codex-message,
+.codex-multi-pane[data-pane-count="1"] .codex-tool-group,
+.codex-multi-pane[data-pane-count="1"] .codex-request {
+  max-width: none;
+  margin-inline: 0;
+}
+.codex-multi-pane[data-pane-count="1"] .codex-composer {
+  max-width: none;
+  margin-inline: 0;
+}
 .codex-composer-wrap {
   padding-top: 8px;
   padding-bottom: 14px;
