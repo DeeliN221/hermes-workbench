@@ -4,6 +4,7 @@
 
 - Render PlantUML locally with the bundled browser engine instead of a remote server.
 - Keep diagram source inside the browser and remove the PlantUML endpoint setting.
+- Reconcile streaming Markdown updates so trailing PlantUML fences render from the complete message.
 
 ## Fresh public source snapshot
 
