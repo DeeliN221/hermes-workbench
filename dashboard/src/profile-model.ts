@@ -1,4 +1,3 @@
-import { uiText as sourceText } from './ui-locale';
 type ModelChoice = { id: string; label: string; isDefault: boolean };
 
 /** Compare provider-qualified and versioned aliases without changing the chosen model ID. */
@@ -38,21 +37,29 @@ type ChatModelChoice = ModelChoice & {
 type ProfileConfig = {
   agent?: { reasoning_effort?: string; reasoning_overrides?: Record<string, string>; service_tier?: string };
 };
+const EFFORT_ORDER = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'];
+
+/** Pick the available effort closest to the profile preference, preferring higher on a tie. */
+export function closestEffort(preferred: string, efforts: string[]): string {
+  if (!efforts.length || efforts.includes(preferred)) return preferred;
+  const target = EFFORT_ORDER.indexOf(preferred);
+  if (target < 0) return efforts[0];
+  return [...efforts].sort((left, right) => {
+    const leftDistance = Math.abs(EFFORT_ORDER.indexOf(left) - target);
+    const rightDistance = Math.abs(EFFORT_ORDER.indexOf(right) - target);
+    return leftDistance - rightDistance || EFFORT_ORDER.indexOf(right) - EFFORT_ORDER.indexOf(left);
+  })[0];
+}
 
 /** Apply this profile's reasoning and response priority to the live model catalog. */
 export function applyProfileChatDefaults<T extends ChatModelChoice>(choices: T[], config: unknown) {
   const agent = (config as ProfileConfig | null)?.agent;
   return applyProfileModel(choices, config).map(choice => {
     const override = Object.entries(agent?.reasoning_overrides || {})
-      .find(([name]) => name.toLowerCase() === choice.id.toLowerCase())?.[1];
-    const effort = override || agent?.reasoning_effort || choice.defaultEffort || choice.efforts[0] || 'medium';
+      .find(([name]) => modelKey(name) === modelKey(choice.id))?.[1];
+    const preferred = override || agent?.reasoning_effort || choice.defaultEffort || choice.efforts[0] || 'medium';
+    const effort = closestEffort(preferred, choice.efforts);
     const fast = ['priority', 'fast'].includes(agent?.service_tier || '');
-    if (choice.isDefault && choice.efforts.length && !choice.efforts.includes(effort)) {
-      throw new Error(sourceText(`当前 profile 的思考深度 ${effort} 不适用于 ${choice.id}`, `The profile reasoning effort ${effort} is unavailable for ${choice.id}`));
-    }
-    if (choice.isDefault && fast && !choice.fastServiceTier) {
-      throw new Error(sourceText(`当前 profile 要求优先响应，但 ${choice.id} 未提供此选项`, `The profile requests priority responses, but ${choice.id} does not offer this option`));
-    }
     return { ...choice, defaultEffort: effort, defaultFast: fast && !!choice.fastServiceTier };
   });
 }

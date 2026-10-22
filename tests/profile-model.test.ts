@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyProfileModel, applyProfileChatDefaults, filterCodexModels, modelKey } from '../dashboard/src/profile-model';
+import { applyProfileModel, applyProfileChatDefaults, closestEffort, filterCodexModels, modelKey } from '../dashboard/src/profile-model';
 
 const models = ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna'].map((id, index) => ({ id, label: id, isDefault: index === 0 }));
 
@@ -45,9 +45,19 @@ describe('profile chat defaults', () => {
     expect(coach.find(m => m.isDefault)).toMatchObject({ id: 'gpt-6-luna', defaultEffort: 'high', defaultFast: false });
     expect(catalog[0].defaultEffort).toBe('medium');
   });
-  it('uses catalog defaults when unset and reports unsupported settings', () => {
+  it('uses catalog defaults when unset and adapts unsupported settings', () => {
     expect(applyProfileChatDefaults(catalog, {})[0]).toMatchObject({ defaultEffort: 'medium', defaultFast: false });
-    expect(() => applyProfileChatDefaults(catalog, { agent: { reasoning_effort: 'ultra' } })).toThrow('ultra');
-    expect(() => applyProfileChatDefaults(catalog.map(m => ({ ...m, fastServiceTier: undefined })), { agent: { service_tier: 'priority' } })).toThrow();
+    expect(applyProfileChatDefaults(catalog, { agent: { reasoning_effort: 'ultra' } })[0].defaultEffort).toBe('high');
+    expect(applyProfileChatDefaults(catalog.map(m => ({ ...m, fastServiceTier: undefined })), { agent: { service_tier: 'priority' } })[0].defaultFast).toBe(false);
+  });
+  it('matches reasoning overrides through provider and version aliases', () => {
+    const deepseek = [{ id: 'deepseek/deepseek-flash', label: 'DeepSeek Flash', isDefault: false,
+      efforts: ['low', 'high', 'max'], defaultEffort: 'high', supportsFast: false }];
+    const result = applyProfileChatDefaults(deepseek, {
+      model: { default: 'deepseek/deepseek-v4-flash' },
+      agent: { reasoning_effort: 'xhigh', reasoning_overrides: { 'deepseek/deepseek-v4-flash': 'max' } },
+    });
+    expect(result[0]).toMatchObject({ id: 'deepseek/deepseek-flash', isDefault: true, defaultEffort: 'max', defaultFast: false });
+    expect(closestEffort('xhigh', ['low', 'high', 'max'])).toBe('max');
   });
 });
