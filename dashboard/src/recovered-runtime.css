@@ -10225,3 +10225,81 @@ html.dark .hti-rich-text {
 .codex-response-time { justify-self: center; }
 .codex-weekly-quota { justify-self: end; text-align: right; }
 @media (max-width: 520px) { .codex-process-summary { gap: .35rem; font-size: .75rem; } }
+
+/* Session accent colours: one store feeds Codex pane headers and session cards. */
+.codex-center-header { position: relative; }
+.codex-pane-color-bar {
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 3px;
+  z-index: 2;
+  pointer-events: none;
+}
+.codex-session-color-bar {
+  position: absolute;
+  left: 0;
+  top: 0.35rem;
+  bottom: 0.35rem;
+  width: 3px;
+  border-radius: 0 999px 999px 0;
+  pointer-events: none;
+}
+.codex-pane-color-picker { position: relative; display: flex; flex: 0 0 auto; }
+.codex-pane-color-trigger { display: grid; place-items: center; }
+.codex-pane-color-dot {
+  display: block;
+  width: 0.9rem;
+  height: 0.9rem;
+  border-radius: 999px;
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--codex-ink) 30%, transparent),
+    0 0 0 3px color-mix(in srgb, var(--codex-surface) 65%, transparent);
+}
+.codex-pane-color-menu {
+  position: absolute;
+  top: calc(100% + 0.4rem);
+  right: 0;
+  left: auto;
+  min-width: 11.5rem;
+  z-index: 45;
+}
+.codex-session-color-section {
+  display: grid;
+  gap: 0.25rem;
+  margin-top: 0.15rem;
+  padding: 0.35rem 0.35rem 0.1rem;
+  border-top: 1px solid var(--codex-border-soft);
+}
+.codex-session-color-heading {
+  padding: 0 0.15rem;
+  color: var(--codex-muted);
+  font-size: 0.72rem;
+}
+.codex-session-color-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.3rem;
+  padding: 0.1rem;
+}
+.codex-session-row-menu .codex-session-color-swatch {
+  display: grid;
+  place-items: center;
+  width: 1.4rem;
+  height: 1.4rem;
+  min-width: 1.4rem;
+  min-height: 1.4rem;
+  padding: 0;
+  border: 2px solid transparent;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.codex-session-row-menu .codex-session-color-swatch:hover,
+.codex-session-row-menu .codex-session-color-swatch:focus-visible {
+  border-color: color-mix(in srgb, var(--codex-ink) 45%, transparent);
+}
+.codex-session-row-menu .codex-session-color-swatch.is-selected {
+  border-color: var(--codex-surface);
+  box-shadow: 0 0 0 2px var(--codex-ink);
+}

@@ -52,6 +52,7 @@ import { createChatComposerInput } from './chat-composer-input';
 import { processBlocks } from './chat-process-messages';
 import { visibleChatText } from './chat-line-output';
 import { resolveSessionTitle } from './session-title';
+import { SESSION_COLORS, SESSION_COLOR_LABELS, primeSessionColors, saveSessionColor, sessionColor, subscribeSessionColors } from './session-colors';
 import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
 /** Maintain the complete buildable Workbench runtime; locate sidebar grouping via hti-session-group-toggle. */
 (function () {
@@ -9847,6 +9848,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [Rs, Fl] = o(""),
         [yn, Fr] = o(null),
         [Y0, Pt] = o(""),
+        [paneColorMenu, setPaneColorMenu] = o(!1),
+        [, bumpSessionColors] = o(0),
         [G0, Hl] = o(""),
         [vM, yM] = o(0),
         [Ls, Ms] = o(!1),
@@ -9864,6 +9867,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         jd = s(null),
         Fd = s(null),
         Ul = s(new Map()),
+        colorTrigger = s(null),
         Hi = s(!0),
         kr = s(M);
       ((kr.current = M),
@@ -9901,7 +9905,30 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               ((L = !1), ee?.disconnect());
             }
           );
-        }, [p]));
+        }, [p]),
+        r(() => subscribeSessionColors(() => bumpSessionColors(value => value + 1)), []),
+        r(() => {
+          if (!paneColorMenu) return;
+          const L = (ne) => {
+              (ne.target instanceof Element &&
+                ne.target.closest(".codex-pane-color-picker")) ||
+                setPaneColorMenu(!1);
+            },
+            U = (ne) => {
+              ne.key === "Escape" &&
+                (ne.preventDefault(),
+                setPaneColorMenu(!1),
+                colorTrigger.current?.focus());
+            };
+          return (
+            document.addEventListener("pointerdown", L),
+            document.addEventListener("keydown", U),
+            () => {
+              (document.removeEventListener("pointerdown", L),
+                document.removeEventListener("keydown", U));
+            }
+          );
+        }, [paneColorMenu]));
       const Hd = t(() => {
         const L = Zd.current;
         (L?.open && L.close(), We(null), kt(""));
@@ -10200,6 +10227,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               })));
               V(previous => stableChatList(previous, ze));
               G(previous => stableChatList(previous, Ge));
+              primeSessionColors(M, $e);
+              primeSessionColors(M, Ge);
               const zt = Y.current;
               if (zt && Ge.some((Ke) => Ke.id === zt))
                 Kl(runtimeText("当前会话已归档，已停止发送；可在“已归档”中恢复。", "This session is archived and sending is disabled. Restore it from Archived."));
@@ -10554,7 +10583,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         ec = z,
         sv = Ye,
         ei = q.find((L) => L.id === k),
-        PM = Ye.find((L) => L.id === B);
+        PM = Ye.find((L) => L.id === B),
+        paneColor = k && !B ? sessionColor(M, k, ei?.color || "") : "";
       r(() => {
         if (!ei || !k) return;
         const L = k,
@@ -11078,6 +11108,59 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           },
           [M, i.fetchJSON],
         ),
+        changeSessionColor = t(
+          async (L, U) => {
+            try {
+              const ee = await saveSessionColor(i.fetchJSON, M, L, U);
+              ee &&
+                $((ne) =>
+                  ne.map((xe) => (xe.id === ee.id ? { ...xe, ...ee } : xe)),
+                );
+              return ee;
+            } catch (ee) {
+              return (
+                Hi.current && kr.current === M && Pt(String(ee)),
+                null
+              );
+            }
+          },
+          [M, i.fetchJSON],
+        ),
+        renderSessionColorChoices = (L, U, ee) =>
+          SESSION_COLORS.map((ne, xe) => {
+            const tt = sessionColor(M, L, U) === ne;
+            return W(
+              e,
+              "button",
+              {
+                type: "button",
+                role: "menuitemradio",
+                key: ne,
+                className: `codex-session-color-swatch${tt ? " is-selected" : ""}`,
+                style: { background: ne },
+                "aria-checked": tt,
+                "aria-label": runtimeText(...SESSION_COLOR_LABELS[xe]),
+                title: runtimeText(...SESSION_COLOR_LABELS[xe]),
+                onClick: () => {
+                  (ee(), changeSessionColor(L, ne));
+                },
+              },
+              tt ? "✓" : "",
+            );
+          }),
+        renderSessionColorReset = (L, U, ee) =>
+          W(
+            e,
+            "button",
+            {
+              type: "button",
+              role: "menuitem",
+              onClick: () => {
+                (ee(), changeSessionColor(L, ""));
+              },
+            },
+            runtimeText("恢复默认", "Restore default"),
+          ),
         LM = t(
           (L) => {
             (Ce(""),
@@ -11355,6 +11438,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               {
                 type: "button",
                 className: `codex-session-row${L.id === Sv ? " is-active" : ""}${U ? " is-archived" : ""}${L.favorite ? " is-favorite" : ""}${ee ? ` ${ee.className}` : ""}`,
+                "data-session-color": sessionColor(M, L.id, L.color),
                 onClick: U ? void 0 : () => ev(L.id),
                 title: [ne, ee?.label, L.updatedAt].filter(Boolean).join(`
 `),
@@ -11366,6 +11450,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             L.favorite
               ? W(e, "span", { className: "codex-session-favorite", 'aria-label': runtimeText("已收藏", "Favorite"), title: runtimeText("已收藏", "Favorite") }, "★")
               : null,
+            W(e, "span", {
+              className: "codex-session-color-bar",
+              style: { background: sessionColor(M, L.id, L.color) },
+              "aria-hidden": "true",
+            }),
             W(e, "span", { className: "codex-session-title" }, ne),
               L.updatedAt
                 ? W(e, "time", { className: "codex-session-time" }, L.updatedAt)
@@ -11490,6 +11579,28 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                             onClick: () => MM(L),
                           },
                           Dl(L) ? runtimeText("运行中不可归档", "Cannot archive while running") : runtimeText("归档", "Archive"),
+                        ),
+                        W(
+                          e,
+                          "div",
+                          { className: "codex-session-color-section" },
+                          W(
+                            e,
+                            "span",
+                            { className: "codex-session-color-heading" },
+                            runtimeText("会话颜色", "Session color"),
+                          ),
+                          W(
+                            e,
+                            "div",
+                            {
+                              className: "codex-session-color-grid",
+                              role: "group",
+                              "aria-label": runtimeText("会话颜色", "Session color"),
+                            },
+                            ...renderSessionColorChoices(L.id, L.color, () => Ce("")),
+                          ),
+                          renderSessionColorReset(L.id, L.color, () => Ce("")),
                         ),
                       )
                     : null,
@@ -12245,7 +12356,17 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           W(
             e,
             "header",
-            { className: "codex-center-header" },
+            {
+              className: "codex-center-header",
+              "data-session-color": paneColor || void 0,
+            },
+            paneColor
+              ? W(e, "span", {
+                  className: "codex-pane-color-bar",
+                  style: { background: paneColor },
+                  "aria-hidden": "true",
+                })
+              : null,
             p
               ? W(
                   e,
@@ -12306,6 +12427,58 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     )
                   : null,
             ),
+            k && !B
+              ? W(
+                  e,
+                  "div",
+                  { className: "codex-pane-color-picker" },
+                  W(
+                    e,
+                    "button",
+                    {
+                      type: "button",
+                      ref: colorTrigger,
+                      className: "codex-icon-button codex-pane-color-trigger",
+                      onClick: () => setPaneColorMenu((value) => !value),
+                      "aria-label": runtimeText("会话颜色", "Session color"),
+                      "aria-expanded": paneColorMenu,
+                      "aria-haspopup": "menu",
+                      title: runtimeText("会话颜色", "Session color"),
+                    },
+                    W(e, "span", {
+                      className: "codex-pane-color-dot",
+                      style: { background: paneColor },
+                      "aria-hidden": "true",
+                    }),
+                  ),
+                  paneColorMenu
+                    ? W(
+                        e,
+                        "div",
+                        {
+                          className: "codex-session-row-menu codex-pane-color-menu",
+                          role: "menu",
+                          "aria-label": runtimeText("会话颜色", "Session color"),
+                        },
+                        W(
+                          e,
+                          "div",
+                          {
+                            className: "codex-session-color-grid",
+                            role: "group",
+                            "aria-label": runtimeText("会话颜色", "Session color"),
+                          },
+                          ...renderSessionColorChoices(k, ei?.color || "", () =>
+                            setPaneColorMenu(!1),
+                          ),
+                        ),
+                        renderSessionColorReset(k, ei?.color || "", () =>
+                          setPaneColorMenu(!1),
+                        ),
+                      )
+                    : null,
+                )
+              : null,
             _
               ? W(
                   e,
