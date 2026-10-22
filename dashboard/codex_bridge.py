@@ -40,6 +40,7 @@ from fastapi import APIRouter, HTTPException, Request, WebSocket, WebSocketDisco
 from pydantic import BaseModel
 
 _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,199}$")
+_SESSION_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _DEFAULT_TIMEOUT = 30.0
 _MAX_PAGE = 200
 _MAX_HISTORY_PAGES = 1000
@@ -565,6 +566,7 @@ class BridgeStore:
                     favorite INTEGER NOT NULL DEFAULT 0,
                     group_id TEXT,
                     deleted INTEGER NOT NULL DEFAULT 0,
+                    color TEXT NOT NULL DEFAULT '',
                     PRIMARY KEY (user_id, profile, session_id)
                 );
                 CREATE TABLE IF NOT EXISTS codex_session_groups (
@@ -581,6 +583,9 @@ class BridgeStore:
                 self.connection.execute("ALTER TABLE codex_approvals ADD COLUMN state TEXT NOT NULL DEFAULT 'pending'")
             if "epoch" not in approval_columns:
                 self.connection.execute("ALTER TABLE codex_approvals ADD COLUMN epoch TEXT NOT NULL DEFAULT ''")
+            organization_columns = {str(row[1]) for row in self.connection.execute("PRAGMA table_info(codex_session_organization)").fetchall()}
+            if "color" not in organization_columns:
+                self.connection.execute("ALTER TABLE codex_session_organization ADD COLUMN color TEXT NOT NULL DEFAULT ''")
             session_columns = {str(row[1]) for row in self.connection.execute("PRAGMA table_info(codex_sessions)").fetchall()}
             if "title" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''")
@@ -666,7 +671,8 @@ class BridgeStore:
         with self.lock:
             value = self._row(self.connection.execute(
                 """SELECT s.*, COALESCE(o.favorite, 0) AS favorite,
-                    o.group_id AS organization_group_id, COALESCE(o.deleted, 0) AS deleted
+                    o.group_id AS organization_group_id, COALESCE(o.deleted, 0) AS deleted,
+                    COALESCE(o.color, '') AS color
                     FROM codex_sessions AS s
                     LEFT JOIN codex_session_organization AS o
                     ON o.user_id=s.user_id AND o.profile=s.profile AND o.session_id=s.session_id
@@ -736,7 +742,8 @@ class BridgeStore:
             connection.execute('BEGIN')
             rows = connection.execute(
                 f"""SELECT s.*, COALESCE(o.favorite, 0) AS favorite,
-                    o.group_id AS organization_group_id, COALESCE(o.deleted, 0) AS deleted
+                    o.group_id AS organization_group_id, COALESCE(o.deleted, 0) AS deleted,
+                    COALESCE(o.color, '') AS color
                     FROM codex_sessions AS s
                     LEFT JOIN codex_session_organization AS o
                     ON o.user_id=s.user_id AND o.profile=s.profile AND o.session_id=s.session_id
@@ -991,7 +998,7 @@ class BridgeStore:
                     (user, profile, session_id),
                 )
                 current = self.connection.execute(
-                    "SELECT favorite,group_id,deleted FROM codex_session_organization WHERE user_id=? AND profile=? AND session_id=?",
+                    "SELECT favorite,group_id,deleted,color FROM codex_session_organization WHERE user_id=? AND profile=? AND session_id=?",
                     (user, profile, session_id),
                 ).fetchone()
                 if current is None:
@@ -1022,6 +1029,12 @@ class BridgeStore:
                 if "deleted" in values:
                     fields.append("deleted=?")
                     params.append(int(bool(values["deleted"])))
+                if "color" in values:
+                    color = values["color"]
+                    if not isinstance(color, str) or (color != "" and not _SESSION_COLOR.fullmatch(color)):
+                        raise HTTPException(status_code=400, detail="color must be #RRGGBB or an empty string")
+                    fields.append("color=?")
+                    params.append(color.lower())
                 if not fields:
                     raise HTTPException(status_code=400, detail="Organization patch cannot be empty")
                 params.extend((user, profile, session_id))
@@ -1690,6 +1703,8 @@ class CodexBridge:
 
         if any(values.get(key) is None for key in ("favorite", "deleted") if key in values):
             raise HTTPException(status_code=400, detail="favorite and deleted must be boolean values")
+        if "color" in values and not isinstance(values["color"], str):
+            raise HTTPException(status_code=400, detail="color must be #RRGGBB or an empty string")
         lock = self._session_locks.setdefault((user, profile, session_id), asyncio.Lock())
         async with lock:
             return await asyncio.to_thread(self.store.update_organization, user, profile, session_id, values)
@@ -2657,6 +2672,7 @@ class OrganizationBody(BaseModel):
     favorite: bool | None = None
     groupId: str | None = None
     deleted: bool | None = None
+    color: str | None = None
 
 
 class SessionTransferBody(BaseModel):
