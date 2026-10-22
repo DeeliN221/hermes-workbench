@@ -172,7 +172,8 @@ export function createProjectNavigation(sdk: Record<string, any>) {
               'aria-expanded': railProjectId === project.id,
               onClick: (event: MouseEvent) => {
                 const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-                setRailTop(Math.max(12, Math.min(rect.top, window.innerHeight - 360)));
+                const flyoutHeight = Math.min(520, window.innerHeight * 0.62);
+                setRailTop(Math.max(12, Math.min(rect.top, window.innerHeight - flyoutHeight - 12)));
                 setRailProjectId((current: string | undefined) => current === project.id ? undefined : project.id);
               },
             }, folderIcon(), members.length ? h('span', { className: 'project-rail-count' }, members.length) : null))) : null,
