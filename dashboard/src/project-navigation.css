@@ -105,6 +105,69 @@
   .project-count { display: none; }
 }
 
+/* Desktop collapse keeps one icon column: folders for projects, bubbles for
+   temporary conversations. The flyout preserves the full session controls. */
+.project-rail {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  min-height: 0; padding: 4px 0 12px; overflow-y: auto; overflow-x: visible;
+  scrollbar-width: none;
+}
+.project-rail-section { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 100%; }
+.project-rail-section + .project-rail-section { margin-top: 6px; padding-top: 8px; border-top: 1px solid var(--dashboard-line-soft); }
+.project-rail-folder, .project-rail-session-new {
+  position: relative; display: grid; place-items: center; flex: 0 0 40px;
+  width: 40px; height: 40px; border: 0; border-radius: 8px; padding: 0;
+  color: var(--dashboard-ink); background: transparent; cursor: pointer;
+}
+.project-rail-folder:hover, .project-rail-folder[aria-expanded="true"],
+.project-rail-session-new:hover { color: var(--dashboard-ink); background: var(--dashboard-active); }
+.project-rail-folder:focus-visible, .project-rail-session-new:focus-visible,
+.project-rail-session .codex-session-row:focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: -2px; }
+.project-rail-folder > svg, .project-rail-session-new > svg { width: 22px; height: 22px; }
+.project-rail-count {
+  position: absolute; top: 1px; right: 1px; min-width: 14px; height: 14px;
+  border-radius: 999px; padding: 0 3px; color: var(--dashboard-nav-surface, #fff);
+  background: var(--dashboard-accent); font-size: 9px; font-weight: 700;
+  line-height: 14px; text-align: center;
+}
+.project-rail-session { position: relative; flex: 0 0 40px; width: 40px; height: 40px; }
+.project-rail-session-icon {
+  position: absolute; inset: 0; display: grid; place-items: center;
+  border-radius: 999px; color: var(--dashboard-ink); pointer-events: none;
+}
+.project-rail-session-icon > svg { width: 21px; height: 21px; }
+.project-rail-session > .codex-session-row-wrap { position: absolute; inset: 0; display: block; }
+.project-rail-session .codex-session-row {
+  position: absolute; inset: 0; width: 100%; height: 100%; border: 0;
+  border-radius: 999px; padding: 0; color: transparent; background: transparent;
+}
+.project-rail-session .codex-session-row > * { visibility: hidden; }
+.project-rail-session .codex-session-row:is(:hover, .is-active) { background: var(--dashboard-active); }
+.project-rail-session .codex-session-row-menu-toggle { display: none; }
+.project-rail-empty { margin: 4px 0; color: var(--dashboard-muted); font-size: 10px; }
+.project-rail-notice { margin: 0; padding: 4px 0; color: var(--dashboard-muted); font-size: 10px; text-align: center; }
+.project-rail-flyout {
+  position: fixed; left: calc(var(--dashboard-nav-width, 64px) + 8px); z-index: 90;
+  display: flex; flex-direction: column; width: min(300px, calc(100vw - var(--dashboard-nav-width, 64px) - 20px));
+  max-height: min(62vh, 520px); overflow: hidden;
+  border: 1px solid var(--dashboard-line); border-radius: 10px;
+  color: var(--dashboard-ink); background: var(--dashboard-nav-surface, #f5f8fa);
+  box-shadow: 0 14px 36px #0004;
+}
+.project-rail-flyout > header {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 10px; border-bottom: 1px solid var(--dashboard-line-soft);
+}
+.project-rail-flyout > header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.project-rail-flyout > header button {
+  flex: 0 0 auto; width: 26px; height: 26px; border: 0; border-radius: 6px;
+  color: var(--dashboard-muted); background: transparent; cursor: pointer; font-size: 18px; line-height: 1;
+}
+.project-rail-flyout > header button:hover { color: var(--dashboard-ink); background: var(--dashboard-active); }
+.project-rail-flyout-list { min-height: 0; overflow-y: auto; padding: 5px; }
+.project-rail-flyout-list .codex-session-row-wrap { border-radius: 6px; }
+.project-rail-flyout-list .codex-session-row { border-radius: 6px; }
+
 :root[data-workbench-shell="true"][data-workbench-theme="dark"][data-workbench-view="/chat"]
   .dashboard-chat-actions .codex-new-chat { color: var(--dashboard-ink); }
 

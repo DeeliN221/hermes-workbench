@@ -65,16 +65,50 @@ export function createProjectNavigation(sdk: Record<string, any>) {
   const icon = (path: string) => h('svg', { viewBox: '0 0 24 24', width: 18, height: 18,
     fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
   h('path', { d: path }));
+  const folderIcon = () => h('svg', { viewBox: '0 0 24 24', width: 22, height: 22,
+    fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+  h('path', { d: 'M2 5h7l2 2h11v13H2z', fill: 'currentColor', fillOpacity: 0.22 }),
+  h('path', { d: 'M2 9h20' }));
+  const bubblePath = 'M4 3h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-5 4V4a1 1 0 0 1 1-1z';
   return function ProjectNavigation(props: ProjectNavigationProps) {
     const { profile, sessions, projects, renderSession, onMove } = props;
     const [dropTarget, setDropTarget] = useState(undefined);
     const [notice, setNotice] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
+    const initialCollapsed = typeof document !== 'undefined'
+      && document.documentElement.dataset.workbenchNavCollapsed === 'true';
+    const [collapsed, setCollapsed] = useState(initialCollapsed);
+    const [railProjectId, setRailProjectId] = useState(undefined as string | undefined);
+    const [railTop, setRailTop] = useState(12);
     const historyTrigger = useRef(null);
+    const railFlyout = useRef(null as HTMLElement | null);
     const historyId = sdk.React.useId();
     const moving = useRef(false);
     const folders = useRef(new Map<string, HTMLDetailsElement>());
     const activeProjectId = sessions.find(session => session.id === props.activeSessionId)?.groupId;
+    useEffect(() => {
+      const sync = () => setCollapsed(document.documentElement.dataset.workbenchNavCollapsed === 'true');
+      window.addEventListener('workbench:nav-state', sync);
+      return () => window.removeEventListener('workbench:nav-state', sync);
+    }, []);
+    useEffect(() => {
+      if (!collapsed) return undefined;
+      const close = (event: PointerEvent) => {
+        const target = event.target as Element | null;
+        if (target?.closest?.('[data-project-rail-folder]') || railFlyout.current?.contains(target as Node | null)) return;
+        setRailProjectId(undefined);
+      };
+      const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setRailProjectId(undefined); };
+      document.addEventListener('pointerdown', close);
+      document.addEventListener('keydown', key);
+      return () => {
+        document.removeEventListener('pointerdown', close);
+        document.removeEventListener('keydown', key);
+      };
+    }, [collapsed]);
+    useEffect(() => {
+      if (!collapsed) setRailProjectId(undefined);
+    }, [collapsed]);
     useEffect(() => {
       if (activeProjectId) {
         const folder = folders.current.get(activeProjectId);
@@ -127,6 +161,40 @@ export function createProjectNavigation(sdk: Record<string, any>) {
       },
       onDragEnd: endDrag,
     }, renderSession(session, false));
+    const railProject = groups.find(group => group.project.id === railProjectId);
+    if (collapsed) {
+      return h(sdk.React.Fragment, null,
+        h('section', { className: 'project-rail', 'aria-label': sourceText("项目与临时会话", "Projects and temporary sessions") },
+          groups.length ? h('div', { className: 'project-rail-section' }, ...groups.map(({ project, sessions: members }) =>
+            h('button', {
+              key: project.id, type: 'button', className: 'project-rail-folder', 'data-project-rail-folder': project.id,
+              title: `${project.name} (${members.length})`, 'aria-label': sourceText(`项目：${project.name}，${members.length} 个会话`, `Project: ${project.name}, ${members.length} sessions`),
+              'aria-expanded': railProjectId === project.id,
+              onClick: (event: MouseEvent) => {
+                const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
+                const flyoutHeight = Math.min(520, window.innerHeight * 0.62);
+                setRailTop(Math.max(12, Math.min(rect.top, window.innerHeight - flyoutHeight - 12)));
+                setRailProjectId((current: string | undefined) => current === project.id ? undefined : project.id);
+              },
+            }, folderIcon(), members.length ? h('span', { className: 'project-rail-count' }, members.length) : null))) : null,
+          h('div', { className: 'project-rail-section project-rail-temporary' },
+            h('button', { type: 'button', className: 'project-rail-session-new', title: sourceText("新建临时会话", "New temporary session"),
+              'aria-label': sourceText("新建临时会话", "New temporary session"), onClick: props.onNewSession },
+              icon(`${bubblePath} M12 8v5 M9.5 10.5h5`)),
+            ...temporary.map(session => h('div', { key: session.id, className: 'project-rail-session' },
+              h('span', { className: 'project-rail-session-icon', 'aria-hidden': true }, icon(bubblePath)),
+              renderSession(session, false))))),
+        railProject ? h('div', { ref: railFlyout, className: 'project-rail-flyout', style: { top: `${railTop}px` },
+          role: 'dialog', 'aria-label': railProject.project.name },
+          h('header', null, h('strong', null, railProject.project.name), h('button', { type: 'button',
+            'aria-label': sourceText("关闭项目列表", "Close project list"),
+            onClick: () => setRailProjectId(undefined) }, '×')),
+          h('div', { className: 'project-rail-flyout-list', onClickCapture: (event: MouseEvent) => {
+            if ((event.target as Element | null)?.closest?.('.codex-session-row')) setRailProjectId(undefined);
+          } }, railProject.sessions.length ? railProject.sessions.map(row)
+            : h('p', { className: 'project-empty' }, sourceText("此项目还没有会话", "No sessions in this project")))) : null,
+        notice ? h('p', { className: 'project-rail-notice', role: 'status' }, notice) : null);
+    }
     return h(sdk.React.Fragment, null,
       h('section', { className: 'project-navigation', 'aria-label': sourceText("项目", "Projects") },
         h('div', { className: 'project-section-heading' }, h('span', null, sourceText("项目", "Projects")),

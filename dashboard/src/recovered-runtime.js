@@ -19,6 +19,7 @@ import { createLanguageControl } from './language-control';
 import { useWorkbenchLocale } from './workbench-locale';
 import { uiText as runtimeText } from './ui-locale';
 import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
+import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
 import { createRecentHome } from './recent-home';
 import { installHomeChatNavigation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
@@ -2299,7 +2300,23 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       );
     };
   }
-  function fx(i, e, t, r = 0) {
+  function fx(i, e, t, r = 0, u = !1) {
+    if (u) {
+      const h = 24,
+        available = e.width - r - 32,
+        d = Math.max(320, Math.min(1180, Math.max(640, Math.round(e.width * 0.66)), available)),
+        f = e.offsetLeft + (t ? 12 : r + 8),
+        S = Math.max(f, e.offsetLeft + e.width - d - h),
+        b = Math.max(320, e.offsetLeft + e.width - S - h),
+        O = e.offsetTop + Math.max(56, Math.round(e.height * 0.07)),
+        g = Math.max(300, e.offsetTop + e.height - O - 24);
+      return {
+        left: `${Math.round(S)}px`,
+        top: `${Math.round(O)}px`,
+        width: `${Math.round(b)}px`,
+        height: `${Math.round(g)}px`,
+      };
+    }
     const n = Math.max(i.bottom, e.offsetTop),
       s = t ? e.offsetLeft : Math.max(e.offsetLeft, r),
       o = Math.max(0, e.width - (s - e.offsetLeft)),
@@ -2311,7 +2328,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       height: `${Math.round(a)}px`,
     };
   }
-  function px(i) {
+  function px(i, e = !1) {
     return {
       ...i,
       position: "fixed",
@@ -2328,6 +2345,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       padding: "0",
       transform: "none",
       translate: "none",
+      ...(e
+        ? { borderRadius: "12px", border: "3px solid #493523", boxShadow: "0 24px 64px #0007" }
+        : {}),
     };
   }
   function mx(i, e) {
@@ -2396,9 +2416,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const e = new URL(i, "http://localhost");
     return {
       path: e.pathname,
+      search: e.search,
       profile: currentProfile(e.search),
       profileManager: e.searchParams.get("workbench") === "manage",
       settingsTab: e.searchParams.get("workbench") || "",
+      panel: accessoryPanelOpen(e.search),
       terminal:
         e.pathname === "/chat" &&
         e.searchParams.get("workbench") === "terminal",
@@ -2525,6 +2547,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       settings:
         "M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1z M12 8a4 4 0 1 0 0 8 4 4 0 0 0 0-8",
       "chevron-down": "m6 9 6 6 6-6",
+      "chevron-left": "m15 6-6 6 6 6",
+      "panel-left": "M4 4h16v16H4z M9 4v16",
       "chevron-right": "m9 6 6 6-6 6",
       menu: "M4 6h16 M4 12h16 M4 18h16",
       close: "M6 6l12 12 M18 6 6 18",
@@ -2545,6 +2569,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       i.createElement("path", { d: t[e] }),
     );
   }
+  const NAV_COLLAPSED_KEY = "hermes.workbench.nav-collapsed",
+    ACCESSORY_RETURN_KEY = "hermes.workbench.accessory-return";
   function Px(i, e) {
     vx();
     const t = i.React,
@@ -2562,6 +2588,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [d, f] = s(!1),
         [mobileActions, setMobileActions] = s(() => window.innerWidth <= 800),
         [actionsOpen, setActionsOpen] = s(false),
+        [navCollapsed, setNavCollapsed] = s(() => {
+          try { return window.localStorage.getItem(NAV_COLLAPSED_KEY) === "true"; }
+          catch { return false; }
+        }),
         [p, m] = s(tm),
         [O, g] = s([]),
         [_, w] = s(() => jp()),
@@ -2578,7 +2608,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isShortcuts,
         H = Cx(u.path),
         F = yx(u.profile, da),
-        j = u.path === "/chat" && !u.terminal;
+        j = u.path === "/chat" && !u.terminal,
+        accessory = mobileActions ? "" : accessoryKind(u.path, u.search),
+        navIsCollapsed = !mobileActions && navCollapsed;
       r(() => {
         const media = window.matchMedia('(max-width: 800px)');
         const resize = () => { setMobileActions(media.matches); setActionsOpen(false); };
@@ -2611,9 +2643,18 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         r(() => {
           document.documentElement.style.setProperty(
             "--dashboard-nav-width",
-            `${p}px`,
+            `${navIsCollapsed ? 64 : p}px`,
           );
-        }, [p]),
+        }, [p, navIsCollapsed]),
+        r(() => {
+          document.documentElement.dataset.workbenchNavCollapsed = String(navIsCollapsed);
+          window.dispatchEvent(new Event("workbench:nav-state"));
+          try { window.localStorage.setItem(NAV_COLLAPSED_KEY, String(navCollapsed)); }
+          catch { /* Private browsing can reject storage; the layout still updates. */ }
+          return () => {
+            delete document.documentElement.dataset.workbenchNavCollapsed;
+          };
+        }, [navCollapsed, navIsCollapsed]),
         r(() => {
           const z = () => m(tm());
           return (
@@ -2666,7 +2707,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               : H
                 ? "settings"
                 : "native"),
-            (document.documentElement.dataset.workbenchView = u.path));
+            (document.documentElement.dataset.workbenchView = u.path),
+            accessory
+              ? (document.documentElement.dataset.workbenchAccessory = accessory)
+              : delete document.documentElement.dataset.workbenchAccessory,
+            (document.documentElement.dataset.workbenchAccessorySettings = String(
+              Boolean(accessory && H),
+            )));
           const z = document.querySelector("#app-sidebar + div"),
             G = z?.inert ?? !1,
             ae = z?.getAttribute("aria-hidden");
@@ -2695,11 +2742,59 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 : z.setAttribute("aria-hidden", ae)),
               delete document.documentElement.dataset.workbenchShell,
               delete document.documentElement.dataset.workbenchPage,
-              delete document.documentElement.dataset.workbenchView);
+              delete document.documentElement.dataset.workbenchView,
+              delete document.documentElement.dataset.workbenchAccessory,
+              delete document.documentElement.dataset.workbenchAccessorySettings);
           };
-        }, [M, H, u.path]));
-      const Q = (z, G) => {
-          if (G === "/kanban" && !z.metaKey && !z.ctrlKey && !z.shiftKey && !z.altKey && z.button === 0) {
+        }, [M, H, u.path, accessory]));
+      const activateAccessory = (z) => {
+          const source = window.location.href;
+          if (!u.panel) {
+            try { window.sessionStorage.setItem(ACCESSORY_RETURN_KEY, source); }
+            catch { /* Storage can be unavailable in private browsing. */ }
+          }
+          E("");
+          if (z === "/kanban") {
+            prepareProfileKanban(i.fetchJSON, u.profile, () => window.location.href === source)
+              .then(board => {
+                if (!board) return;
+                Kp(withAccessoryPanel(z), u.profile);
+                f(false);
+              }).catch(error => E(error instanceof Error ? error.message : String(error)));
+            return;
+          }
+          Kp(withAccessoryPanel(z), u.profile);
+          f(false);
+        },
+        openAccessory = (event, z) => {
+          if (!event || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+          event.preventDefault();
+          activateAccessory(z);
+        },
+        closeAccessory = () => {
+          let target = "";
+          try { target = window.sessionStorage.getItem(ACCESSORY_RETURN_KEY) || ""; }
+          catch { /* Fall back to the conversation route. */ }
+          try { window.sessionStorage.removeItem(ACCESSORY_RETURN_KEY); }
+          catch { /* Storage can be unavailable in private browsing. */ }
+          if (!target) target = "/chat";
+          const href = Cn(withoutAccessoryPanel(target), u.profile);
+          window.history.replaceState(null, "", href);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+          f(false);
+        },
+        closeAccessoryToChat = () => {
+          try { window.sessionStorage.removeItem(ACCESSORY_RETURN_KEY); }
+          catch { /* Storage can be unavailable in private browsing. */ }
+          const href = Cn("/chat", u.profile);
+          window.history.replaceState(null, "", href);
+          window.dispatchEvent(new PopStateEvent("popstate"));
+          f(false);
+        },
+        Q = (z, G, keepPanel = true) => {
+          const target = keepPanel && u.panel ? withAccessoryPanel(G) : withoutAccessoryPanel(G);
+          if (new URL(target, "http://localhost").pathname === "/kanban"
+            && !z.metaKey && !z.ctrlKey && !z.shiftKey && !z.altKey && z.button === 0) {
             z.preventDefault();
             const source = window.location.href;
             E("");
@@ -2707,8 +2802,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               .then(board => {
                 if (!board) return;
                 // An already-mounted native board keeps its own React selection.
-                if (u.path === "/kanban") window.location.assign(Cn("/kanban", u.profile));
-                else Kp("/kanban", u.profile);
+                if (u.path === "/kanban" && !u.panel) window.location.assign(Cn(target, u.profile));
+                else Kp(target, u.profile);
                 f(false);
               }).catch(error => E(error instanceof Error ? error.message : String(error)));
             return;
@@ -2718,9 +2813,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             z.shiftKey ||
             z.altKey ||
             z.button !== 0 ||
-            (z.preventDefault(), Kp(G, u.profile), f(!1));
+            (z.preventDefault(), Kp(target, u.profile), f(!1));
         },
-        k = (z, G, ae, Ce, Qe) =>
+        k = (z, G, ae, Ce, Qe, panel) =>
           l(
             "a",
             {
@@ -2728,11 +2823,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               id: Qe,
               "data-dashboard-terminal-trigger":
                 Qe === "hti-dashboard-terminal-trigger" ? "true" : void 0,
-              href: Cn(z, u.profile),
+              href: Cn(panel && !mobileActions ? withAccessoryPanel(z) : withoutAccessoryPanel(z), u.profile),
               "aria-current": Ce ? "page" : void 0,
               "aria-label": G,
               title: G,
-              onClick: (Xe) => Q(Xe, z),
+              onClick: (Xe) => panel && !mobileActions ? openAccessory(Xe, z) : Q(Xe, z, false),
             },
             craftingIcon(t, ae),
             l("span", null, G),
@@ -2791,18 +2886,42 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             z.key === "End" && (ae = te.max),
             ae !== null && (z.preventDefault(), X(ae, !0)));
         };
+      r(() => {
+        if (!accessory) return undefined;
+        const previous = document.activeElement;
+        const chatRoot = document.querySelector(".dashboard-persistent-workbench");
+        const chatWasInert = Boolean(chatRoot?.inert);
+        if (chatRoot) chatRoot.inert = true;
+        const key = (event) => {
+          if (event.key !== "Escape" || event.defaultPrevented) return;
+          if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
+          event.preventDefault();
+          closeAccessory();
+        };
+        document.addEventListener("keydown", key);
+        if (accessory !== "terminal") {
+          window.requestAnimationFrame(() => {
+            document.querySelector(".dashboard-accessory-close")?.focus({ preventScroll: true });
+          });
+        }
+        return () => {
+          document.removeEventListener("keydown", key);
+          if (chatRoot) chatRoot.inert = chatWasInert;
+          if (previous instanceof HTMLElement) previous.focus?.({ preventScroll: true });
+        };
+      }, [accessory]);
       const renderActions = (mobile) => l("div", { className: mobile ? "dashboard-rail-actions" : "dashboard-crafting-grid", "aria-label": runtimeText("工作台操作", "Workbench actions"),
             onClickCapture: (event) => { const action = event.target.closest("a, button"); if (!mobile && action && !action.closest(".workbench-theme-action, .workbench-profile-action")) setActionsOpen(false); } },
-            l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, l(ProfileAction, { profile: F }), Y, k("/config", runtimeText("设置", "Settings"), "settings", H)),
+            l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
             l("div", { className: "dashboard-nav-pair" },
-              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban"),
-              k("/cron", runtimeText("定时", "Scheduled jobs"), "cron", u.path === "/cron"),
-              k("/chat?workbench=terminal", runtimeText("终端", "Terminal"), "terminal", u.terminal, "hti-dashboard-terminal-trigger"),
+              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban", undefined, true),
+              k("/cron", runtimeText("定时", "Scheduled jobs"), "cron", u.path === "/cron", undefined, true),
+              k("/chat?workbench=terminal", runtimeText("终端", "Terminal"), "terminal", u.terminal, "hti-dashboard-terminal-trigger", true),
             ),
             l("div", { className: "dashboard-nav-pair" },
               l("button", { type: "button", className: "dashboard-workspace-button", "aria-label": runtimeText("文件", "Files"), onClick: () => { f(false); if (u.path === "/chat" && !u.terminal) window.dispatchEvent(new Event("workbench:open-workspace")); else Kp("/chat?workbench=files", u.profile); } }, craftingIcon(t, "files"), l("span", null, runtimeText("文件", "Files"))),
               l("button", { type: "button", className: "dashboard-workspace-button workbench-theme-action", "aria-label": B, title: B, "aria-pressed": v === "dark", disabled: y, onClick: N }, craftingIcon(t, v === "dark" ? "sun" : "moon"), l("span", null, runtimeText("主题", "Theme"))),
-              k("/achievements", runtimeText("成就", "Achievements"), "achievements", u.path === "/achievements"),
+              k("/achievements", runtimeText("成就", "Achievements"), "achievements", u.path === "/achievements", undefined, true),
             ),
           );
       return l(
@@ -2827,17 +2946,39 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               onClick: () => f(!1),
             })
           : null,
+        accessory
+          ? l(t.Fragment, null,
+              l("button", {
+                type: "button", className: "dashboard-accessory-backdrop", tabIndex: -1,
+                "aria-label": runtimeText("关闭悬浮功能", "Close floating tool"),
+                onClick: closeAccessory,
+              }),
+              accessory !== "terminal" ? l("button", {
+                type: "button", className: "dashboard-accessory-close",
+                "aria-label": runtimeText("关闭悬浮功能", "Close floating tool"),
+                title: runtimeText("关闭", "Close"), onClick: closeAccessory,
+              }, zc(t, "close")) : null)
+          : null,
         l(
           "aside",
           {
-            className: `dashboard-global-nav${d ? " is-open" : ""}`,
+            className: `dashboard-global-nav${d ? " is-open" : ""}${navIsCollapsed ? " is-collapsed" : ""}`,
+            "data-hti-nav-collapsed": String(navIsCollapsed),
             "aria-label": runtimeText("全局导航", "Navigation"),
           },
           l(
             "nav",
             { className: "dashboard-nav-primary", "aria-label": runtimeText("主要功能", "Main features") },
-            !mobileActions ? l(WorkbenchDialog, { open: actionsOpen, onClose: () => setActionsOpen(false),
-              headerAction: k("/sessions", runtimeText("首页", "Home"), "home", isHome) },
+            l("div", { className: "dashboard-nav-toolbar" },
+              l(ProfileAction, { profile: F, label: profileTabName(F), className: "dashboard-nav-profile" }),
+              l("button", {
+                type: "button", className: "dashboard-nav-collapse",
+                "aria-label": navIsCollapsed ? runtimeText("展开左侧导航", "Expand navigation") : runtimeText("折叠左侧导航", "Collapse navigation"),
+                title: navIsCollapsed ? runtimeText("展开左侧导航", "Expand navigation") : runtimeText("折叠左侧导航", "Collapse navigation"),
+                "aria-expanded": String(!navIsCollapsed),
+                onClick: () => setNavCollapsed((value) => !value),
+              }, zc(t, navIsCollapsed ? "chevron-right" : "chevron-left"))),
+            !mobileActions ? l(WorkbenchDialog, { open: actionsOpen, onClose: () => setActionsOpen(false) },
               renderActions(false), P ? l("p", { className: "workbench-theme-error", role: "status" }, P) : null) : null,
             l(
               "div",
@@ -2851,6 +2992,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   className: "dashboard-workbench-sessions",
                   "data-workbench-profile": F,
                   "aria-label": runtimeText("会话列表", "Sessions"),
+                  onClickCapture: (event) => {
+                    if (!accessory) return;
+                    const target = event.target;
+                    if (target?.closest?.(".codex-session-row, .project-rail-session-new, .project-create")) {
+                      closeAccessoryToChat();
+                    }
+                  },
                   hidden: false,
                 },
                 _?.element ?? l("div", { className: "project-section-heading workbench-project-placeholder" }, l("span", null, runtimeText("项目", "Projects"))),
@@ -2986,7 +3134,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       u = Zp(i);
     function h() {
       const [d, f] = n(Tc()),
-        [S, b] = n({});
+        [S, b] = n({}),
+        floating = window.innerWidth > 800
+          && new URLSearchParams(window.location.search).get("panel") === "1";
       (r(() => {
         const _ = () => f(Tc());
         return (
@@ -3003,9 +3153,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             const v = document
                 .querySelector('header[role="banner"]')
                 ?.getBoundingClientRect() || { bottom: 0 },
-              x =
-                document.querySelector("#app-sidebar")?.getBoundingClientRect()
-                  .right ?? 0,
+              x = document.querySelector(".dashboard-global-nav")
+                  ?.getBoundingClientRect().right
+                ?? document.querySelector("#app-sidebar")?.getBoundingClientRect().right
+                ?? 0,
               y = window.visualViewport;
             b(
               fx(
@@ -3018,6 +3169,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 },
                 window.matchMedia("(max-width: 800px)").matches,
                 x,
+                floating,
               ),
             );
           };
@@ -3032,7 +3184,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 window.visualViewport?.removeEventListener("scroll", _));
             }
           );
-        }, [d]));
+        }, [d, floating]));
       const p = mx(d, S);
       r(() => {
         if (!p) return;
@@ -3082,7 +3234,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 id: "hti-dashboard-terminal-dialog",
                 className: "hti-terminal-workspace",
                 showCloseButton: !1,
-                style: px(S),
+                style: px(S, floating),
                 onCloseAutoFocus: (_) => _.preventDefault(),
                 onInteractOutside: (_) => _.preventDefault(),
                 "aria-describedby": "hti-dashboard-terminal-description",

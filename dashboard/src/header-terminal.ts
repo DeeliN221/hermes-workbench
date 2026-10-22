@@ -31,6 +31,8 @@ export function installHeaderTerminal(sdk: SDK, registry: Record<string, any>): 
   function SidebarTerminalHost(): any {
     const [open, setOpen] = useState(terminalRouteActive());
     const [workspaceStyle, setWorkspaceStyle] = useState({} as Record<string, string>);
+    const floating = window.innerWidth > 800
+      && new URLSearchParams(window.location.search).get('panel') === '1';
 
     useEffect(() => {
       const sync = () => setOpen(terminalRouteActive());
@@ -46,8 +48,10 @@ export function installHeaderTerminal(sdk: SDK, registry: Record<string, any>): 
       const updateGeometry = () => {
         const banner = document.querySelector<HTMLElement>('header[role="banner"]');
         const rect = banner?.getBoundingClientRect() || { bottom: 0 };
-        const sidebarRight = document.querySelector<HTMLElement>('#app-sidebar')
-          ?.getBoundingClientRect().right ?? 0;
+        const sidebarRight = document.querySelector<HTMLElement>('.dashboard-global-nav')
+          ?.getBoundingClientRect().right
+          ?? document.querySelector<HTMLElement>('#app-sidebar')?.getBoundingClientRect().right
+          ?? 0;
         const viewport = window.visualViewport;
         setWorkspaceStyle(terminalWorkspaceGeometry(
           { bottom: workbenchRouteActive() ? (viewport?.offsetTop ?? 0) : rect.bottom },
@@ -59,6 +63,7 @@ export function installHeaderTerminal(sdk: SDK, registry: Record<string, any>): 
           },
           window.matchMedia('(max-width: 800px)').matches,
           sidebarRight,
+          floating,
         ));
       };
       updateGeometry();
@@ -70,7 +75,7 @@ export function installHeaderTerminal(sdk: SDK, registry: Record<string, any>): 
         window.visualViewport?.removeEventListener('resize', updateGeometry);
         window.visualViewport?.removeEventListener('scroll', updateGeometry);
       };
-    }, [open]);
+    }, [open, floating]);
 
     const workspaceReady = terminalWorkspaceReady(open, workspaceStyle);
     useEffect(() => {
@@ -111,7 +116,7 @@ export function installHeaderTerminal(sdk: SDK, registry: Record<string, any>): 
       id: 'hti-dashboard-terminal-dialog',
       className: 'hti-terminal-workspace',
       showCloseButton: false,
-      style: terminalWorkspaceCriticalStyle(workspaceStyle),
+      style: terminalWorkspaceCriticalStyle(workspaceStyle, floating),
       onCloseAutoFocus: (event: Event) => event.preventDefault(),
       onInteractOutside: (event: Event) => event.preventDefault(),
       'aria-describedby': 'hti-dashboard-terminal-description',

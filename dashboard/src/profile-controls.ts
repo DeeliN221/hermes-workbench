@@ -59,14 +59,14 @@ export function createProfileControls(sdk: SDK) {
       }, uiText("重试", "Retry"))) : null,
       error ? h('div', { role: 'alert' }, uiText("档案加载失败 ", "Failed to load profiles "), h('button', { onClick: retry }, uiText("重试", "Retry"))) : null);
   }
-  function ProfileAction({ profile }: { profile: string }) {
+  function ProfileAction({ profile, label, className }: { profile: string; label?: string; className?: string }) {
     const dialog = useRef(null as HTMLDialogElement | null);
-    return h('div', { className: 'workbench-profile-action' },
+    return h('div', { className: `workbench-profile-action${className ? ` ${className}` : ''}` },
       h('button', {
         type: 'button', 'aria-label': uiText("切换 profile", "Switch profile"), 'aria-haspopup': 'dialog',
         title: uiText(`切换 profile：${agentDisplayName(profile)}`, `Switch profile: ${agentDisplayName(profile)}`),
         onClick: () => dialog.current?.showModal(),
-      }, craftingIcon(sdk.React, 'profile'), h('span', null, uiText("切换 profile", "Switch profile"))),
+      }, craftingIcon(sdk.React, 'profile'), h('span', null, label || uiText("切换 profile", "Switch profile"))),
       h('dialog', { ref: dialog, className: 'workbench-profile-dialog', 'aria-label': uiText("切换 profile", "Switch profile"),
         onClick: (event: MouseEvent) => { if (event.target === dialog.current) {
           const bounds = dialog.current!.getBoundingClientRect();
