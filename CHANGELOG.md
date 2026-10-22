@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Prefill card discussions with a short `Check task <id>` prompt that users can edit instead of sending a fixed brainstorm request.
+- Prefill card discussions directly with a short, editable `Check task <id>` prompt instead of showing a card prompt panel or sending a fixed brainstorm request.
 - Exclude Kanban worker runs from recent home so task retries no longer appear as unread conversations.
 - Persist recent-home read state on the server so acknowledgements follow the account across browsers.
 - Show terminal Codex turn errors on recent cards instead of claiming the request is not cached.
