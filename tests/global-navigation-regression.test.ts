@@ -12,5 +12,9 @@ describe('global conversation navigation', () => {
     expect(runtime.includes('className: `dashboard-global-nav')).toBe(true);
     expect(runtime.includes('className: "dashboard-action-rail"')).toBe(true);
     expect(runtime.includes('k("/achievements", runtimeText("成就", "Achievements"), "achievements"')).toBe(true);
+    expect(runtime.includes('className: "dashboard-nav-toolbar"')).toBe(true);
+    expect(runtime.includes('className: "dashboard-nav-collapse"')).toBe(true);
+    expect(runtime.includes('className: "dashboard-accessory-backdrop"')).toBe(true);
+    expect(runtime.includes('k("/sessions", runtimeText("首页", "Home"), "home", isHome)')).toBe(true);
   });
 });
