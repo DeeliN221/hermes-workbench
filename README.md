@@ -33,7 +33,9 @@ without leaving Workbench.
 ### Kanban
 
 See tasks by stage and assigned profile, and filter the board to find the work
-you need. This view integrates the Hermes Kanban plugin.
+you need. New and edited cards use the versioned `standard@1` form: background,
+output, acceptance, and boundaries, with an explicit review mode of `auto`,
+`human`, or `none`. This view integrates the Hermes Kanban plugin.
 
 ![Kanban board in a macOS Brave/Chrome style window](assets/showcase/kanban.png)
 
