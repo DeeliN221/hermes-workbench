@@ -21,6 +21,9 @@ import './minecraft-theme.css';
 import './selectable-markdown.css';
 
 import './kanban-workflow.css';
+import './kanban-card-schema.css';
+import { installKanbanCreateDialogBridge } from './kanban-create-dialog-bridge';
+installKanbanCreateDialogBridge();
 
 import { installFilesDirectoryNavigation } from './files-directory-navigation';
 installFilesDirectoryNavigation();

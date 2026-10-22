@@ -3,9 +3,11 @@ import { uiText } from './ui-locale';
 import { listKanbanSessions } from './kanban-session-api';
 import { workbenchPath } from './kanban-session-bridge';
 import { loadKanbanRunSessions, sessionsForRun, runSessionPath, type RunSession } from './kanban-run-sessions';
+import { cardDocumentFromBody, parseCardDocument, renderCardDocument, validateCardDocument } from './kanban-card-schema';
+import { createCardFields } from './kanban-card-fields';
 
 type Tab = 'overview' | 'sessions' | 'files' | 'settings';
-type State = { task: string; board: string; tab: Tab; tabs: HTMLElement; sessions: HTMLElement; runs: HTMLElement; alert: HTMLElement; fingerprint: string; timer?: ReturnType<typeof setTimeout>; request: number; dataKey?: string; linksLoaded: boolean; assignee?: string; disposed?: boolean; runSessions?: RunSession[]; runSessionError?: string; runSessionRequest?: number; runData?: any[]; discussionLinks?: any[] };
+type State = { task: string; board: string; tab: Tab; tabs: HTMLElement; sessions: HTMLElement; runs: HTMLElement; alert: HTMLElement; fingerprint: string; timer?: ReturnType<typeof setTimeout>; request: number; dataKey?: string; linksLoaded: boolean; assignee?: string; body?: string; disposed?: boolean; runSessions?: RunSession[]; runSessionError?: string; runSessionRequest?: number; runData?: any[]; discussionLinks?: any[] };
 const states = new WeakMap<HTMLElement, State>();
 let nextId = 0;
 const labels: Record<Tab, string> = { overview: uiText("概览", "Overview"), sessions: uiText("关联会话", "Linked sessions"), files: uiText("附件", "Attachments"), settings: uiText("依赖与设置", "Dependencies and settings") };
@@ -100,10 +102,126 @@ async function refreshRunSessions(drawer: HTMLElement, state: State) {
   }
   renderRunSessions(drawer, state);
 }
+
+function previewCardDocument(container: HTMLElement, card: ReturnType<typeof cardDocumentFromBody>) {
+  container.replaceChildren();
+  const rows: Array<[string, string | string[]]> = [
+    [uiText('背景', 'Background'), card.fields.background],
+    [uiText('产出', 'Output'), card.fields.output],
+    [uiText('验收', 'Acceptance'), card.fields.acceptance],
+    [uiText('边界', 'Boundaries'), card.fields.boundaries],
+  ];
+  for (const [label, value] of rows) {
+    const section = document.createElement('section');
+    section.className = 'wb-card-schema-preview-section';
+    const heading = document.createElement('h4'); heading.textContent = label;
+    section.append(heading);
+    if (Array.isArray(value)) {
+      const list = document.createElement('ul');
+      for (const item of value) { const li = document.createElement('li'); li.textContent = item; list.append(li); }
+      section.append(list);
+    } else {
+      const paragraph = document.createElement('p');
+      paragraph.textContent = value || '—';
+      section.append(paragraph);
+    }
+    container.append(section);
+  }
+  const review = document.createElement('p');
+  review.className = 'wb-card-schema-review';
+  review.textContent = uiText(
+    `审查：${card.reviewMode}${card.reviewer ? ` · ${card.reviewer}` : ''}`,
+    `Review: ${card.reviewMode}${card.reviewer ? ` · ${card.reviewer}` : ''}`,
+  );
+  container.append(review);
+}
+
+function installCardSchemaEditor(drawer: HTMLElement, state: State) {
+  const section = drawer.querySelector<HTMLElement>('.wb-description');
+  if (!section) return;
+  const header = section.querySelector<HTMLElement>('.hermes-kanban-section-head-row');
+  if (!header) return;
+  const signature = state.body || '';
+  if (section.dataset.wbCardSchemaSignature === signature
+      && section.querySelector('.wb-card-schema-edit')
+      && section.querySelector('.wb-card-schema-preview')) return;
+  section.dataset.wbCardSchemaSignature = signature;
+  const nativeEdit = header.querySelector<HTMLElement>('.hermes-kanban-edit-link');
+  if (nativeEdit) nativeEdit.style.display = 'none';
+  header.querySelectorAll('[data-wb-owned]').forEach(node => node.remove());
+  for (const child of Array.from(section.children) as HTMLElement[]) {
+    if (child.dataset.wbOwned) child.remove();
+  }
+  const card = cardDocumentFromBody(state.body || '');
+  const isStructured = !!parseCardDocument(state.body || '');
+  const action = document.createElement('button');
+  action.type = 'button';
+  action.className = 'wb-text-button wb-card-schema-edit';
+  action.dataset.wbOwned = 'true';
+  action.textContent = uiText('编辑字段', 'Edit fields');
+  action.title = uiText('按固定字段编辑卡片', 'Edit the card by its fixed fields');
+  header.append(action);
+
+  const preview = document.createElement('div');
+  preview.className = 'wb-card-schema-preview';
+  preview.dataset.wbOwned = 'true';
+  if (isStructured) previewCardDocument(preview, card);
+  section.append(preview);
+
+  const nativeContent: HTMLElement[] = [];
+  for (const child of Array.from(section.children) as HTMLElement[]) {
+    if (child === header || child.dataset.wbOwned || child === preview) continue;
+    child.hidden = isStructured;
+    nativeContent.push(child);
+  }
+  preview.hidden = !isStructured;
+
+  action.addEventListener('click', () => {
+    if (section.querySelector('[data-wb-card-editor]')) return;
+    const editor = createCardFields(cardDocumentFromBody(state.body || ''), { compact: true, showReview: true });
+    const wrapper = document.createElement('div');
+    wrapper.dataset.wbCardEditor = 'true';
+    wrapper.dataset.wbOwned = 'true';
+    wrapper.className = 'wb-card-schema-editor';
+    wrapper.append(editor.root);
+    const actions = document.createElement('div');
+    actions.className = 'wb-card-schema-editor-actions';
+    const save = document.createElement('button'); save.type = 'button'; save.className = 'wb-text-button'; save.textContent = uiText('保存字段', 'Save fields');
+    const cancel = document.createElement('button'); cancel.type = 'button'; cancel.className = 'wb-text-button'; cancel.textContent = uiText('取消', 'Cancel');
+    actions.append(save, cancel); wrapper.append(actions);
+    header.after(wrapper);
+    preview.hidden = true;
+    for (const node of nativeContent) node.hidden = true;
+    editor.focus();
+    cancel.addEventListener('click', () => { wrapper.remove(); preview.hidden = !isStructured; for (const node of nativeContent) node.hidden = isStructured; });
+    save.addEventListener('click', () => {
+      const next = editor.read();
+      const errors = validateCardDocument(next);
+      if (errors.length) { editor.showErrors(errors); return; }
+      const sdk = (window as any).__HERMES_PLUGIN_SDK__;
+      if (!sdk?.fetchJSON) { editor.showErrors([uiText('无法保存：SDK 不可用', 'Cannot save: SDK unavailable')]); return; }
+      save.disabled = true; editor.setBusy(true);
+      const body = renderCardDocument(next);
+      sdk.fetchJSON(`/api/plugins/kanban/tasks/${encodeURIComponent(state.task)}?board=${encodeURIComponent(state.board)}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ body }),
+      }).then(() => {
+        state.body = body;
+        previewCardDocument(preview, next);
+        preview.hidden = false;
+        wrapper.remove();
+        for (const node of nativeContent) node.hidden = true;
+      }).catch((error: unknown) => {
+        editor.showErrors([uiText(`保存失败：${String(error)}`, `Save failed: ${String(error)}`)]);
+      }).finally(() => { save.disabled = false; editor.setBusy(false); });
+    });
+  });
+}
+
 function renderData(drawer: HTMLElement, state: State, data: any) {
   const key = JSON.stringify([data.task, data.runs]);
   const changed = state.dataKey !== key; state.dataKey = key;
   const task = data.task; state.assignee = task.assignee;
+  state.body = String(task.body || '');
   const select = drawer.querySelector<HTMLSelectElement>('.hti-kanban-control-field select');
   if (select && !select.disabled && !select.dataset.userSelected && task.assignee && Array.from(select.options).some(o => o.value === task.assignee)) select.value = task.assignee;
   if (!changed) return;
@@ -229,7 +347,7 @@ export function layoutKanbanDrawer(drawer: HTMLElement) {
     const heading = head(child); const label = heading?.textContent?.trim() || '';
     let tab: Tab = 'settings';
     if (child.classList.contains('hermes-kanban-drawer-title')) { child.classList.add('wb-task-title'); delete child.dataset.wbPanel; fingerprints.push(child.textContent || ''); continue; }
-    if (isHeading(label, ['Description', '说明', '描述', '理解后的需求', '任务描述'])) { tab = 'overview'; child.classList.add('wb-description'); text(heading, uiText('任务描述', 'Task description')); }
+    if (isHeading(label, ['Description', 'Task description', 'Card description', '说明', '描述', '理解后的需求', '任务描述'])) { tab = 'overview'; child.classList.add('wb-description'); text(heading, uiText('任务描述', 'Task description')); }
     if (isHeading(label, ['Result', 'Final Result', '最终结果', '结果', '最终回复', '子任务结果', 'Child Results'])) { tab = 'overview'; child.classList.add('wb-result'); }
     if (isHeading(label, ['Attachments', '附件'])) { tab = 'files'; child.classList.add('wb-attachments'); const count = label.match(/[（(](\d+)[）)]/)?.[1]; text(state.tabs.querySelector('[data-tab="files"]'), uiText("附件", "Attachments") + (count ? ' ' + count : '')); }
     if (isHeading(label, ['Comments', '评论', '备注'])) { commentSource = child; child.classList.add('wb-native-comments'); }
@@ -239,6 +357,7 @@ export function layoutKanbanDrawer(drawer: HTMLElement) {
     fingerprints.push(child.textContent || '');
   }
   commentsDock(drawer, commentSource);
+  installCardSchemaEditor(drawer, state);
   const fingerprint = fingerprints.join('\0');
   if (fingerprint !== state.fingerprint) {
     state.fingerprint = fingerprint; clearTimeout(state.timer);

@@ -1,4 +1,6 @@
 import { uiText as sourceText } from './ui-locale';
+import { cardDocumentFromBody, renderCardDocument, validateCardDocument } from './kanban-card-schema';
+import { createCardFields } from './kanban-card-fields';
 /**
  * Shape the native Kanban create form without replacing its React submit/state logic.
  * Keep the fields needed to describe and schedule a task visible at the first level.
@@ -15,6 +17,18 @@ function api(path: string): string {
 async function authedFetch(url: string): Promise<Response> {
   const sdk = (window as any).__HERMES_PLUGIN_SDK__;
   return sdk?.authedFetch ? sdk.authedFetch(url) : fetch(url, { credentials: 'same-origin' });
+}
+
+async function postJSON(url: string, value: unknown): Promise<any> {
+  const sdk = (window as any).__HERMES_PLUGIN_SDK__;
+  if (sdk?.fetchJSON) return sdk.fetchJSON(url, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+  });
+  const response = await fetch(url, {
+    method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value),
+  });
+  if (!response.ok) throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+  return response.json();
 }
 
 /** React-controlled native input update, preserving its validation and create request shape. */
@@ -84,30 +98,19 @@ function installForm(form: HTMLElement): void {
   if (!fields || !fields.children.length) return;
   form.dataset.htiCreateDialog = 'ready';
   const titleField = fields.children[0] as HTMLElement;
-  const existingBody = fields.querySelector('textarea') as HTMLTextAreaElement | null;
-  if (!existingBody) {
-    const body = document.createElement('textarea');
-    body.name = 'body';
-    body.className = 'hti-kanban-create-body';
-    body.placeholder = sourceText("任务说明（可选）", "Task description (optional)");
-    body.rows = 4;
-    const label = document.createElement('label');
-    label.textContent = sourceText("说明", "Description");
-    label.className = 'hti-kanban-create-body-label';
-    const wrapper = document.createElement('div');
-    wrapper.className = 'hti-kanban-create-body-field';
-    wrapper.append(label, body);
-    titleField.after(wrapper);
-  } else {
-    existingBody.name = existingBody.name || 'body';
-    existingBody.classList.add('hti-kanban-create-body');
-  }
+  const existingBody = Array.from(fields.querySelectorAll('textarea')).find(node => !titleField.contains(node)) as HTMLTextAreaElement | undefined;
+  // InlineCreate does not keep body in React state. Hide the legacy field and
+  // submit the structured body directly through the Kanban API instead.
+  if (existingBody) existingBody.hidden = true;
+  const editor = createCardFields(cardDocumentFromBody(existingBody?.value || ''), { showReview: true });
+  titleField.after(editor.root);
 
   // Keep priority, parent, goal mode, and the native workspace controls. The
   // old foldout's agent/skills/model fields are not task creation concerns.
   const keep = /priority|父任务|parent|目标模式|goal mode|workspace|工作区/i;
   for (const child of Array.from(fields.children).slice(1)) {
     if (child.classList.contains('hti-kanban-create-body-field') || child.querySelector('textarea')) continue;
+    if (child === editor.root) continue;
     if (!keep.test(labelText(child))) child.remove();
   }
 
@@ -161,7 +164,142 @@ function installForm(form: HTMLElement): void {
       picker.append(option);
     }
   }).catch(() => undefined);
+
+  const cancelButton = () => Array.from(form.querySelectorAll<HTMLButtonElement>('button'))
+    .find(button => /^(cancel|取消)$/i.test(button.textContent?.trim() || ''));
+  const createButton = () => Array.from(form.querySelectorAll<HTMLButtonElement>('button'))
+    .find(button => /^(create|创建)$/i.test(button.textContent?.trim() || ''));
+  const titleInput = titleField.querySelector<HTMLTextAreaElement | HTMLInputElement>('textarea, input');
+  let busy = false;
+  const submit = async () => {
+    if (busy) return;
+    const title = titleInput?.value.trim() || '';
+    const card = editor.read();
+    const errors = validateCardDocument(card);
+    if (!title) errors.unshift(sourceText("请填写标题", "Title is required"));
+    if (errors.length) { editor.showErrors(errors); return; }
+    const payload: Record<string, any> = {
+      title,
+      body: renderCardDocument(card),
+      priority: 0,
+      triage: form.closest('[data-kanban-column]')?.getAttribute('data-kanban-column') === 'triage',
+    };
+    const assignee = Array.from(form.querySelectorAll<HTMLInputElement>('input')).find(input =>
+      /assignee|specifier|负责人|分配/i.test(input.placeholder || ''));
+    if (assignee?.value.trim()) payload.assignee = assignee.value.trim();
+    const numberInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[type=number]'));
+    const priority = numberInputs.find(input => /pri/i.test(input.placeholder || ''));
+    if (priority?.value) payload.priority = Number(priority.value) || 0;
+    const skills = Array.from(form.querySelectorAll<HTMLInputElement>('input')).find(input =>
+      /skills/i.test(input.placeholder || ''));
+    if (skills?.value.trim()) payload.skills = skills.value.split(',').map(value => value.trim()).filter(Boolean);
+    const parent = form.querySelector<HTMLSelectElement>('select[title*="parent" i]');
+    if (parent?.value) payload.parents = [parent.value];
+    const workspaceKind = Array.from(form.querySelectorAll<HTMLSelectElement>('select')).find(select =>
+      Array.from(select.options).some(option => option.value === 'worktree'));
+    if (workspaceKind?.value && workspaceKind.value !== 'scratch') payload.workspace_kind = workspaceKind.value;
+    const workspacePath = Array.from(form.querySelectorAll<HTMLInputElement>('input')).find(input =>
+      /workspace path/i.test(input.placeholder || ''));
+    if (workspacePath?.value.trim()) payload.workspace_path = workspacePath.value.trim();
+    const goalMode = form.querySelector<HTMLInputElement>('input[type=checkbox]');
+    if (goalMode?.checked) {
+      payload.goal_mode = true;
+      const turns = numberInputs.find(input => /max turns/i.test(input.placeholder || ''));
+      if (turns?.value) payload.goal_max_turns = Number(turns.value) || undefined;
+    }
+    busy = true;
+    const button = createButton(); if (button) button.disabled = true;
+    editor.setBusy(true);
+    editor.showErrors([]);
+    try {
+      await postJSON(api('/tasks'), payload);
+      cancelButton()?.click();
+    } catch (error) {
+      editor.showErrors([sourceText(`创建失败：${String(error)}`, `Create failed: ${String(error)}`)]);
+      if (button) button.disabled = false;
+      busy = false;
+      editor.setBusy(false);
+    }
+  };
+  form.addEventListener('click', event => {
+    const button = (event.target as Element | null)?.closest('button');
+    if (!button || !/^(create|创建)$/i.test(button.textContent?.trim() || '')) return;
+    event.preventDefault(); event.stopPropagation(); void submit();
+  }, true);
+  form.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.shiftKey || event.target !== titleInput) return;
+    event.preventDefault(); event.stopPropagation(); void submit();
+  }, true);
   applyResolvedColors(form);
+}
+
+function inlineChoice(form: HTMLElement, match: (label: string) => boolean): HTMLButtonElement | undefined {
+  return Array.from(form.querySelectorAll<HTMLButtonElement>('button[role="combobox"]'))
+    .find(button => match(button.textContent?.trim() || ''));
+}
+
+function installInlineCreate(form: HTMLElement): void {
+  if (form.dataset.htiCreateDialog === 'ready') return;
+  const title = form.querySelector<HTMLTextAreaElement>('textarea');
+  if (!title) return;
+  form.dataset.htiCreateDialog = 'ready';
+  const editor = createCardFields(cardDocumentFromBody(''), { showReview: true });
+  title.after(editor.root);
+  const cancelButton = () => Array.from(form.querySelectorAll<HTMLButtonElement>('button'))
+    .find(button => /^(cancel|取消)$/i.test(button.textContent?.trim() || ''));
+  let busy = false;
+  const submit = async () => {
+    if (busy) return;
+    const card = editor.read();
+    const errors = validateCardDocument(card);
+    if (!title.value.trim()) errors.unshift(sourceText("请填写标题", "Title is required"));
+    if (errors.length) { editor.showErrors(errors); return; }
+    const payload: Record<string, any> = {
+      title: title.value.trim(),
+      body: renderCardDocument(card),
+      priority: 0,
+      triage: form.closest('[data-kanban-column]')?.getAttribute('data-kanban-column') === 'triage',
+    };
+    const inputs = Array.from(form.querySelectorAll<HTMLInputElement>('input'));
+    const assignee = inputs.find(input => /assignee|specifier/i.test(input.placeholder || ''));
+    if (assignee?.value.trim()) payload.assignee = assignee.value.trim();
+    const priority = inputs.find(input => input.type === 'number' && /pri/i.test(input.placeholder || ''));
+    if (priority?.value) payload.priority = Number(priority.value) || 0;
+    const skills = inputs.find(input => /skills/i.test(input.placeholder || ''));
+    if (skills?.value.trim()) payload.skills = skills.value.split(',').map(value => value.trim()).filter(Boolean);
+    const workspace = inlineChoice(form, value => /^(scratch|worktree|dir)$/i.test(value));
+    if (workspace && !/^scratch$/i.test(workspace.textContent?.trim() || '')) {
+      payload.workspace_kind = workspace.textContent?.trim().toLowerCase();
+      const path = inputs.find(input => /workspace path/i.test(input.placeholder || ''));
+      if (path?.value.trim()) payload.workspace_path = path.value.trim();
+    }
+    const parent = inlineChoice(form, value => /^t_[a-z0-9]+/i.test(value) || /no parent|无父任务/i.test(value));
+    const parentId = parent?.textContent?.trim().match(/^t_[a-z0-9]+/i)?.[0];
+    if (parentId) payload.parents = [parentId];
+    const goal = form.querySelector<HTMLInputElement>('input[type=checkbox]');
+    if (goal?.checked) {
+      payload.goal_mode = true;
+      const turns = inputs.find(input => /max turns/i.test(input.placeholder || ''));
+      if (turns?.value) payload.goal_max_turns = Number(turns.value) || undefined;
+    }
+    busy = true; editor.setBusy(true); editor.showErrors([]);
+    try {
+      await postJSON(api('/tasks'), payload);
+      cancelButton()?.click();
+    } catch (error) {
+      editor.showErrors([sourceText(`创建失败：${String(error)}`, `Create failed: ${String(error)}`)]);
+      busy = false; editor.setBusy(false);
+    }
+  };
+  form.addEventListener('click', event => {
+    const button = (event.target as Element | null)?.closest('button');
+    if (!button || !/^(create|创建)$/i.test(button.textContent?.trim() || '')) return;
+    event.preventDefault(); event.stopPropagation(); void submit();
+  }, true);
+  form.addEventListener('keydown', event => {
+    if (event.key !== 'Enter' || event.shiftKey || event.target !== title) return;
+    event.preventDefault(); event.stopPropagation(); void submit();
+  }, true);
 }
 
 /** Reapply after the native React form mounts or re-renders. */
@@ -174,7 +312,10 @@ export function installKanbanCreateDialogBridge(): void {
     queued = true;
     window.requestAnimationFrame(() => {
       queued = false;
-      for (const form of Array.from(document.querySelectorAll('.hermes-kanban-create-dialog'))) installForm(form as HTMLElement);
+      for (const form of Array.from(document.querySelectorAll('.hermes-kanban-create-dialog, .hermes-kanban-inline-create'))) {
+        if (form.classList.contains('hermes-kanban-inline-create')) installInlineCreate(form as HTMLElement);
+        else installForm(form as HTMLElement);
+      }
     });
   };
   new MutationObserver(refresh).observe(document.documentElement, { childList: true, subtree: true });
