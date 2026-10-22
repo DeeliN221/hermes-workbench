@@ -10810,11 +10810,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         hv = t(async (action = "message", answerText = "") => {
           const questionAnswer = action === "question-answer";
           const writeback = action === "kanban-writeback";
-          const kickoff = action === "kanban-start";
-          const cardShortcut = writeback || kickoff || questionAnswer;
-          if (kickoff && (!kanbanChatContext.current.matches(Y.current) || yr)) return;
+          const cardShortcut = writeback || questionAnswer;
           if (writeback && (!Y.current || !kanbanChatContext.current.matches(Y.current) || yr)) return;
-          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : kickoff ? kanbanChatContext.current.startRequest(Y.current) : Ji.current.trim(),
+          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : Ji.current.trim(),
             U = cardShortcut ? [] : [...Zi.current],
             ee = L || (U.length ? S5 : "");
           if (!ee || submittingRef.current || Ls || (yr && !qr) || yn) return;
@@ -12345,7 +12343,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   sessionId: k,
                   empty: !Xi && It.length === 0,
                   busy: submitting || yr || Ls || !!yn || (!k && !ef),
-                  onStart: () => hv("kanban-start"),
+                  onPrefill: () => {
+                    const prompt = kanbanChatContext.current.startRequest(k);
+                    if (!prompt) return;
+                    if (!Ji.current.trim()) Ot(prompt);
+                    requestAnimationFrame(() => V0.current?.focus());
+                  },
                 })
               : null,
             B
