@@ -36,7 +36,6 @@ import { version as workbenchVersion } from '../../package.json';
 import { observeTerminalTheme } from './terminal-theme';
 import { craftingIcon } from './crafting-icons';
 import { profileTabName, agentDisplayName, loadKanbanProfiles, populateKanbanAgentSelect } from './kanban-agent-picker';
-import { createKanbanDiscussionPreview } from './kanban-discussion-preview';
 import { imageFilesFromTransfer as Nc } from './workbench-image-paste';
 import { createKanbanChatContext } from './kanban-chat-context';
 import { connectRealtime } from './realtime-connection';
@@ -9603,7 +9602,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ProjectNavigation = createProjectNavigation(i),
       ChatComposerInput = createChatComposerInput(i),
       CodexUserInput = createCodexUserInput(i),
-      KanbanDiscussionPreview = createKanbanDiscussionPreview(i),
       MemoMessage = e.memo(T5),
       MemoProcess = e.memo(Q5, (before, after) => before.showDuration === after.showDuration
         && before.hasFollowingBody === after.hasFollowingBody
@@ -9764,7 +9762,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         M = profile || s(currentProfile()).current,
         H = R.get("hermesSession") || "",
         F = R.get("session") || "",
-        j = S ?? F,
+        j = S || F,
         Q = b ?? H,
         [k, N] = o(Q ? "" : j),
         [B, T] = o(Q),
@@ -9809,6 +9807,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [se, _e] = o(() => Q ? [] : profileAttachments(M, f).get(On(M, j)) || []),
         [Le, gt] = o(!1),
         [Xi, _i] = o(!1),
+        [kanbanPrefillFor, setKanbanPrefillFor] = o(""),
         [yr, Nt] = o(!1),
         [Fn, Wr] = o(!1),
         [Zo, Xl] = o(!1),
@@ -9995,6 +9994,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           [],
         ));
       if (!kanbanChatContext.current) kanbanChatContext.current = createKanbanChatContext(window.location.search, j, !!p);
+      const kanbanPrefillDone = s(new Set());
+      const kanbanLiveState = s({ session: "", loading: true, count: 0 });
+      kanbanLiveState.current = { session: k, loading: Xi, count: It.length };
       const xr = t(
         (L) => {
           ((X.current += 1),
@@ -10049,6 +10051,27 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         [M],
       );
+      r(() => {
+        setKanbanPrefillFor(B ? "" : (k || "new"));
+      }, [B, k]);
+      r(() => {
+        if (!kanbanPrefillFor) return;
+        const sessionId = kanbanPrefillFor === "new" ? "" : kanbanPrefillFor;
+        if (sessionId !== k) return;
+        if (kanbanPrefillDone.current.has(kanbanPrefillFor)) return;
+        const timer = window.setTimeout(() => {
+          const live = kanbanLiveState.current;
+          if (!live || live.session !== sessionId || live.loading || live.count) return;
+          if (!kanbanChatContext.current?.matches(sessionId) || sessionId !== Y.current || Ji.current.trim()) return;
+          if (kanbanPrefillDone.current.has(kanbanPrefillFor)) return;
+          const prompt = kanbanChatContext.current.startRequest(sessionId);
+          if (!prompt) return;
+          kanbanPrefillDone.current.add(kanbanPrefillFor);
+          Ot(prompt);
+          window.requestAnimationFrame(() => V0.current?.focus({ preventScroll: true }));
+        }, 250);
+        return () => window.clearTimeout(timer);
+      }, [B, It.length, Xi, k, kanbanPrefillFor]);
       r(() => {
         const L = Ho.current;
         L && Vo.current && (L.scrollTop = L.scrollHeight);
@@ -10810,11 +10833,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         hv = t(async (action = "message", answerText = "") => {
           const questionAnswer = action === "question-answer";
           const writeback = action === "kanban-writeback";
-          const kickoff = action === "kanban-start";
-          const cardShortcut = writeback || kickoff || questionAnswer;
-          if (kickoff && (!kanbanChatContext.current.matches(Y.current) || yr)) return;
+          const cardShortcut = writeback || questionAnswer;
           if (writeback && (!Y.current || !kanbanChatContext.current.matches(Y.current) || yr)) return;
-          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : kickoff ? kanbanChatContext.current.startRequest(Y.current) : Ji.current.trim(),
+          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : Ji.current.trim(),
             U = cardShortcut ? [] : [...Zi.current],
             ee = L || (U.length ? S5 : "");
           if (!ee || submittingRef.current || Ls || (yr && !qr) || yn) return;
@@ -12339,15 +12360,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               },
               "aria-busy": B ? Ct : Xi,
             },
-            !B && kanbanChatContext.current.matches(k)
-              ? W(e, KanbanDiscussionPreview, {
-                  context: kanbanChatContext.current,
-                  sessionId: k,
-                  empty: !Xi && It.length === 0,
-                  busy: submitting || yr || Ls || !!yn || (!k && !ef),
-                  onStart: () => hv("kanban-start"),
-                })
-              : null,
             B
               ? cD
               : Xi

@@ -12,7 +12,7 @@ describe('Kanban chat context delivery', () => {
     expect(fetch).toHaveBeenCalledTimes(1);
     expect(fetch.mock.calls[0][0]).toContain('profile=finance-advisor');
   });
-  it('sends only the locator and constraints once; writeback requests a fresh native read', async () => {
+  it('sends only the locator and safety rules once; writeback requests a fresh native read', async () => {
     const context = createKanbanChatContext(search, 's1', true);
     const fetch = cardFetch();
     const result = await context.message(fetch, 's1', '能看到吗');
@@ -24,10 +24,8 @@ describe('Kanban chat context delivery', () => {
     expect(result).not.toContain('保留来源');
     expect(result).not.toContain('a.xlsx');
     expect(result).toContain('不代表授权执行');
-    expect(result).toContain('默认每次回答不超过200字');
-    expect(result).toContain('紧凑表格');
-    expect(result).toContain('Mermaid');
-    expect(result).toContain('不设置为全局偏好');
+    expect(result).not.toContain('头脑风暴');
+    expect(result).not.toContain('默认每次回答不超过200字');
     expect(result).toContain('【用户当前消息】\n能看到吗');
     // Until accepted, retry must still carry context.
     expect(await context.message(fetch, 's1', '重试')).toContain('【看板讨论上下文】');
@@ -88,7 +86,7 @@ describe('Kanban chat context delivery', () => {
     await context.message(fetch, '', '开始');
     expect(fetch.mock.calls.filter(([url]: string[]) => url.endsWith('/boards'))).toHaveLength(1);
     expect(fetch).toHaveBeenLastCalledWith('/api/plugins/kanban/tasks/t_715fea9c?board=Money');
-    expect(context.startRequest('')).toContain('一个最值得澄清的问题');
+    expect(context.startRequest('')).toBe('请检查任务 t_715fea9c');
     expect(context.startRequest('another')).toBe('');
   });
   it('honors the browser selected board when the legacy URL omits it', async () => {

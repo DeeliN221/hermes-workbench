@@ -10136,13 +10136,6 @@ html.dark .hti-rich-text {
   .codex-submit-actions .codex-writeback { min-width: 3.2rem; padding-inline: 0.5rem; }
 }
 
-.codex-card-context { margin: 1rem auto; padding: 1rem; width: calc(100% - 2rem); max-width: 52rem; box-sizing: border-box; border: 1px solid var(--codex-border); border-radius: 10px; background: var(--codex-surface); color: var(--codex-ink); overflow-wrap: anywhere; }
-.codex-card-context h2 { margin: 0.5rem 0 0.8rem; font-size: 1.1rem; line-height: 1.5; }
-.codex-card-context-meta, .codex-card-context-hint { color: var(--codex-muted); font-size: 0.85rem; line-height: 1.6; }
-.codex-card-context summary { cursor: pointer; font-size: 0.9rem; }
-.codex-card-context-body { margin-top: 0.7rem; white-space: pre-wrap; max-height: 15rem; overflow: auto; line-height: 1.65; font-size: 0.95rem; }
-.codex-card-context-start { display: flex; gap: 0.7rem; align-items: center; flex-wrap: wrap; font-size: 0.85rem; }
-.codex-card-context-start .codex-send { height: auto; min-height: 2.5rem; }
 
 .hti-kanban-agent-status { grid-column: 1 / -1; font-size: 0.85rem; overflow-wrap: anywhere; }
 .hti-kanban-agent-status[hidden] { display: none; }
