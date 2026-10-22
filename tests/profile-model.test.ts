@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyProfileModel, applyProfileChatDefaults } from '../dashboard/src/profile-model';
+import { applyProfileModel, applyProfileChatDefaults, filterCodexModels, modelKey } from '../dashboard/src/profile-model';
 
 const models = ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna'].map((id, index) => ({ id, label: id, isDefault: index === 0 }));
 
@@ -15,8 +15,23 @@ describe('profile default model', () => {
     expect(applyProfileModel(models, { model: 'gpt-6-luna' })[2].isDefault).toBe(true);
     expect(applyProfileModel(models, {})).toEqual(models);
   });
-  it('reports unavailable configured models instead of silently using another model', () => {
-    expect(() => applyProfileModel(models, { model: { default: 'unavailable' } })).toThrow('unavailable');
+  it('falls back to the catalog default when a profile still names an unavailable model', () => {
+    expect(applyProfileModel(models, { model: { default: 'unavailable' } })
+      .find(model => model.isDefault)?.id).toBe('gpt-6.1-sol');
+  });
+  it('resolves a provider-qualified version alias to the live Codex model', () => {
+    const live = [{ id: 'deepseek/deepseek-flash', label: 'DeepSeek Flash', isDefault: false }];
+    expect(applyProfileModel(live, { model: { default: 'deepseek/deepseek-v4-flash' }})[0].isDefault).toBe(true);
+    expect(modelKey('deepseek/deepseek-v4-flash')).toBe('deepseek-flash');
+  });
+});
+
+describe('Codex model catalog', () => {
+  it('shows only DeepSeek Flash and GPT models', () => {
+    const rows = ['gpt-6.1-sol', 'openai/gpt-5.6-luna', 'deepseek/deepseek-flash', 'deepseek/deepseek-v4-pro', 'claude-opus', 'gemini-pro']
+      .map(id => ({ id, label: id, isDefault: false }));
+    expect(filterCodexModels(rows).map(model => model.id))
+      .toEqual(['gpt-6.1-sol', 'openai/gpt-5.6-luna', 'deepseek/deepseek-flash']);
   });
 });
 

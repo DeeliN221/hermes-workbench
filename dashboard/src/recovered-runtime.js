@@ -31,6 +31,7 @@ import { installKanbanWorkflowBridge } from './kanban-workflow-bridge';
 import { subscribeChatLists, stableChatList, createChatEventBatch } from './chat-update-scheduler';
 import { useSelectableMarkdown } from './selectable-markdown';
 import { cronSortOptions, cronSections, readCronSidebarPrefs } from './cron-sidebar';
+import { paneTargetUrl } from './codex-pane-route';
 import { version as workbenchVersion } from '../../package.json';
 import { observeTerminalTheme } from './terminal-theme';
 import { craftingIcon } from './crafting-icons';
@@ -12563,6 +12564,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         ),
         H = t(
           (F) => {
+            const closingTarget = y.current.get(F)?.getTarget();
+            const wasActive = x.current === F;
             const j = g5(m, F, x.current);
             j.panes.length !== m.length &&
               (O(j.panes),
@@ -12571,7 +12574,16 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 return (delete k[F], k);
               }),
               (x.current = j.activePaneId),
-              _(j.activePaneId));
+              _(j.activePaneId),
+              (() => {
+                const url = new URL(window.location.href);
+                const routeMatchesClosed =
+                  (!!closingTarget?.sessionId && url.searchParams.get("session") === closingTarget.sessionId) ||
+                  (!!closingTarget?.hermesSessionId && url.searchParams.get("hermesSession") === closingTarget.hermesSessionId);
+                if (!wasActive && !routeMatchesClosed) return;
+                const activeTarget = y.current.get(j.activePaneId)?.getTarget();
+                if (activeTarget) window.history.replaceState(null, "", paneTargetUrl(window.location.href, activeTarget));
+              })());
           },
           [m],
         );

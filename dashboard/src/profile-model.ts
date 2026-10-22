@@ -1,14 +1,35 @@
 import { uiText as sourceText } from './ui-locale';
 type ModelChoice = { id: string; label: string; isDefault: boolean };
 
+/** Compare provider-qualified and versioned aliases without changing the chosen model ID. */
+export function modelKey(value: string): string {
+  let id = value.trim().toLowerCase().replace(/^@[^:]+:/, '');
+  id = id.slice(id.lastIndexOf('/') + 1);
+  return id.replace(/-v\d+(?:\.\d+)?(?=-|$)/g, '');
+}
+
+/** Keep only the Codex models exposed by this Workbench. */
+export function filterCodexModels<T extends ModelChoice>(choices: T[]): T[] {
+  return choices.filter(choice => {
+    const id = choice.id.trim().toLowerCase();
+    const model = id.slice(id.lastIndexOf('/') + 1);
+    return /^gpt(?:[-.]|$)/.test(model) || modelKey(id) === 'deepseek-flash';
+  });
+}
+
 /** Resolve the profile's Hermes setting against the live Codex model catalog. */
 export function applyProfileModel<T extends ModelChoice>(choices: T[], config: unknown): T[] {
   const model = (config as { model?: string | { default?: string } } | null)?.model;
   const configured = (typeof model === 'string' ? model : model?.default)?.trim();
   if (!configured) return choices;
-  const match = choices.find(choice => choice.id.toLowerCase() === configured.toLowerCase());
-  if (!match) throw new Error(sourceText(`当前 profile 的默认模型 ${configured} 不在可用模型列表中`, `The current profile default model ${configured} is not in the available model list`));
-  return choices.map(choice => ({ ...choice, isDefault: choice.id === match.id }));
+  const exact = choices.find(choice => choice.id.toLowerCase() === configured.toLowerCase());
+  const match = exact || choices.find(choice => modelKey(choice.id) === modelKey(configured));
+  // A stale profile must not make the whole model picker unusable. Fall back to
+  // the catalog default (or its first model) until the profile is updated.
+  const fallback = choices.find(choice => choice.isDefault) || choices[0];
+  const selected = match || fallback;
+  if (!selected) return choices;
+  return choices.map(choice => ({ ...choice, isDefault: choice.id === selected.id }));
 }
 
 type ChatModelChoice = ModelChoice & {

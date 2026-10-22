@@ -2,7 +2,7 @@
 import type { FetchJSON } from './workbench-api';
 import { record, rows, text, optionalNumber, type AuthedFetch } from './api-values';
 import { loadChatSetup } from './chat-setup';
-import { applyProfileChatDefaults } from './profile-model';
+import { applyProfileChatDefaults, filterCodexModels } from './profile-model';
 import { runtimeErrorText } from './chat-runtime-errors';
 import { uiText } from './ui-locale';
 const API = '/api/plugins/workbench/codex';
@@ -117,13 +117,13 @@ export async function loadCodexModels(read: FetchJSON, profile: string) {
   const [catalog, config] = await loadChatSetup(read, profile);
   const choices = rows(catalog, 'data', 'models').flatMap(value => {
     const row = record(value), id = text(row.model ?? row.id);
-    if (!id) return [];
+    if (!id || row.hidden === true) return [];
     const fast = rows(row.serviceTiers).map(record).find(tier => text(tier.name).toLowerCase() === 'fast');
     return [{ id, label: text(row.displayName, id), supportsFast: !!fast, fastServiceTier: fast ? text(fast.id) : undefined,
       efforts: rows(row.supportedReasoningEfforts).map(value => text(record(value).reasoningEffort)).filter(Boolean),
       defaultEffort: text(row.defaultReasoningEffort), isDefault: row.isDefault === true }];
   });
-  return applyProfileChatDefaults(choices, config);
+  return applyProfileChatDefaults(filterCodexModels(choices), config);
 }
 export async function markCodexSessionRead(read: FetchJSON, profile: string, session: string, readSeq: number) {
   if (readSeq) await read(`${API}/session/read?${sessionQuery(profile, session)}`, json('POST', { profile, readSeq }));
