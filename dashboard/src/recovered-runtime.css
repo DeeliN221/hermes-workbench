@@ -5156,39 +5156,6 @@ body[data-theme*="dark"] .hti-rich-markdown {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.codex-session-line {
-  display: flex;
-  align-items: center;
-  gap: 0.45rem;
-  min-width: 0;
-  flex-wrap: wrap;
-  justify-self: start;
-}
-.codex-session-line .codex-session-id {
-  min-width: 0;
-}
-.codex-pane-profile {
-  display: inline-flex;
-  flex: none;
-  align-items: center;
-  gap: 0.28rem;
-  border: 1px solid color-mix(in srgb, var(--codex-border) 78%, transparent);
-  border-radius: 999px;
-  padding: 0.08rem 0.45rem 0.08rem 0.36rem;
-  color: var(--codex-muted);
-  background: color-mix(in srgb, var(--codex-ink) 4%, transparent);
-  font-size: 0.68rem;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  line-height: 1.4;
-  white-space: nowrap;
-}
-.codex-pane-profile-dot {
-  width: 0.36rem;
-  height: 0.36rem;
-  border-radius: 50%;
-  background: var(--codex-accent-strong, #2f7f8f);
-}
 .codex-center-subtitle {
   display: block;
   overflow: hidden;

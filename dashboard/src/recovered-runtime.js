@@ -9284,8 +9284,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     do { id = `pane-${nextPaneId++}`; } while (ids.has(id));
     return id;
   }
-  function m5(i = "", e = "", profile = "") {
-    return [{ id: "pane-1", initialSessionId: i, initialHermesSessionId: e, profile }];
+  function m5(i = "", e = "") {
+    return [{ id: "pane-1", initialSessionId: i, initialHermesSessionId: e }];
   }
   function Xo(i) {
     return i.length < f5;
@@ -9993,7 +9993,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       navigationActiveHermesSessionId: D,
       onTargetChange: A,
       profile,
-      navigationProfile,
     }) {
       const sendShortcut = useSendShortcut(i);
       const R = new URLSearchParams(window.location.search),
@@ -10001,10 +10000,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         // pane before its first render and takes the whole dashboard down.
         fallbackProfile = s(currentProfile()),
         M = profile || fallbackProfile.current,
-        // The navigation sidebar follows the browser profile, while this pane
-        // keeps the profile it was opened for. That lets two profiles stay
-        // side by side without resetting either conversation.
-        listProfile = p ? (navigationProfile || M) : M,
         H = R.get("hermesSession") || "",
         F = R.get("session") || "",
         // An explicit empty string means a brand-new pane. Falling back to the
@@ -10119,7 +10114,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         (Y.current = k),
         (te.current = B),
         r(() => {
-          A?.(f, { sessionId: k, hermesSessionId: B, profile: M });
+          A?.(f, { sessionId: k, hermesSessionId: B });
         }, [B, A, f, k]),
         r(
           () => (
@@ -10406,25 +10401,25 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           (L) => {
             if ($d(L)) {
               if ((Nl(), v)) {
-                v(L, listProfile);
+                v(L);
                 return;
               }
               xr(L);
             }
           },
-          [v, xr, listProfile],
+          [v, xr],
         ),
         tv = t(
           (L) => {
             if ($d("", L)) {
               if ((Nl(), x)) {
-                x(L, listProfile);
+                x(L);
                 return;
               }
               Gl(L);
             }
           },
-          [x, Gl, listProfile],
+          [x, Gl],
         ),
         kM = t(() => {
           (Zr(!1), Nl(), gt(!0));
@@ -10446,8 +10441,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           (qi(!1), bn(""), window.setTimeout(() => jl.current?.focus(), 0));
         }, []),
         iv = t(
-          () => ({ sessionId: Y.current, hermesSessionId: te.current, profile: M }),
-          [M],
+          () => ({ sessionId: Y.current, hermesSessionId: te.current }),
+          [],
         );
       r(() => {
         if (w)
@@ -10457,9 +10452,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             startNewSession: Yl,
             openWorkspace: () => { Zr(false); Es(value => !value); },
             getTarget: iv,
-            getProfile: () => M,
           });
-      }, [iv, w, f, Gl, xr, Yl, M]);
+      }, [iv, w, f, Gl, xr, Yl]);
       const Kl = t((L) => {
         ((X.current += 1),
           er.current?.close(),
@@ -10482,8 +10476,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       }, []);
       (r(() => {
         Pt("");
-        return subscribeChatLists(i.fetchJSON, listProfile, () => Promise.all([
-          i0(i.fetchJSON, listProfile), XL(i.fetchJSON, listProfile), i0(i.fetchJSON, listProfile, { deleted: !0 }),
+        return subscribeChatLists(i.fetchJSON, M, () => Promise.all([
+          i0(i.fetchJSON, M), XL(i.fetchJSON, M), i0(i.fetchJSON, M, { deleted: !0 }),
         ]), {
           begin: () => {
             if (Ai.current > 0) return;
@@ -10497,8 +10491,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               })));
               V(previous => stableChatList(previous, ze));
               G(previous => stableChatList(previous, Ge));
-              primeSessionColors(listProfile, $e);
-              primeSessionColors(listProfile, Ge);
+              primeSessionColors(M, $e);
+              primeSessionColors(M, Ge);
               const zt = Y.current;
               if (zt && Ge.some((Ke) => Ke.id === zt))
                 Kl(runtimeText("当前会话已归档，已停止发送；可在“已归档”中恢复。", "This session is archived and sending is disabled. Restore it from Archived."));
@@ -10506,7 +10500,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           },
           error: error => Pt(String(error)),
         });
-      }, [Kl, listProfile]),
+      }, [Kl, M]),
         r(() => {
           let L = !0,
             U = !1;
@@ -10514,7 +10508,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             U ||
               ((U = !0),
               _r(!0),
-              jR(i.fetchJSON, listProfile)
+              jR(i.fetchJSON, M)
                 .then((xe) => {
                   L &&
                     (ct(xe.sessions),
@@ -10543,7 +10537,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 document.removeEventListener("visibilitychange", ne));
             }
           );
-        }, [listProfile, Tt]),
+        }, [M, Tt]),
         r(() => {
           const L =
             ai.find((U) => U.id === Bt) ||
@@ -11706,7 +11700,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               {
                 type: "button",
                 className: `codex-session-row${L.id === Sv ? " is-active" : ""}${U ? " is-archived" : ""}${L.favorite ? " is-favorite" : ""}${ee ? ` ${ee.className}` : ""}`,
-                "data-session-color": sessionColor(listProfile, L.id, L.color),
+                "data-session-color": sessionColor(M, L.id, L.color),
                 onClick: U ? void 0 : () => ev(L.id),
                 title: [ne, ee?.label, L.updatedAt].filter(Boolean).join(`
 `),
@@ -11720,7 +11714,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               : null,
             W(e, "span", {
               className: "codex-session-color-bar",
-              style: { background: sessionColor(listProfile, L.id, L.color) },
+              style: { background: sessionColor(M, L.id, L.color) },
               "aria-hidden": "true",
             }),
             W(e, "span", { className: "codex-session-title" }, ne),
@@ -12672,56 +12666,40 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 { className: "codex-center-title", title: kv },
                 kv,
               ),
-              W(
-                e,
-                "div",
-                { className: "codex-session-line" },
-                B
+              B
+                ? W(
+                    e,
+                    "span",
+                    {
+                      className:
+                        "codex-center-subtitle codex-hermes-history-read-only",
+                      "data-testid": "hermes-history-read-only",
+                    },
+                    runtimeText("Hermes 历史 · 只读", "Hermes history · Read-only"),
+                  )
+                : ei?.threadId
                   ? W(
                       e,
-                      "span",
+                      "button",
                       {
-                        className:
-                          "codex-center-subtitle codex-hermes-history-read-only",
-                        "data-testid": "hermes-history-read-only",
-                      },
-                      runtimeText("Hermes 历史 · 只读", "Hermes history · Read-only"),
-                    )
-                  : ei?.threadId
-                    ? W(
-                        e,
-                        "button",
-                        {
-                          type: "button",
-                          className: "codex-session-id",
-                          title: runtimeText(`点击复制会话 ID：${ei.threadId}`, `Click to copy session ID: ${ei.threadId}`),
-                          "aria-label": runtimeText("复制会话 ID", "Copy session ID"),
-                          onClick: () => {
-                            AM();
-                          },
+                        type: "button",
+                        className: "codex-session-id",
+                        title: runtimeText(`点击复制会话 ID：${ei.threadId}`, `Click to copy session ID: ${ei.threadId}`),
+                        "aria-label": runtimeText("复制会话 ID", "Copy session ID"),
+                        onClick: () => {
+                          AM();
                         },
-                        W(e, "span", null, ei.threadId),
-                        st(e, Fo === ei.threadId ? "check" : "copy"),
-                        W(
-                          e,
-                          "span",
-                          { className: "codex-copy-feedback", role: "status" },
-                          Fo === ei.threadId ? runtimeText("已复制", "Copied") : "",
-                        ),
-                      )
-                    : null,
-                W(
-                  e,
-                  "span",
-                  {
-                    className: "codex-pane-profile",
-                    "data-profile": M,
-                    title: runtimeText(`配置档案：${M}`, `Profile: ${M}`),
-                  },
-                  W(e, "span", { className: "codex-pane-profile-dot", "aria-hidden": !0 }),
-                  M,
-                ),
-              ),
+                      },
+                      W(e, "span", null, ei.threadId),
+                      st(e, Fo === ei.threadId ? "check" : "copy"),
+                      W(
+                        e,
+                        "span",
+                        { className: "codex-copy-feedback", role: "status" },
+                        Fo === ei.threadId ? runtimeText("已复制", "Copied") : "",
+                      ),
+                    )
+                  : null,
             ),
             k && !B
               ? W(
@@ -12899,18 +12877,17 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           : null,
       );
     }
-    return function ({ profile: scopeProfile } = {}) {
+    return function () {
       const S = new URLSearchParams(window.location.search),
-        paneProfile = scopeProfile || currentProfile(S),
+        paneProfile = currentProfile(S),
         startEmpty = isNewSessionRoute(window.location.href),
         b = startEmpty ? "" : S.get("hermesSession") ? "" : S.get("session") || "",
         p = startEmpty ? "" : S.get("hermesSession") || "",
-        [m, O] = o(m5(b, p, paneProfile)),
+        [m, O] = o(m5(b, p)),
         [g, _] = o("pane-1"),
-        [w, v] = o({ "pane-1": { sessionId: b, hermesSessionId: p, profile: paneProfile } }),
+        [w, v] = o({ "pane-1": { sessionId: b, hermesSessionId: p } }),
         x = s(g),
         y = s(new Map()),
-        openPane = s(null),
         paneDrag = s(null),
         [draggingPane, setDraggingPane] = o(false),
         [paneDropNotice, setPaneDropNotice] = o("");
@@ -12961,14 +12938,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         E = t((F, j) => {
           j?.target?.closest?.(".codex-sidebar") || ((x.current = F), _(F));
         }, []),
-        D = t((F, profile = currentProfile()) => {
+        D = t((F) => {
           for (const [j, Q] of y.current)
-            if (Q.getTarget().sessionId === F && Q.getProfile?.() === profile) {
+            if (Q.getTarget().sessionId === F) {
               ((x.current = j), _(j));
               return;
             }
           const current = y.current.get(x.current);
-          if (current && current.getProfile?.() === profile) {
+          if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectSession(F);
             return;
           }
@@ -12976,17 +12953,21 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
             return;
           }
-          openPane.current?.(F, x.current, profile);
+          const pane = { id: p5(m), initialSessionId: F, initialHermesSessionId: "" };
+          const panes = O5(m, pane, x.current);
+          O(panes);
+          v(currentState => ({ ...currentState, [pane.id]: { sessionId: F, hermesSessionId: "" } }));
+          x.current = pane.id;
+          _(pane.id);
         }, [m, O, v, _]),
-        A = t((F, profile = currentProfile()) => {
+        A = t((F) => {
           for (const [j, Q] of y.current)
-            if (Q.getTarget().hermesSessionId === F && Q.getProfile?.() === profile) {
+            if (Q.getTarget().hermesSessionId === F) {
               ((x.current = j), _(j));
               return;
             }
           const current = y.current.get(x.current);
-          if (current && current.getProfile?.() === profile &&
-              !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
+          if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectHermesHistory(F);
             return;
           }
@@ -12994,10 +12975,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
             return;
           }
-          const pane = { id: p5(m), initialSessionId: "", initialHermesSessionId: F, profile };
+          const pane = { id: p5(m), initialSessionId: "", initialHermesSessionId: F };
           const panes = O5(m, pane, x.current);
           O(panes);
-          v(currentState => ({ ...currentState, [pane.id]: { sessionId: "", hermesSessionId: F, profile } }));
+          v(currentState => ({ ...currentState, [pane.id]: { sessionId: "", hermesSessionId: F } }));
           x.current = pane.id;
           _(pane.id);
         }, [m, O, v, _]),
@@ -13005,28 +12986,24 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           y.current.get(x.current)?.startNewSession(workspaceId);
         }, []),
         M = t(
-          (F = "", j = x.current, profile = paneProfile) => {
+          (F = "", j = x.current) => {
             if (!Xo(m)) return;
             const Q = {
                 id: p5(m),
                 initialSessionId: F,
                 initialHermesSessionId: "",
-                profile: profile || paneProfile,
               },
               k = O5(m, Q, j);
             k.length !== m.length &&
               (O(k),
               v((N) => ({
                 ...N,
-                [Q.id]: { sessionId: F, hermesSessionId: "", profile: Q.profile },
+                [Q.id]: { sessionId: F, hermesSessionId: "" },
               })),
               (x.current = Q.id),
-              _(Q.id),
-              window.history.replaceState(null, "", paneTargetUrl(window.location.href, {
-                sessionId: F, hermesSessionId: "", profile: Q.profile,
-              })));
+              _(Q.id));
           },
-          [m, paneProfile],
+          [m],
         ),
         H = t(
           (F) => {
@@ -13053,19 +13030,18 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           },
           [m],
         );
-      openPane.current = M;
       r(() => {
         const startFromRoute = () => {
           if (!isNewSessionRoute(window.location.href)) return;
           window.history.replaceState(null, "", clearNewSessionRoute(window.location.href));
           // The first render already mounted its empty pane; only later
           // navigations need an extra pane.
-          if (!startEmpty) M("", x.current, currentProfile());
+          if (!startEmpty) M("", x.current);
         };
         window.addEventListener("popstate", startFromRoute);
         return () => window.removeEventListener("popstate", startFromRoute);
       }, [M, startEmpty]);
-      r(() => installHomeChatNavigation(paneProfile, { codex: D, hermes: A }), [D, A, paneProfile]);
+      r(() => installHomeChatNavigation(currentProfile(), { codex: D, hermes: A }), [D, A]);
       const dropPaneSessions = (event) => {
         const payload = event.dataTransfer?.getData(PANE_DRAG_TYPE);
         if (!payload || payload !== paneDrag.current) return;
@@ -13074,13 +13050,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         try { ids = [...new Set(JSON.parse(payload).sessionIds)]; } catch { return; }
         let panes = m, targets = {}, active = x.current, opened = 0, skipped = 0;
         for (const sessionId of ids) {
-          const existing = [...y.current].find(([, controller]) =>
-            controller.getTarget().sessionId === sessionId && controller.getProfile?.() === paneProfile);
+          const existing = [...y.current].find(([, controller]) => controller.getTarget().sessionId === sessionId);
           if (existing) { active = existing[0]; continue; }
           if (!Xo(panes)) { skipped++; continue; }
-          const pane = { id: p5(panes), initialSessionId: sessionId, initialHermesSessionId: "", profile: paneProfile };
+          const pane = { id: p5(panes), initialSessionId: sessionId, initialHermesSessionId: "" };
           panes = O5(panes, pane, panes.at(-1).id);
-          targets[pane.id] = { sessionId, hermesSessionId: "", profile: paneProfile };
+          targets[pane.id] = { sessionId, hermesSessionId: "" };
           active = pane.id; opened++;
         }
         if (opened) { O(panes); v(current => ({ ...current, ...targets })); }
@@ -13124,7 +13099,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               onActivate: (Q) => E(F.id, Q),
               onClose: () => H(F.id),
               canClose: m.length > 1,
-              onNewNearby: Xo(m) ? () => M("", F.id, F.profile) : void 0,
+              onNewNearby: Xo(m) ? () => M("", F.id) : void 0,
               onRegister: C,
               onNavigationSelect: j === 0 ? D : void 0,
               onNavigationHermesSelect: j === 0 ? A : void 0,
@@ -13135,21 +13110,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   return;
                 }
                 setPaneDropNotice("");
-                M("", m.at(-1).id, paneProfile);
+                M("", m.at(-1).id);
               } : void 0,
               onNavigationOpenNearby:
-                j === 0 && Xo(m) ? (Q) => M(Q, x.current, paneProfile) : void 0,
+                j === 0 && Xo(m) ? (Q) => M(Q, x.current) : void 0,
               onNavigationDragStart: j === 0 ? startPaneDrag : void 0,
               onNavigationDragEnd: j === 0 ? endPaneDrag : void 0,
               onNavigationNewNearby:
-                j === 0 && Xo(m) ? () => M("", x.current, paneProfile) : void 0,
+                j === 0 && Xo(m) ? () => M("", x.current) : void 0,
               navigationActiveSessionId:
-                j === 0 && (!w[g]?.profile || w[g].profile === paneProfile) ? w[g]?.sessionId || "" : void 0,
+                j === 0 ? w[g]?.sessionId || "" : void 0,
               navigationActiveHermesSessionId:
-                j === 0 && (!w[g]?.profile || w[g].profile === paneProfile) ? w[g]?.hermesSessionId || "" : void 0,
+                j === 0 ? w[g]?.hermesSessionId || "" : void 0,
               onTargetChange: P,
-              profile: F.profile || paneProfile,
-              navigationProfile: paneProfile,
+              profile: paneProfile,
             }),
           ),
         ),
@@ -15479,7 +15453,7 @@ ${_e.description}`
     const t = BR(i),
       r = A5(i),
       { useEffect: n, useState: s } = i.hooks;
-    function o({ profile: scopeProfile } = {}) {
+    function o() {
       const [u, h] = s("loading"),
         [d, f] = s(0);
       return (
@@ -15506,7 +15480,7 @@ ${_e.description}`
           );
         }, [d]),
         u === "enabled"
-          ? i.React.createElement(r, { profile: scopeProfile })
+          ? i.React.createElement(r)
           : u === "disabled"
             ? i.React.createElement(t)
             : u === "error"
@@ -15565,7 +15539,7 @@ ${_e.description}`
               className: "dashboard-persistent-workbench",
               "data-chat-visible": h,
             },
-            i.React.createElement(o, { profile }),
+            i.React.createElement(o, { key: profile, profile }),
           ),
         )
       );
