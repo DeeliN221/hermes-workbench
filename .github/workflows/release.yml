@@ -67,6 +67,8 @@ jobs:
           pnpm test
           env -u CODEX_APP_SERVER_ENDPOINT -u CODEX_HOME uv run --no-project --with-requirements requirements-dev.txt pytest -q tests
           pnpm build
+          pnpm exec playwright install --with-deps chromium
+          pnpm test:browser
           pnpm history:check
           pnpm privacy:check
           pnpm release:verify
