@@ -48,14 +48,14 @@ describe('Workbench sidebar tools', () => {
       230,
       true,
     );
-    expect(floating).toEqual({ left: '466px', top: '63px', width: '950px', height: '813px' });
+    expect(floating).toEqual({ left: '130px', top: '48px', width: '1180px', height: '804px' });
     expect(terminalWorkspaceGeometry(
       { bottom: 64 },
       { width: 900, height: 800, offsetLeft: 0, offsetTop: 0 },
       false,
       190,
       true,
-    )).toEqual({ left: '236px', top: '56px', width: '640px', height: '720px' });
+    )).toEqual({ left: '24px', top: '48px', width: '852px', height: '704px' });
     expect(terminalWorkspaceCriticalStyle(floating, true)).toMatchObject({
       ...floating, position: 'fixed', zIndex: '1001', borderRadius: '12px',
     });

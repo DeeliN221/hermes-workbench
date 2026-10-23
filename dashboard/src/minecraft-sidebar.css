@@ -266,16 +266,16 @@
 .dashboard-global-nav.is-collapsed .project-navigation { display: contents; }
 .dashboard-global-nav.is-collapsed .project-rail { flex: 1 1 auto; min-height: 0; height: 100%; }
 
-/* Floating tabs keep the conversation mounted and visible behind the panel. */
+/* Floating tabs sit above the navigation and conversation as a centered overlay. */
 :root[data-workbench-shell="true"] {
-  --dashboard-accessory-width: min(1180px, max(640px, 66vw), calc(100vw - var(--dashboard-nav-width) - 32px));
-  --dashboard-accessory-top: 64px;
-  --dashboard-accessory-right: 24px;
-  --dashboard-accessory-bottom: 24px;
-  --dashboard-accessory-left: calc(100vw - var(--dashboard-accessory-width) - var(--dashboard-accessory-right));
+  --dashboard-accessory-width: min(1180px, calc(100vw - 48px));
+  --dashboard-accessory-top: 48px;
+  --dashboard-accessory-bottom: 48px;
+  --dashboard-accessory-left: calc((100vw - var(--dashboard-accessory-width)) / 2);
+  --dashboard-accessory-right: var(--dashboard-accessory-left);
 }
 .dashboard-accessory-backdrop {
-  position: fixed; z-index: 81; inset: 0 0 0 var(--dashboard-nav-width);
+  position: fixed; z-index: 81; inset: 0;
   border: 0; padding: 0; cursor: default;
   background: color-mix(in srgb, #151a14 24%, transparent);
   backdrop-filter: blur(1.5px);
@@ -320,6 +320,7 @@ html[data-workbench-accessory][data-workbench-page="custom"] .dashboard-owned-pa
 html[data-workbench-accessory][data-workbench-accessory-settings="true"] .dashboard-settings-nav {
   position: fixed; z-index: 83; top: var(--dashboard-accessory-top); bottom: var(--dashboard-accessory-bottom);
   left: var(--dashboard-accessory-left); width: var(--dashboard-settings-width);
+  box-sizing: border-box;
   padding: 18px 10px; overflow-y: auto;
   border: 3px solid #493523; border-right: 0; border-radius: 12px 0 0 12px;
   color: var(--dashboard-ink); background: var(--dashboard-nav-surface, #f5f8fa);

@@ -177,7 +177,7 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       response.end(body);
       return;
     }
-    if (['/', '/sessions', '/chat', '/workbench'].includes(url.pathname)) {
+    if (['/', '/sessions', '/chat', '/workbench', '/profiles'].includes(url.pathname)) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(fixture);
       return;

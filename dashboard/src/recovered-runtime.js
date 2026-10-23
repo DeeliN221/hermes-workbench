@@ -2893,6 +2893,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         const chatRoot = document.querySelector(".dashboard-persistent-workbench");
         const chatWasInert = Boolean(chatRoot?.inert);
         if (chatRoot) chatRoot.inert = true;
+        const navRoot = document.querySelector(".dashboard-global-nav");
+        const navWasInert = Boolean(navRoot?.inert);
+        const navAriaHidden = navRoot?.getAttribute("aria-hidden");
+        if (navRoot) {
+          navRoot.inert = true;
+          navRoot.setAttribute("aria-hidden", "true");
+        }
         const key = (event) => {
           if (event.key !== "Escape" || event.defaultPrevented) return;
           if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
@@ -2908,6 +2915,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         return () => {
           document.removeEventListener("keydown", key);
           if (chatRoot) chatRoot.inert = chatWasInert;
+          if (navRoot) {
+            navRoot.inert = navWasInert;
+            navAriaHidden == null
+              ? navRoot.removeAttribute("aria-hidden")
+              : navRoot.setAttribute("aria-hidden", navAriaHidden);
+          }
           if (previous instanceof HTMLElement) previous.focus?.({ preventScroll: true });
         };
       }, [accessory]);
