@@ -9,6 +9,12 @@ import { sessionDisplayTitle } from './session-organization';
 import { decodeHermesStructuredContent, type HermesRecord } from './hermes-transcript';
 
 export type RecentSession = { id: string; title: string; source: 'Codex' | 'Hermes'; updated: number; status: string; workspace: string; profile: string; completedSeq: number; readSeq?: number; messageCount: number; historyId?: string };
+/** Keep the home card list focused on current work; older chats stay in the session browser. */
+export const RECENT_WINDOW_DAYS = 30;
+const RECENT_WINDOW_MS = RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+export function withinRecentWindow(row: Pick<RecentSession, 'updated'>, now = Date.now()): boolean {
+  return !row.updated || row.updated >= now - RECENT_WINDOW_MS;
+}
 export function isScheduledSession(row: HermesRecord): boolean {
   const source = String(row.source ?? '').trim().toLocaleLowerCase();
   const id = String(row.id ?? row.session_id ?? '').trim().toLocaleLowerCase();
@@ -199,7 +205,7 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
           const markers = markersFor(rows);
           for (const row of rows) {
             const key = `${cardIdentity(row)}:${row.updated}:${row.historyId || ""}`;
-            if (scheduled.has(key) || cardWasRead(row, markers)) continue;
+            if (!withinRecentWindow(row) || scheduled.has(key) || cardWasRead(row, markers)) continue;
             scheduled.add(key); pending.push(row);
           }
           while (pending.length && activeWorkers < 3) workers.push(worker());
@@ -261,7 +267,8 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
           h('p', { className: 'workbench-home-request', 'aria-label': uiText("最新提问", "Latest request") }, pair.latest)) : null,
         pair.error ? h('p', { key: 'error', className: 'workbench-home-request-error', role: 'status' }, pair.error) : null);
     };
-    const visibleRows = rows.filter((row: RecentSession) => !cardWasRead(row, markers));
+    const recentRows = rows.filter((row: RecentSession) => withinRecentWindow(row));
+    const visibleRows = recentRows.filter((row: RecentSession) => !cardWasRead(row, markers));
     const acknowledge = async (row: RecentSession) => {
       const next = await markCardRead(sdk.fetchJSON, row);
       setMarkers((current: ReadMarkers) => ({ ...current, ...next }));
@@ -282,7 +289,7 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
     };
     return h('section', { className: 'workbench-recent-home', 'aria-label': uiText("最近活跃的会话", "Recently active sessions"), 'aria-busy': loading },
       h('header', { className: 'workbench-home-header' }, h('div', null,
-        h('h1', null, uiText("最近会话", "Recent sessions")), h('p', null, uiText("所有 profile", "All profiles"))),
+        h('h1', null, uiText("最近会话", "Recent sessions")), h('p', null, uiText("所有 profile · 近 " + RECENT_WINDOW_DAYS + " 天", "All profiles · Last " + RECENT_WINDOW_DAYS + " days"))),
         h('div', { className: 'workbench-home-actions' },
           h('button', { type: 'button', onClick: handleAll, disabled: loading || handlingAll || !visibleRows.length }, handlingAll ? uiText("正在处理…", "Processing\u2026") : uiText("全部处理完成", "Mark all handled")),
           h('button', { type: 'button', onClick: refreshNow }, uiText("刷新", "Refresh")),
@@ -291,7 +298,8 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
       notice ? h('p', { role: 'status' }, notice) : null,
       loading ? h('p', { role: 'status' }, rows.length ? uiText("正在更新其余会话…", "Updating remaining sessions\u2026") : uiText("正在读取最近会话…", "Loading recent sessions\u2026")) : null,
       !loading && !error && !rows.length ? h('p', { className: 'workbench-home-empty' }, uiText("还没有会话，开始一次新的对话吧。", "No sessions yet. Start a conversation.")) : null,
-      !loading && rows.length > 0 && !visibleRows.length ? h('p', { className: 'workbench-home-empty', role: 'status' }, uiText("最近会话均已读，有新活动时会再次显示。", "All recent sessions have been read. New activity will appear here.")) : null,
+      !loading && rows.length > 0 && !recentRows.length ? h('p', { className: 'workbench-home-empty', role: 'status' }, uiText("近 " + RECENT_WINDOW_DAYS + " 天没有活跃会话，旧会话可在会话列表查看。", "No sessions active in the last " + RECENT_WINDOW_DAYS + " days. Older chats remain in the session list.")) : null,
+      !loading && recentRows.length > 0 && !visibleRows.length ? h('p', { className: 'workbench-home-empty', role: 'status' }, uiText("最近会话均已读，有新活动时会再次显示。", "All recent sessions have been read. New activity will appear here.")) : null,
       h('div', { className: 'workbench-home-grid' }, ...visibleRows.map((row: RecentSession) => {
         const path = `/chat?${row.source === 'Codex' ? 'session' : 'hermesSession'}=${encodeURIComponent(row.id)}`;
         return h(SwipeCard, { key: `${row.profile}:${row.source}:${row.id}`,
