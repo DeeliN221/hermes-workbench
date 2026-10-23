@@ -10,6 +10,8 @@ pnpm install --frozen-lockfile
 pnpm version:check
 pnpm typecheck
 pnpm test
+pnpm build && pnpm test:browser
+pnpm preview:local
 pnpm test:python
 pnpm build
 pnpm release:verify
@@ -17,6 +19,14 @@ pnpm release:package
 ```
 
 Browser source lives in `dashboard/src/`; `dashboard/dist/` contains generated assets.
+The browser smoke test loads the built bundle with real React in Chromium and a mock
+Hermes plugin host; run `pnpm build` before it. Install the test browser once with
+`pnpm exec playwright install chromium`.
+`pnpm preview:local` starts the same mock host at
+`http://127.0.0.1:9130/sessions?profile=default` for manual inspection. It uses
+deterministic preview data and never connects to NAS, production state, or Codex.
+See the [local preview guide](docs/local-preview.md) for the safety boundary and
+manual release checklist.
 Python test dependencies are pinned in `requirements-dev.txt`. To update them:
 `uv pip compile requirements-dev.in -o requirements-dev.txt`.
 

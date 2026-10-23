@@ -9913,8 +9913,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     }) {
       const sendShortcut = useSendShortcut(i);
       const R = new URLSearchParams(window.location.search),
-        [fallbackProfile] = s(() => currentProfile()),
-        M = profile || fallbackProfile,
+        // ``useRef`` returns an object; destructuring it as an array aborts the
+        // pane before its first render and takes the whole dashboard down.
+        fallbackProfile = s(currentProfile()),
+        M = profile || fallbackProfile.current,
         // The navigation sidebar follows the browser profile, while this pane
         // keeps the profile it was opened for. That lets two profiles stay
         // side by side without resetting either conversation.

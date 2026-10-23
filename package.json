@@ -12,6 +12,8 @@
     "build": "vite build --config vite.config.ts && vite build --config vite.loader.config.ts && python3 scripts/build-provenance.py",
     "typecheck": "python3 scripts/check-typescript-source.py && tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
+    "test:browser": "node tests/browser/workbench-smoke.mjs",
+    "preview:local": "pnpm build && node scripts/preview-local.mjs",
     "test:python": "env -u CODEX_APP_SERVER_ENDPOINT -u CODEX_HOME uv run --no-project --with-requirements requirements-dev.txt pytest -q tests",
     "release:verify": "bash scripts/verify-release.sh",
     "version:check": "python3 scripts/version.py --check",
@@ -51,6 +53,9 @@
   "devDependencies": {
     "@types/node": "^26.6.5",
     "happy-dom": "^21.0.3",
+    "playwright": "1.64.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.4",
     "vitest": "^5.0.5"
