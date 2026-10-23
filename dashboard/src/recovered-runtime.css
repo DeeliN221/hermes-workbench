@@ -7152,7 +7152,6 @@ dialog.hti-codex-file-modal a:focus-visible {
 .hti-codex-file-modal-tabs button,
 .hti-codex-file-modal-save,
 .hti-workspace-download,
-.hti-workspace-copy-path,
 .hti-codex-file-modal-close {
   min-height: 2.35rem;
   border: 1px solid var(--mc-line-soft, #d8e4f1);

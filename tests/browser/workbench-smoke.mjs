@@ -46,7 +46,7 @@ try {
         title: action.getAttribute('title') || '',
         hasIcon: Boolean(action.querySelector('svg')),
       })));
-  assert.equal(fileActions.length, 6, 'File renderer should expose six action controls');
+  assert.equal(fileActions.length, 5, 'File renderer should expose five action controls');
   for (const action of fileActions) {
     assert.equal(action.text, '', 'File renderer actions must not show text labels');
     assert.ok(action.label, 'Every file action needs an accessible label');

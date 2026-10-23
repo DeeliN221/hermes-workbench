@@ -7950,25 +7950,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 },
                 workspaceActionIcon(t, "M12 3v12", "m7 10 5 5 5-5", "M5 21h14"),
               ),
-              pe(
-                t,
-                "button",
-                {
-                  type: "button",
-                  className: "hti-workspace-copy-path",
-                  title: runtimeText("复制路径", "Copy path"),
-                  "aria-label": runtimeText("复制路径", "Copy path"),
-                  onClick: async () => {
-                    try { await navigator.clipboard.writeText(workspaceAbsolutePath(d.path, O)); M(runtimeText("路径已复制", "Path copied")); }
-                    catch (error) { M(runtimeText(`复制失败：${String(error)}`, `Copy failed: ${String(error)}`)); }
-                  },
-                },
-                workspaceActionIcon(
-                  t,
-                  "M8 8h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z",
-                  "M4 16V4a1 1 0 0 1 1-1h12",
-                ),
-              ),
               Lo(O)
                 ? pe(
                     t,
@@ -8227,25 +8208,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   },
                 },
                 workspaceActionIcon(t, "M12 3v12", "m7 10 5 5 5-5", "M5 21h14"),
-              ),
-              pe(
-                t,
-                "button",
-                {
-                  type: "button",
-                  className: "hti-workspace-copy-path",
-                  title: runtimeText("复制路径", "Copy path"),
-                  "aria-label": runtimeText("复制路径", "Copy path"),
-                  onClick: async () => {
-                    try { await navigator.clipboard.writeText(workspaceAbsolutePath(d.path, O)); M(runtimeText("路径已复制", "Path copied")); }
-                    catch (error) { M(runtimeText(`复制失败：${String(error)}`, `Copy failed: ${String(error)}`)); }
-                  },
-                },
-                workspaceActionIcon(
-                  t,
-                  "M8 8h11a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9a1 1 0 0 1 1-1Z",
-                  "M4 16V4a1 1 0 0 1 1-1h12",
-                ),
               ),
                         Lo(O)
                           ? pe(
