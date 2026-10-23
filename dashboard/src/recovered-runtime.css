@@ -6105,14 +6105,24 @@ body[data-theme*="dark"] .hti-rich-markdown {
 }
 .codex-files .hti-editor-actions button,
 .codex-files .hti-save-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2.3rem;
+  width: 2.3rem;
   min-height: 2.3rem;
   border: 1px solid var(--codex-border);
   border-radius: 0.4rem;
-  padding: 0 0.6rem;
+  padding: 0;
   color: var(--codex-ink);
   background: var(--codex-surface);
   cursor: pointer;
   font-size: 0.9rem;
+}
+.codex-files .hti-workspace-action-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  pointer-events: none;
 }
 .codex-files .hti-editor-actions button:hover,
 .codex-files .hti-editor-actions button.active,
@@ -6131,6 +6141,7 @@ body[data-theme*="dark"] .hti-rich-markdown {
   line-height: 1.65;
 }
 .codex-files .hti-image-preview {
+  position: relative;
   display: grid;
   place-items: center;
   flex: 1 1 auto;
@@ -6146,8 +6157,21 @@ body[data-theme*="dark"] .hti-rich-markdown {
   object-fit: contain;
 }
 .codex-files .hti-image-open-original {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.3rem;
+  height: 2.3rem;
+  box-sizing: border-box;
+  border: 1px solid var(--codex-border);
+  border-radius: 0.4rem;
+  text-decoration: none;
   color: var(--codex-accent-strong);
-  font-size: 0.9rem;
+  background: var(--codex-surface);
+}
+.codex-files .hti-image-open-original .hti-workspace-action-icon {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 .codex-files .hti-panel-empty {
   display: flex;
@@ -7128,7 +7152,6 @@ dialog.hti-codex-file-modal a:focus-visible {
 .hti-codex-file-modal-tabs button,
 .hti-codex-file-modal-save,
 .hti-workspace-download,
-.hti-workspace-copy-path,
 .hti-codex-file-modal-close {
   min-height: 2.35rem;
   border: 1px solid var(--mc-line-soft, #d8e4f1);
@@ -7140,9 +7163,28 @@ dialog.hti-codex-file-modal a:focus-visible {
   font-size: 0.9rem;
   white-space: nowrap;
 }
+.hti-codex-file-modal-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2.35rem;
+  width: 2.35rem;
+  padding: 0;
+}
+.hti-codex-file-modal-actions .hti-workspace-action-icon {
+  width: 1.05rem;
+  height: 1.05rem;
+  pointer-events: none;
+}
 .hti-codex-file-modal-tabs button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 2rem;
+  width: 2rem;
   min-height: 2rem;
   border-color: transparent;
+  padding: 0;
   color: var(--mc-muted, #7180a2);
   background: transparent;
 }
@@ -7264,8 +7306,21 @@ dialog.hti-codex-file-modal
   object-fit: contain;
 }
 .hti-codex-file-modal-open-original {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  box-sizing: border-box;
+  border: 1px solid var(--mc-line, #b9ccdf);
+  border-radius: 0.4rem;
+  text-decoration: none;
   color: var(--mc-accent, #078791);
-  font-size: 0.9rem;
+  background: var(--mc-surface, #fff);
+}
+.hti-codex-file-modal-open-original .hti-workspace-action-icon {
+  width: 1.05rem;
+  height: 1.05rem;
 }
 .hti-codex-file-modal-image-preview .hti-image-preview-error {
   color: var(--mc-danger, #b34e5a);

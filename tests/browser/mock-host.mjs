@@ -16,8 +16,8 @@ const ASSETS = new Map([
 ]);
 
 const fixture = `<!doctype html>
-<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Workbench 本地预发布</title><link rel="stylesheet" href="/style.css">
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workbench local preview</title><link rel="stylesheet" href="/style.css">
 <style>
   #preview-banner{position:fixed;z-index:2147483647;left:12px;bottom:12px;display:flex;gap:12px;align-items:center;
     padding:8px 12px;border:1px solid #5b6f61;border-radius:8px;background:#172019;color:#e9f2e9;
@@ -27,9 +27,9 @@ const fixture = `<!doctype html>
     max-height:42vh;overflow:auto;padding:12px;border-radius:8px;background:#511;color:#fff;
     font:12px/1.45 ui-monospace,monospace;white-space:pre-wrap} #preview-errors:empty{display:none}
 </style></head>
-<body><div id="root"></div><div id="preview-banner"><strong>本地预发布</strong><span>模拟 Hermes 数据</span>
-<a href="/sessions?profile=default">首页</a><a href="/chat?session=codex-preview&profile=default">Codex 会话</a>
-<a href="/chat?session=codex-preview&profile=writer">writer 会话</a></div><div id="preview-errors"></div>
+<body><div id="root"></div><div id="preview-banner"><strong>Local preview</strong><span>Mock Hermes data</span>
+<a href="/sessions?profile=default">Home</a><a href="/chat?session=codex-preview&profile=default">Codex chat</a>
+<a href="/chat?session=codex-preview&profile=writer">writer chat</a></div><div id="preview-errors"></div>
 <script src="/react.development.js"></script><script src="/react-dom.development.js"></script>
 <script>
   const errors = [];
@@ -79,10 +79,10 @@ const fixture = `<!doctype html>
 function codexSessions(profile) {
   const now = Math.floor(Date.now() / 1000);
   return [
-    { id: 'codex-preview', threadId: 'codex-preview', title: `本机预发布验证 · ${profile}`, workspace: 'hermes-workbench',
+    { id: 'codex-preview', threadId: 'codex-preview', title: `Local preview validation · ${profile}`, workspace: 'hermes-workbench',
       workspaceId: 'preview-workspace', workspacePath: '/home/preview/hermes-workbench', favorite: false, groupId: null,
       deleted: false, updatedAt: now - 90, createdAt: now - 3600, status: 'idle', lastCompletedSeq: 2, readSeq: 0, color: '#4f8f72' },
-    { id: 'codex-regression', threadId: 'codex-regression', title: '首页渲染回归检查', workspace: 'hermes-workbench',
+    { id: 'codex-regression', threadId: 'codex-regression', title: 'Home rendering regression', workspace: 'hermes-workbench',
       workspaceId: 'preview-workspace', workspacePath: '/home/preview/hermes-workbench', favorite: false, groupId: null,
       deleted: false, updatedAt: now - 240, createdAt: now - 7200, status: 'idle', lastCompletedSeq: 1, readSeq: 1, color: '#6a7fa8' },
   ];
@@ -92,8 +92,8 @@ function codexSessions(profile) {
 function hermesSessions(profile) {
   const now = Math.floor(Date.now() / 1000);
   return [
-    { id: 'hermes-preview', title: `发布流程演练 · ${profile}`, source: 'web', updated_at: now - 120, created_at: now - 3600, message_count: 2, status: 'idle' },
-    { id: 'hermes-regression', title: '跨 profile 窗格说明', source: 'web', updated_at: now - 300, created_at: now - 7200, message_count: 1, status: 'idle' },
+    { id: 'hermes-preview', title: `Release workflow drill · ${profile}`, source: 'web', updated_at: now - 120, created_at: now - 3600, message_count: 2, status: 'idle' },
+    { id: 'hermes-regression', title: 'Cross-profile pane notes', source: 'web', updated_at: now - 300, created_at: now - 7200, message_count: 1, status: 'idle' },
   ];
 }
 
@@ -102,8 +102,8 @@ function codexTurns() {
   return [{
     id: 'preview-turn', status: 'completed',
     items: [
-      { id: 'preview-user', type: 'userMessage', content: [{ type: 'text', text: '请验证本机预发布环境能否正常打开。' }] },
-      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: '本机宿主已启动。这里是模拟数据，不会访问 NAS、生产凭据或真实 Codex 会话。' }] },
+      { id: 'preview-user', type: 'userMessage', content: [{ type: 'text', text: 'Please verify that the local preview opens correctly.' }] },
+      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.' }] },
     ],
   }];
 }
@@ -121,7 +121,7 @@ function apiPayload(url, method) {
   if (pathname === '/api/profiles') return { profiles: [{ name: 'default' }, { name: 'writer' }] };
   if (pathname.endsWith('/home-read-state')) return method === 'GET' ? { items: [] } : { ok: true };
   if (pathname === '/api/plugins/workbench/codex/sessions') {
-    if (method === 'POST') return { session: { ...codex[0], id: `codex-new-${Date.now()}`, title: '新会话' } };
+    if (method === 'POST') return { session: { ...codex[0], id: `codex-new-${Date.now()}`, title: 'New chat' } };
     return { items: url.searchParams.get('deleted') === 'true' ? [] : codex };
   }
   if (pathname === '/api/plugins/workbench/codex/session' || pathname === '/api/plugins/workbench/codex/session/preview') {
@@ -138,25 +138,25 @@ function apiPayload(url, method) {
   if (pathname === '/api/plugins/workbench/workspace') return { workspace: {
     id: 'preview-workspace', name: 'hermes-workbench', path: '/home/preview/hermes-workbench', profile,
   } };
-  if (pathname === '/api/plugins/workbench/session-prompts') return { first: '请验证本机预发布环境。', latest: '确认首页与会话窗格可以正常打开。' };
+  if (pathname === '/api/plugins/workbench/session-prompts') return { first: 'Verify the local preview.', latest: 'Confirm that the home page and chat panes open correctly.' };
   if (pathname === '/api/profiles/sessions') return { sessions: hermes, total: hermes.length };
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/latest-descendant')) return {
     session_id: pathname.split('/')[3], path: [pathname.split('/')[3]],
   };
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/messages')) return {
     session_id: pathname.split('/')[3], messages: [
-      { role: 'user', content: '请验证本机预发布环境的 Hermes 会话。' },
-      { role: 'assistant', content: '这是只读的本地模拟会话，页面加载和切换可以在这里检查。' },
+      { role: 'user', content: 'Please verify the Hermes session in the local preview.' },
+      { role: 'assistant', content: 'This is a read-only local mock session for checking page loads and switching.' },
     ],
   };
-  if (pathname.startsWith('/api/sessions/')) return { id: pathname.split('/')[3], title: '本地模拟会话' };
+  if (pathname.startsWith('/api/sessions/')) return { id: pathname.split('/')[3], title: 'Local mock session' };
   if (pathname === '/api/plugins/workbench/files') return { files: [
     { name: 'README.md', path: '/home/preview/hermes-workbench/README.md', type: 'file', size: 120 },
     { name: 'src', path: '/home/preview/hermes-workbench/src', type: 'directory' },
   ] };
   if (pathname === '/api/plugins/workbench/file') return {
     path: url.searchParams.get('path') || '/home/preview/hermes-workbench/README.md',
-    content: '# 本地预发布\n\n这是模拟文件，不会读取本机或 NAS 的真实工作区。\n', version: 'preview', size: 72,
+    content: '# Local preview\n\nThis is a mock file. It never reads a real local or NAS workspace.\n', version: 'preview', size: 72,
   };
   return { items: [], profiles: [{ name: 'default' }, { name: 'writer' }], sessions: [], boards: [],
     entries: [], turns: [], files: [], children: [], total: 0, current: '', ok: true };

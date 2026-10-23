@@ -7523,6 +7523,26 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function pe(i, e, t, ...r) {
     return i.createElement(e, t, ...r);
   }
+  /** Render a compact outline icon for file-panel actions without adding an icon dependency. */
+  function workspaceActionIcon(i, ...e) {
+    return pe(
+      i,
+      "svg",
+      {
+        className: "hti-workspace-action-icon",
+        viewBox: "0 0 24 24",
+        width: 18,
+        height: 18,
+        fill: "none",
+        stroke: "currentColor",
+        strokeWidth: 1.8,
+        strokeLinecap: "round",
+        strokeLinejoin: "round",
+        "aria-hidden": !0,
+      },
+      ...e.map((t, r) => pe(i, "path", { key: r, d: t })),
+    );
+  }
   function bd(i, e, t = !1) {
     const r = e.type === "directory";
     return pe(
@@ -7642,8 +7662,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         pe(
           t,
           "a",
-          { className: _, href: p, target: "_blank", rel: "noreferrer" },
-          l.openOriginal,
+          {
+            className: _,
+            href: p,
+            target: "_blank",
+            rel: "noreferrer",
+            title: l.openOriginal,
+            "aria-label": l.openOriginal,
+          },
+          workspaceActionIcon(
+            t,
+            "M15 3h6v6",
+            "M10 14 21 3",
+            "M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6",
+          ),
         ),
       );
     }
@@ -7902,21 +7934,22 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               t,
               "div",
               { className: "hti-codex-file-modal-actions" },
-              pe(t, "button", {
-                type: "button", className: "hti-workspace-download",
-                onClick: async () => {
-                  M(runtimeText("正在下载…", "Downloading…"));
-                  try { await downloadWorkspaceFile(d.path, O); M(runtimeText("已开始下载", "Download started")); }
-                  catch (error) { M(runtimeText(`下载失败：${String(error)}`, `Download failed: ${String(error)}`)); }
+              pe(
+                t,
+                "button",
+                {
+                  type: "button",
+                  className: "hti-workspace-download",
+                  title: runtimeText("下载文件", "Download file"),
+                  "aria-label": runtimeText("下载文件", "Download file"),
+                  onClick: async () => {
+                    M(runtimeText("正在下载…", "Downloading…"));
+                    try { await downloadWorkspaceFile(d.path, O); M(runtimeText("已开始下载", "Download started")); }
+                    catch (error) { M(runtimeText(`下载失败：${String(error)}`, `Download failed: ${String(error)}`)); }
+                  },
                 },
-              }, runtimeText("下载文件", "Download file")),
-              pe(t, "button", {
-                type: "button", className: "hti-workspace-copy-path",
-                onClick: async () => {
-                  try { await navigator.clipboard.writeText(workspaceAbsolutePath(d.path, O)); M(runtimeText("路径已复制", "Path copied")); }
-                  catch (error) { M(runtimeText(`复制失败：${String(error)}`, `Copy failed: ${String(error)}`)); }
-                },
-              }, runtimeText("复制路径", "Copy path")),
+                workspaceActionIcon(t, "M12 3v12", "m7 10 5 5 5-5", "M5 21h14"),
+              ),
               Lo(O)
                 ? pe(
                     t,
@@ -7930,9 +7963,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                         className: P === "edit" ? "active" : "",
                         onClick: () => E("edit"),
                         "aria-selected": P === "edit",
+                        "aria-label": l.source,
+                        title: l.source,
                         role: "tab",
                       },
-                      l.source,
+                      workspaceActionIcon(t, "m8 9-4 3 4 3", "m16 9 4 3-4 3", "m14 5-4 14"),
                     ),
                     pe(
                       t,
@@ -7942,9 +7977,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                         className: P === "preview" ? "active" : "",
                         onClick: () => E("preview"),
                         "aria-selected": P === "preview",
+                        "aria-label": l.preview,
+                        title: l.preview,
                         role: "tab",
                       },
-                      l.preview,
+                      workspaceActionIcon(
+                        t,
+                        "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z",
+                        "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+                      ),
                     ),
                   )
                 : null,
@@ -7958,8 +7999,17 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                       className: "hti-codex-file-modal-save",
                       disabled: _ === v,
                       onClick: B,
+                      title: _ === v ? l.saved : l.save,
+                      "aria-label": _ === v ? l.saved : l.save,
                     },
-                    _ === v ? l.saved : l.save,
+                    _ === v
+                      ? workspaceActionIcon(t, "M20 6 9 17l-5-5")
+                      : workspaceActionIcon(
+                          t,
+                          "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z",
+                          "M17 21v-8H7v8",
+                          "M7 3v5h8",
+                        ),
                   ),
               pe(
                 t,
@@ -7969,8 +8019,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   className: "hti-codex-file-modal-close",
                   onClick: T,
                   "aria-label": l.close,
+                  title: l.close,
                 },
-                l.close,
+                workspaceActionIcon(t, "M18 6 6 18", "M6 6l12 12"),
               ),
             ),
           ),
@@ -8142,21 +8193,22 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                         t,
                         "div",
                         { className: "hti-editor-actions" },
-              pe(t, "button", {
-                type: "button", className: "hti-workspace-download",
-                onClick: async () => {
-                  M(runtimeText("正在下载…", "Downloading…"));
-                  try { await downloadWorkspaceFile(d.path, O); M(runtimeText("已开始下载", "Download started")); }
-                  catch (error) { M(runtimeText(`下载失败：${String(error)}`, `Download failed: ${String(error)}`)); }
+              pe(
+                t,
+                "button",
+                {
+                  type: "button",
+                  className: "hti-workspace-download",
+                  title: runtimeText("下载文件", "Download file"),
+                  "aria-label": runtimeText("下载文件", "Download file"),
+                  onClick: async () => {
+                    M(runtimeText("正在下载…", "Downloading…"));
+                    try { await downloadWorkspaceFile(d.path, O); M(runtimeText("已开始下载", "Download started")); }
+                    catch (error) { M(runtimeText(`下载失败：${String(error)}`, `Download failed: ${String(error)}`)); }
+                  },
                 },
-              }, runtimeText("下载文件", "Download file")),
-              pe(t, "button", {
-                type: "button", className: "hti-workspace-copy-path",
-                onClick: async () => {
-                  try { await navigator.clipboard.writeText(workspaceAbsolutePath(d.path, O)); M(runtimeText("路径已复制", "Path copied")); }
-                  catch (error) { M(runtimeText(`复制失败：${String(error)}`, `Copy failed: ${String(error)}`)); }
-                },
-              }, runtimeText("复制路径", "Copy path")),
+                workspaceActionIcon(t, "M12 3v12", "m7 10 5 5 5-5", "M5 21h14"),
+              ),
                         Lo(O)
                           ? pe(
                               t,
@@ -8169,8 +8221,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                                   type: "button",
                                   className: P === "edit" ? "active" : "",
                                   onClick: () => E("edit"),
+                                  "aria-pressed": P === "edit",
+                                  "aria-label": l.source,
+                                  title: l.source,
                                 },
-                                l.source,
+                                workspaceActionIcon(t, "m8 9-4 3 4 3", "m16 9 4 3-4 3", "m14 5-4 14"),
                               ),
                               pe(
                                 t,
@@ -8179,8 +8234,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                                   type: "button",
                                   className: P === "preview" ? "active" : "",
                                   onClick: () => E("preview"),
+                                  "aria-pressed": P === "preview",
+                                  "aria-label": l.preview,
+                                  title: l.preview,
                                 },
-                                l.preview,
+                                workspaceActionIcon(
+                                  t,
+                                  "M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z",
+                                  "M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z",
+                                ),
                               ),
                             )
                           : null,
@@ -8194,8 +8256,17 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                                 className: "hti-save-button",
                                 disabled: _ === v,
                                 onClick: B,
+                                title: _ === v ? l.saved : l.save,
+                                "aria-label": _ === v ? l.saved : l.save,
                               },
-                              _ === v ? l.saved : l.save,
+                              _ === v
+                                ? workspaceActionIcon(t, "M20 6 9 17l-5-5")
+                                : workspaceActionIcon(
+                                    t,
+                                    "M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z",
+                                    "M17 21v-8H7v8",
+                                    "M7 3v5h8",
+                                  ),
                             ),
                       ),
                     ),
