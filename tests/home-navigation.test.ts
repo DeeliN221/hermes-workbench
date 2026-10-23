@@ -18,6 +18,7 @@ describe('persistent chat home links', () => {
     go('/chat?profile=default&session=other');
     go('/sessions?profile=writer&session=other');
     go('/chat?profile=writer&session=other&workbench=terminal');
+    go('/chat?profile=writer&session=other&new=1');
     expect(select.codex).toHaveBeenCalledTimes(2);
     dispose(); go('/chat?profile=writer&session=after-dispose');
     expect(select.codex).toHaveBeenCalledTimes(2);

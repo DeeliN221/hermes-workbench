@@ -32,7 +32,7 @@ import { installKanbanWorkflowBridge } from './kanban-workflow-bridge';
 import { subscribeChatLists, stableChatList, createChatEventBatch } from './chat-update-scheduler';
 import { useSelectableMarkdown } from './selectable-markdown';
 import { cronSortOptions, cronSections, readCronSidebarPrefs } from './cron-sidebar';
-import { paneTargetUrl } from './codex-pane-route';
+import { clearNewSessionRoute, isNewSessionRoute, paneInitialSession, paneTargetUrl, temporarySessionTarget } from './codex-pane-route';
 import { version as workbenchVersion } from '../../package.json';
 import { observeTerminalTheme } from './terminal-theme';
 import { craftingIcon } from './crafting-icons';
@@ -9311,7 +9311,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return (
       i && r.set("session", i),
       e && r.set("hermesSession", e),
-      Kp(`/chat${r.size ? `?${r}` : ""}`, "default"),
+      Kp(`/chat${r.size ? `?${r}` : ""}`, currentProfile()),
       window.location.pathname === "/chat" &&
         new URLSearchParams(window.location.search).get("workbench") !==
           "terminal"
@@ -9915,7 +9915,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         M = profile || s(currentProfile()).current,
         H = R.get("hermesSession") || "",
         F = R.get("session") || "",
-        j = S || F,
+        // An explicit empty string means a brand-new pane. Falling back to the
+        // URL here would reopen the conversation the pane was created beside.
+        j = paneInitialSession(S, F),
         Q = b ?? H,
         [k, N] = o(Q ? "" : j),
         [B, T] = o(Q),
@@ -11895,7 +11897,19 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   onPaneDragStart: onNavigationDragStart,
                   onPaneDragEnd: onNavigationDragEnd,
                   onCreate: IM,
-                  onNewSession: () => { if ($d()) { Nl(); onNavigationNewTemporary?.(); } },
+                  onNewSession: () => {
+                    const profile = currentProfile();
+                    const target = temporarySessionTarget(window.location.href, profile);
+                    if (target) { Kp(target, profile); return; }
+                    Nl();
+                    // The active pane is about to become empty. Drop the
+                    // previous session from the URL so a remount or a later
+                    // popstate cannot restore the running conversation.
+                    window.history.replaceState(null, "", paneTargetUrl(window.location.href, {
+                      sessionId: "", hermesSessionId: "",
+                    }));
+                    onNavigationNewTemporary?.();
+                  },
                   onRename: NM,
                   onDelete: zM,
                   onMove: dv,
@@ -12779,8 +12793,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return function () {
       const S = new URLSearchParams(window.location.search),
         paneProfile = currentProfile(S),
-        b = S.get("hermesSession") ? "" : S.get("session") || "",
-        p = S.get("hermesSession") || "",
+        startEmpty = isNewSessionRoute(window.location.href),
+        b = startEmpty ? "" : S.get("hermesSession") ? "" : S.get("session") || "",
+        p = startEmpty ? "" : S.get("hermesSession") || "",
         [m, O] = o(m5(b, p)),
         [g, _] = o("pane-1"),
         [w, v] = o({ "pane-1": { sessionId: b, hermesSessionId: p } }),
@@ -12790,6 +12805,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [draggingPane, setDraggingPane] = o(false),
         [paneDropNotice, setPaneDropNotice] = o("");
       x.current = g;
+      r(() => {
+        if (!startEmpty) return;
+        window.history.replaceState(null, "", clearNewSessionRoute(window.location.href));
+      }, []);
       r(() => {
         const openWorkspace = () => y.current.get(x.current)?.openWorkspace();
         window.addEventListener("workbench:open-workspace", openWorkspace);
@@ -12924,6 +12943,17 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           },
           [m],
         );
+      r(() => {
+        const startFromRoute = () => {
+          if (!isNewSessionRoute(window.location.href)) return;
+          window.history.replaceState(null, "", clearNewSessionRoute(window.location.href));
+          // The first render already mounted its empty pane; only later
+          // navigations need an extra pane.
+          if (!startEmpty) M("", x.current);
+        };
+        window.addEventListener("popstate", startFromRoute);
+        return () => window.removeEventListener("popstate", startFromRoute);
+      }, [M, startEmpty]);
       r(() => installHomeChatNavigation(currentProfile(), { codex: D, hermes: A }), [D, A]);
       const dropPaneSessions = (event) => {
         const payload = event.dataTransfer?.getData(PANE_DRAG_TYPE);
