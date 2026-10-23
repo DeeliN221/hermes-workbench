@@ -56,6 +56,29 @@ try {
   assert.deepEqual(fileErrors, [], `Browser errors in the file renderer:\n${fileErrors.join('\n')}`);
   await filesPage.close();
 
+  const panePage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const paneErrors = [];
+  panePage.on('pageerror', error => paneErrors.push(error.stack || error.message));
+  await panePage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await panePage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  assert.equal(await panePage.locator('.codex-session-id').innerText(), 'codex-preview');
+  assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip');
+  await panePage.locator('.project-temporary .codex-session-row').nth(1).click();
+  await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  const paneProfiles = await panePage.locator('.codex-pane-slot [data-profile]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-profile')));
+  assert.deepEqual(paneProfiles, ['default', 'default'], 'Panes must stay within one profile');
+  await panePage.evaluate(() => {
+    const url = new URL(location.href);
+    url.searchParams.set('profile', 'writer');
+    history.pushState(null, '', url);
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 1
+    && document.querySelector('.codex-pane-slot [data-profile]')?.getAttribute('data-profile') === 'writer');
+  assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip after switching profiles');
+  assert.deepEqual(paneErrors, [], `Browser errors in the pane check:\n${paneErrors.join('\n')}`);
+  await panePage.close();
+
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on('pageerror', error => errors.push(error.stack || error.message));
@@ -87,7 +110,7 @@ try {
   assert.deepEqual(errors, [], `Browser errors on the floating panel:\n${errors.join('\n')}`);
   await page.close();
 
-  console.log('Workbench browser smoke passed: home, default/writer chat panes, icon-only file actions, and the centered floating panel rendered without page errors.');
+  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, and the centered floating panel rendered without page errors.');
 } finally {
   await browser.close();
   await host.close();

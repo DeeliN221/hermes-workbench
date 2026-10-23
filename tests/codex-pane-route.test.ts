@@ -46,11 +46,4 @@ describe('pane route target', () => {
     expect(new URL(next).searchParams.has('session')).toBe(false);
     expect(new URL(next).searchParams.has('hermesSession')).toBe(false);
   });
-  it('keeps the pane profile in the route for cross-profile panes', () => {
-    const next = paneTargetUrl('https://example.test/chat?profile=writer&session=old', {
-      sessionId: 'inbox', hermesSessionId: '', profile: 'default',
-    });
-    expect(new URL(next).searchParams.get('profile')).toBe('default');
-    expect(new URL(next).searchParams.get('session')).toBe('inbox');
-  });
 });

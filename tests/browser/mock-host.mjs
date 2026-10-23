@@ -93,7 +93,7 @@ function hermesSessions(profile) {
   const now = Math.floor(Date.now() / 1000);
   return [
     { id: 'hermes-preview', title: `Release workflow drill · ${profile}`, source: 'web', updated_at: now - 120, created_at: now - 3600, message_count: 2, status: 'idle' },
-    { id: 'hermes-regression', title: 'Cross-profile pane notes', source: 'web', updated_at: now - 300, created_at: now - 7200, message_count: 1, status: 'idle' },
+    { id: 'hermes-regression', title: 'Pane session regression', source: 'web', updated_at: now - 300, created_at: now - 7200, message_count: 1, status: 'idle' },
   ];
 }
 
