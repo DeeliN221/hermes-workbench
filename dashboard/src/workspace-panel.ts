@@ -28,6 +28,28 @@ function element(React: any, type: any, props?: Record<string, any> | null, ...c
   return React.createElement(type, props, ...children);
 }
 
+const WORKSPACE_ACTION_ICONS = {
+  source: ['m8 9-4 3 4 3', 'm16 9 4 3-4 3', 'm14 5-4 14'],
+  preview: ['M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z', 'M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z'],
+  save: ['M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z', 'M17 21v-8H7v8', 'M7 3v5h8'],
+  saved: ['M20 6 9 17l-5-5'],
+  openOriginal: ['M15 3h6v6', 'M10 14 21 3', 'M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6'],
+};
+
+/** Keep file actions recognizable without adding a second icon runtime. */
+function workspaceActionIcon(React: any, name: keyof typeof WORKSPACE_ACTION_ICONS): any {
+  return element(React, 'svg', {
+    className: 'hti-workspace-action-icon',
+    viewBox: '0 0 24 24',
+    fill: 'none',
+    stroke: 'currentColor',
+    strokeWidth: 1.8,
+    strokeLinecap: 'round',
+    strokeLinejoin: 'round',
+    'aria-hidden': true,
+  }, ...WORKSPACE_ACTION_ICONS[name].map(pathData => element(React, 'path', { d: pathData })));
+}
+
 /** Return a lightweight filename icon category without another icon package. */
 function fileIcon(entry: FileEntry, expanded = false): string {
   if (entry.type === 'directory') return expanded ? '▾' : '▸';
@@ -118,7 +140,9 @@ export function createWorkspacePanel(sdk: SDK): (props: WorkspacePanelProps) => 
         href: assetUrl,
         target: '_blank',
         rel: 'noreferrer',
-      }, sourceText("打开原图 / Open original", "Open original")),
+        title: sourceText("打开原图", "Open original"),
+        'aria-label': sourceText("打开原图", "Open original"),
+      }, workspaceActionIcon(React, 'openOriginal')),
     );
   }
 
@@ -301,11 +325,19 @@ export function createWorkspacePanel(sdk: SDK): (props: WorkspacePanelProps) => 
               element(React, 'span', null, selectedPath)),
             element(React, 'div', { className: 'hti-editor-actions' },
               isMarkdownPath(selectedPath) ? element(React, 'div', { className: 'hti-segmented' },
-                element(React, 'button', { type: 'button', className: mode === 'edit' ? 'active' : '', onClick: () => setMode('edit') }, sourceText("源码 / Source", "Source")),
-                element(React, 'button', { type: 'button', className: mode === 'preview' ? 'active' : '', onClick: () => setMode('preview') }, sourceText("预览 / Preview", "Preview"))) : null,
+                element(React, 'button', {
+                  type: 'button', className: mode === 'edit' ? 'active' : '', onClick: () => setMode('edit'),
+                  'aria-pressed': mode === 'edit', 'aria-label': sourceText("源码", "Source"), title: sourceText("源码", "Source"),
+                }, workspaceActionIcon(React, 'source')),
+                element(React, 'button', {
+                  type: 'button', className: mode === 'preview' ? 'active' : '', onClick: () => setMode('preview'),
+                  'aria-pressed': mode === 'preview', 'aria-label': sourceText("预览", "Preview"), title: sourceText("预览", "Preview"),
+                }, workspaceActionIcon(React, 'preview'))) : null,
               !isImagePath(selectedPath) ? element(React, 'button', {
                 type: 'button', className: 'hti-save-button', disabled: content === savedContent, onClick: save,
-              }, content === savedContent ? sourceText("已保存 / Saved", "Saved") : sourceText("保存 / Save", "Save")) : null)),
+                title: content === savedContent ? sourceText("已保存", "Saved") : sourceText("保存", "Save"),
+                'aria-label': content === savedContent ? sourceText("已保存", "Saved") : sourceText("保存", "Save"),
+              }, workspaceActionIcon(React, content === savedContent ? 'saved' : 'save')) : null)),
           message ? element(React, 'div', { className: 'hti-editor-message', role: 'status' }, message) : null,
           mode === 'image'
             ? element(React, ImagePreview, { key: selectedPath, path: selectedPath })
