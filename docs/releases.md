@@ -34,6 +34,10 @@ installable.
   Existing tags and releases are never overwritten. Failed runs can be retried
   manually; a reserved tag or draft consumes its counter, so gaps are possible.
 
+Release notes compare the new tag with the newest published stable release.
+Drafts and prereleases are skipped; the first release starts at the repository
+root. The notes list merged Pull Request titles, not commits inside each PR.
+
 GitHub schedules can start late or be dropped during high load; 07:00 is the
 requested trigger time, not a guaranteed publication time. See
 [GitHub's schedule documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).

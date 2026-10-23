@@ -78,6 +78,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ steps.plan.outputs.tag }}
+          PREVIOUS_TAG: ${{ steps.plan.outputs.previous_tag }}
         run: |
           cd release
           sha256sum --check SHA256SUMS
@@ -85,7 +86,11 @@ jobs:
           # Never push version-only commits to main or overwrite a published tag.
           git tag "$RELEASE_TAG"
           git push origin "refs/tags/$RELEASE_TAG"
-          gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes --notes "Built from main commit $RELEASE_SOURCE_COMMIT."
+          notes_start=()
+          if [ -n "$PREVIOUS_TAG" ]; then
+            notes_start=(--notes-start-tag "$PREVIOUS_TAG")
+          fi
+          gh release create "$RELEASE_TAG" --verify-tag --draft --title "$RELEASE_TAG" --generate-notes "${notes_start[@]}" --notes "Built from main commit $RELEASE_SOURCE_COMMIT."
           gh release upload "$RELEASE_TAG" ./*.tar.gz SHA256SUMS
           gh release edit "$RELEASE_TAG" --draft=false --prerelease=false --latest
       - name: Summarize validation-only run

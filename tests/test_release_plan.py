@@ -36,6 +36,21 @@ def test_manual_release_without_changes_increments_numeric_counter():
     assert planner.plan('workflow_dispatch', now, [], ['v20261014-99'])['tag'] == 'v20261015-1'
 
 
+def test_previous_release_tag_uses_latest_published_stable_release():
+    releases = [
+        {'tag_name': 'v20261021-1', 'draft': False, 'prerelease': False,
+         'published_at': '2026-10-21T01:17:23Z'},
+        {'tag_name': 'v20261022-1', 'draft': False, 'prerelease': False,
+         'published_at': '2026-10-22T01:13:55Z'},
+        {'tag_name': 'v20261023-1', 'draft': True, 'prerelease': False,
+         'published_at': None},
+        {'tag_name': 'v20261022-2', 'draft': False, 'prerelease': True,
+         'published_at': '2026-10-22T09:00:00Z'},
+    ]
+    assert planner.previous_published_tag(releases) == 'v20261022-1'
+    assert planner.previous_published_tag([]) == ''
+
+
 def test_leap_day_and_year_boundary():
     for today, yesterday in [('2028-03-01', '2028-02-29'), ('2027-01-01', '2026-12-31')]:
         now = datetime.fromisoformat(today + 'T07:00:00+08:00')

@@ -28,6 +28,18 @@ def plan(event, now, commits, tags):
             'reason': 'Manual release' if event == 'workflow_dispatch' else f'Main changed on {start.date()} (UTC+08:00)'}
 
 
+def previous_published_tag(releases):
+    """Return the newest published stable release tag for release-note comparison."""
+    published = [
+        row for row in releases
+        if row.get('tag_name') and not row.get('draft') and not row.get('prerelease')
+    ]
+    if not published:
+        return ''
+    newest = max(published, key=lambda row: row.get('published_at') or row.get('created_at') or '')
+    return newest['tag_name']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--event', default=os.environ.get('GITHUB_EVENT_NAME'))
@@ -35,11 +47,14 @@ def main():
     args = parser.parse_args()
     def git(*arguments):
         return subprocess.check_output(['git', *arguments], text=True).splitlines()
+    releases = json.loads(args.releases.read_text())
     tags = git('tag', '--list')
     # Include drafts as well as tags, so an interrupted upload never reuses a number.
-    tags += [row['tag_name'] for row in json.loads(args.releases.read_text())]
+    tags += [row['tag_name'] for row in releases]
     commits = [int(stamp) for stamp in git('log', '--first-parent', '--format=%ct', 'origin/main')]
     result = plan(args.event, datetime.now(ZONE), commits, tags)
+    if result['publish'] == 'true':
+        result['previous_tag'] = previous_published_tag(releases)
     if output := os.environ.get('GITHUB_OUTPUT'):
         with open(output, 'a') as stream:
             stream.write(''.join(f'{key}={value}\n' for key, value in result.items()))
