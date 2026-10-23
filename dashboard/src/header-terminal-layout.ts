@@ -15,14 +15,10 @@ export function terminalWorkspaceGeometry(
   floating = false,
 ): Record<string, string> {
   if (floating) {
-    const right = 24;
-    const available = viewport.width - desktopLeft - 32;
-    const desired = Math.max(320, Math.min(1180, Math.max(640, Math.round(viewport.width * 0.66)), available));
-    const minimumLeft = viewport.offsetLeft + (mobile ? 12 : desktopLeft + 8);
-    const left = Math.max(minimumLeft, viewport.offsetLeft + viewport.width - desired - right);
-    const width = Math.max(320, viewport.offsetLeft + viewport.width - left - right);
-    const top = viewport.offsetTop + Math.max(56, Math.round(viewport.height * 0.07));
-    const height = Math.max(300, viewport.offsetTop + viewport.height - top - 24);
+    const width = Math.max(320, Math.min(1180, viewport.width - 48));
+    const left = viewport.offsetLeft + Math.round((viewport.width - width) / 2);
+    const top = viewport.offsetTop + 48;
+    const height = Math.max(300, viewport.height - 96);
     return {
       left: `${Math.round(left)}px`,
       top: `${Math.round(top)}px`,
