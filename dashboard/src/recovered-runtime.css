@@ -5156,13 +5156,15 @@ body[data-theme*="dark"] .hti-rich-markdown {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.codex-title-line {
+.codex-session-line {
   display: flex;
   align-items: center;
   gap: 0.45rem;
   min-width: 0;
+  flex-wrap: wrap;
+  justify-self: start;
 }
-.codex-title-line .codex-center-title {
+.codex-session-line .codex-session-id {
   min-width: 0;
 }
 .codex-pane-profile {

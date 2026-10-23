@@ -12582,14 +12582,48 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               null,
               W(
                 e,
+                "strong",
+                { className: "codex-center-title", title: kv },
+                kv,
+              ),
+              W(
+                e,
                 "div",
-                { className: "codex-title-line" },
-                W(
-                  e,
-                  "strong",
-                  { className: "codex-center-title", title: kv },
-                  kv,
-                ),
+                { className: "codex-session-line" },
+                B
+                  ? W(
+                      e,
+                      "span",
+                      {
+                        className:
+                          "codex-center-subtitle codex-hermes-history-read-only",
+                        "data-testid": "hermes-history-read-only",
+                      },
+                      runtimeText("Hermes 历史 · 只读", "Hermes history · Read-only"),
+                    )
+                  : ei?.threadId
+                    ? W(
+                        e,
+                        "button",
+                        {
+                          type: "button",
+                          className: "codex-session-id",
+                          title: runtimeText(`点击复制会话 ID：${ei.threadId}`, `Click to copy session ID: ${ei.threadId}`),
+                          "aria-label": runtimeText("复制会话 ID", "Copy session ID"),
+                          onClick: () => {
+                            AM();
+                          },
+                        },
+                        W(e, "span", null, ei.threadId),
+                        st(e, Fo === ei.threadId ? "check" : "copy"),
+                        W(
+                          e,
+                          "span",
+                          { className: "codex-copy-feedback", role: "status" },
+                          Fo === ei.threadId ? runtimeText("已复制", "Copied") : "",
+                        ),
+                      )
+                    : null,
                 W(
                   e,
                   "span",
@@ -12602,40 +12636,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   M,
                 ),
               ),
-              B
-                ? W(
-                    e,
-                    "span",
-                    {
-                      className:
-                        "codex-center-subtitle codex-hermes-history-read-only",
-                      "data-testid": "hermes-history-read-only",
-                    },
-                    runtimeText("Hermes 历史 · 只读", "Hermes history · Read-only"),
-                  )
-                : ei?.threadId
-                  ? W(
-                      e,
-                      "button",
-                      {
-                        type: "button",
-                        className: "codex-session-id",
-                        title: runtimeText(`点击复制会话 ID：${ei.threadId}`, `Click to copy session ID: ${ei.threadId}`),
-                        "aria-label": runtimeText("复制会话 ID", "Copy session ID"),
-                        onClick: () => {
-                          AM();
-                        },
-                      },
-                      W(e, "span", null, ei.threadId),
-                      st(e, Fo === ei.threadId ? "check" : "copy"),
-                      W(
-                        e,
-                        "span",
-                        { className: "codex-copy-feedback", role: "status" },
-                        Fo === ei.threadId ? runtimeText("已复制", "Copied") : "",
-                      ),
-                    )
-                  : null,
             ),
             k && !B
               ? W(
