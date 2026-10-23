@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { activityTime, isInternalSession, isKanbanRunSession, isScheduledSession, recentSessions, promptPair, visibleRequest, loadPromptPair } from '../dashboard/src/recent-home';
+import { activityTime, isInternalSession, isKanbanRunSession, isScheduledSession, recentSessions, promptPair, visibleRequest, loadPromptPair, withinRecentWindow, RECENT_WINDOW_DAYS } from '../dashboard/src/recent-home';
 
 describe('recent home activity', () => {
   it('recognizes scheduled sessions even when the Codex projection omits source metadata', () => {
@@ -36,6 +36,14 @@ describe('recent home activity', () => {
     expect(activityTime({ updated_at: '2026-10-12T00:00:00Z' })).toBe(time);
     expect(activityTime({ updated_at: 'invalid', created_at: time })).toBe(time);
     expect(activityTime({})).toBe(0);
+  });
+  it('drops stale cards from the recent home while keeping unknown timestamps', () => {
+    const now = Date.parse('2026-10-23T00:00:00Z');
+    const day = 24 * 60 * 60 * 1000;
+    expect(withinRecentWindow({ updated: now - day }, now)).toBe(true);
+    expect(withinRecentWindow({ updated: now - RECENT_WINDOW_DAYS * day }, now)).toBe(true);
+    expect(withinRecentWindow({ updated: now - (RECENT_WINDOW_DAYS * day + 1) }, now)).toBe(false);
+    expect(withinRecentWindow({ updated: 0 }, now)).toBe(true);
   });
 });
 
