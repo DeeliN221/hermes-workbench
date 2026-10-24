@@ -86,7 +86,9 @@
 .hti-kanban-v4 .hermes-kanban-drawer-comment-row button { border: 1px solid var(--color-primary); color: var(--color-primary-foreground); background: var(--color-primary); border-radius: var(--wb-radius); padding: 7px 14px; font-size: 13px; font-weight: 650; }
 .hti-kanban-v4 button:focus-visible, .hti-kanban-v4 select:focus-visible, .hti-kanban-v4 summary:focus-visible, .hti-kanban-v4 a:focus-visible { outline: 2px solid var(--color-ring, var(--color-primary)); outline-offset: 2px; }
 @media (max-width: 720px) {
-  .hermes-kanban-drawer.hti-kanban-v4 { width: 100vw; border-left: 0; }
+  /* Leave the fixed mobile action rail uncovered instead of letting its 48px
+     column sit on top of the drawer's left padding and text. */
+  .hermes-kanban-drawer.hti-kanban-v4 { width: calc(100vw - var(--dashboard-action-width, 0px)); border-left: 0; }
   .hti-kanban-v4 .hermes-kanban-drawer-head { padding-left: 12px; padding-right: 12px; }
   .hti-kanban-v4 .hermes-kanban-drawer-body { padding: 6px 12px 12px; }
   .hti-kanban-v4 .hermes-kanban-drawer-title-text { font-size: 21px; }
