@@ -7,7 +7,7 @@ import { chromium } from 'playwright';
 import { createMockHost } from './mock-host.mjs';
 
 const host = await createMockHost();
-const browser = await chromium.launch({ headless: true });
+const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   for (const [route, selector] of [
     ['/sessions?profile=default', '.workbench-recent-home'],
@@ -79,6 +79,81 @@ try {
   assert.deepEqual(paneErrors, [], `Browser errors in the pane check:\n${paneErrors.join('\n')}`);
   await panePage.close();
 
+  const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const mobileErrors = [];
+  mobilePage.on('pageerror', error => mobileErrors.push(error.stack || error.message));
+  await mobilePage.goto(host.origin + '/sessions?profile=default', { waitUntil: 'domcontentloaded' });
+  await mobilePage.locator('.workbench-recent-home').waitFor({ state: 'attached', timeout: 5000 });
+  // Mirror the native Kanban overlay's positioning while exercising the real
+  // Workbench mobile width override and the real action rail.
+  await mobilePage.addStyleTag({ content: `
+    .hermes-kanban-drawer-shade { position: fixed; inset: 0; display: flex; justify-content: flex-end; }
+    .hermes-kanban-drawer { height: 100dvh; }
+    .hermes-kanban-dialog-backdrop { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; }
+    .hermes-kanban-dialog { width: 28rem; max-width: calc(100vw - 2rem); padding: 1.1rem 1.2rem; border: 1px solid; }
+  ` });
+  const mobileLayout = await mobilePage.evaluate(() => {
+    const shade = document.createElement('div');
+    shade.className = 'hermes-kanban-drawer-shade';
+    shade.innerHTML = '<div class="hermes-kanban-drawer hti-kanban-v4" role="dialog">'
+      + '<div class="hermes-kanban-drawer-head"><span>preview / t1</span></div>'
+      + '<div class="hermes-kanban-drawer-body"><div class="hermes-kanban-drawer-title-text">Mobile drawer</div></div></div>';
+    document.body.append(shade);
+    const drawer = shade.querySelector('.hermes-kanban-drawer');
+    const title = shade.querySelector('.hermes-kanban-drawer-title-text');
+    const dialogBackdrop = document.createElement('div');
+    dialogBackdrop.className = 'hermes-kanban-dialog-backdrop';
+    dialogBackdrop.innerHTML = '<form class="hermes-kanban-dialog"><div class="hermes-kanban-dialog-title">New board</div></form>';
+    document.body.append(dialogBackdrop);
+    const dialog = dialogBackdrop.querySelector('.hermes-kanban-dialog');
+    const rail = document.querySelector('.dashboard-action-rail');
+    if (!drawer || !title || !dialog || !rail) throw new Error('Missing mobile overlay fixture');
+    return {
+      viewport: window.innerWidth,
+      rail: rail.getBoundingClientRect().toJSON(),
+      drawer: drawer.getBoundingClientRect().toJSON(),
+      title: title.getBoundingClientRect().toJSON(),
+      dialogBackdrop: dialogBackdrop.getBoundingClientRect().toJSON(),
+      dialog: dialog.getBoundingClientRect().toJSON(),
+    };
+  });
+  assert.equal(Math.round(mobileLayout.rail.width), 48, 'The mobile action rail must stay visible');
+  assert.equal(Math.round(mobileLayout.drawer.left), 48, 'The task drawer must start after the action rail');
+  assert.equal(Math.round(mobileLayout.drawer.width), mobileLayout.viewport - 48, 'The task drawer must use the remaining viewport width');
+  assert.ok(mobileLayout.title.left >= 60, 'Task text must clear the rail and its 12px padding');
+  assert.equal(Math.round(mobileLayout.dialogBackdrop.left), 48, 'The board dialog layer must start after the action rail');
+  assert.ok(mobileLayout.dialog.left >= 48, 'The board dialog must clear the action rail');
+  assert.ok(mobileLayout.dialog.right <= mobileLayout.viewport, 'The board dialog must stay inside the viewport');
+  const mobileFixtureErrors = await mobilePage.evaluate(() => window.__smokeErrors);
+  assert.deepEqual(mobileErrors, [], `Browser errors in the mobile drawer check:\n${mobileErrors.join('\n')}`);
+  assert.deepEqual(mobileFixtureErrors, [], `Fixture errors in the mobile drawer check:\n${mobileFixtureErrors.join('\n')}`);
+  await mobilePage.close();
+
+  const organizerPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const organizerErrors = [];
+  organizerPage.on('pageerror', error => organizerErrors.push(error.stack || error.message));
+  await organizerPage.route('**/capabilities', route => route.fulfill({
+    contentType: 'application/json',
+    body: JSON.stringify({
+      codexChat: false, codexUserInput: false, codexThreadReasoningConfig: false,
+      newChatProviders: [], historyOnlyProviders: [], supportsExternalContinuation: false,
+    }),
+  }));
+  await organizerPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await organizerPage.locator('.hti-root').waitFor({ state: 'attached', timeout: 5000 });
+  await organizerPage.evaluate(() => document.querySelector('.hti-session-organize')?.click());
+  await organizerPage.locator('.hti-organizer-dialog').waitFor({ state: 'visible', timeout: 5000 });
+  const organizerLayout = await organizerPage.evaluate(() => ({
+    viewport: window.innerWidth,
+    backdrop: document.querySelector('.hti-organizer-backdrop').getBoundingClientRect().toJSON(),
+    dialog: document.querySelector('.hti-organizer-dialog').getBoundingClientRect().toJSON(),
+  }));
+  assert.equal(Math.round(organizerLayout.backdrop.left), 48, 'The organizer layer must start after the action rail');
+  assert.ok(organizerLayout.dialog.left >= 48, 'The organizer dialog must clear the action rail');
+  assert.ok(organizerLayout.dialog.right <= organizerLayout.viewport, 'The organizer dialog must stay inside the viewport');
+  assert.deepEqual(organizerErrors, [], `Browser errors in the organizer check:\n${organizerErrors.join('\n')}`);
+  await organizerPage.close();
+
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on('pageerror', error => errors.push(error.stack || error.message));
@@ -110,7 +185,7 @@ try {
   assert.deepEqual(errors, [], `Browser errors on the floating panel:\n${errors.join('\n')}`);
   await page.close();
 
-  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, and the centered floating panel rendered without page errors.');
+  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, and the centered floating panel rendered without page errors.');
 } finally {
   await browser.close();
   await host.close();
