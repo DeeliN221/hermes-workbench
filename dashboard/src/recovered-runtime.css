@@ -2179,6 +2179,9 @@ html.hti-is-resizing * {
   .hti-organizer-backdrop {
     padding: 0.4rem;
   }
+  :root[data-workbench-shell="true"] .hti-organizer-backdrop {
+    left: var(--dashboard-action-width, 0px);
+  }
   .hti-organizer-dialog {
     width: 100%;
     max-height: calc(100% - 0.4rem);

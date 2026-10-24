@@ -89,6 +89,9 @@
   /* Leave the fixed mobile action rail uncovered instead of letting its 48px
      column sit on top of the drawer's left padding and text. */
   .hermes-kanban-drawer.hti-kanban-v4 { width: calc(100vw - var(--dashboard-action-width, 0px)); border-left: 0; }
+  /* The board dialog is also fixed above page content but below the rail. */
+  :root[data-workbench-shell="true"] .hermes-kanban-dialog-backdrop { left: var(--dashboard-action-width, 0px); z-index: 120; }
+  :root[data-workbench-shell="true"] .hermes-kanban-dialog { box-sizing: border-box; max-width: calc(100% - 2rem); }
   .hti-kanban-v4 .hermes-kanban-drawer-head { padding-left: 12px; padding-right: 12px; }
   .hti-kanban-v4 .hermes-kanban-drawer-body { padding: 6px 12px 12px; }
   .hti-kanban-v4 .hermes-kanban-drawer-title-text { font-size: 21px; }
