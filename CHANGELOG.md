@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Expand profile choices inline beneath the sidebar profile control instead of opening a modal.
 - Prefill card discussions directly with a short, editable `Check task <id>` prompt instead of showing a card prompt panel or sending a fixed brainstorm request.
 - Add the versioned `standard@1` Kanban card form and structured drawer editor, with explicit review mode metadata.
 - Exclude Kanban worker runs from recent home so task retries no longer appear as unread conversations.

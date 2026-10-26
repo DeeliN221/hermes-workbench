@@ -1,6 +1,26 @@
-.workbench-profile-switcher { padding: 10px 12px; border-bottom: 1px solid var(--dashboard-line-soft, #7776); }
-.workbench-profile-switcher label { display: grid; gap: 6px; font-size: 12px; }
-.workbench-profile-switcher select { width: 100%; min-width: 0; padding: 7px; color: inherit; background: var(--dashboard-page-surface, #f3f0e7); border: 1px solid var(--dashboard-line-soft, #7776); font: inherit; }
+.workbench-profile-action { position: relative; }
+.workbench-profile-menu {
+  position: absolute; z-index: 30; top: calc(100% + 4px); right: 0; left: 0;
+  display: grid; gap: 2px; max-height: min(60vh, 420px); overflow-y: auto;
+  padding: 6px; border: 1px solid var(--dashboard-line-soft, #7776); border-radius: 8px;
+  background: var(--dashboard-nav-surface, var(--mc-surface, #f3f0e7));
+  box-shadow: 0 14px 34px #0004;
+}
+.workbench-profile-menu [role="menuitemradio"] {
+  display: flex; align-items: center; gap: 8px; width: 100%; min-width: 0;
+  padding: 8px 9px; border: 0; border-radius: 6px; color: inherit; background: transparent;
+  font: inherit; text-align: left; cursor: pointer;
+}
+.workbench-profile-menu [role="menuitemradio"]:is(:hover, :focus-visible) { background: var(--dashboard-active, #0001); }
+.workbench-profile-menu [role="menuitemradio"]:focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: -2px; }
+.workbench-profile-menu [role="menuitemradio"][aria-checked="true"] { color: var(--dashboard-accent); }
+.workbench-profile-menu [role="menuitemradio"] svg { flex: 0 0 auto; }
+.workbench-profile-option-label { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.workbench-profile-menu-status, .workbench-profile-menu-error { margin: 4px 7px; font-size: 12px; }
+.workbench-profile-menu-error { color: var(--mc-danger, #b42318); }
+.workbench-profile-menu-error button { display: block; margin-top: 6px; padding: 4px 9px; border: 1px solid currentColor; color: inherit; background: transparent; font: inherit; cursor: pointer; }
+.workbench-profile-chevron { flex: 0 0 auto; opacity: .65; transition: transform .15s ease; }
+[aria-expanded="true"] > .workbench-profile-chevron { transform: rotate(180deg); }
 .workbench-profiles { width: 100%; max-width: 1200px; margin: 0 auto; padding: clamp(16px, 3vw, 40px); }
 .workbench-profiles > header, .workbench-profile-card > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .workbench-profiles h1 { font-size: 26px; margin-bottom: 6px; }
@@ -24,16 +44,13 @@
 .dashboard-profile-page { left: calc(var(--dashboard-nav-width, 180px) + var(--dashboard-settings-width, 200px)); }
 .workbench-profiles { overflow-y: auto; }
 .workbench-profiles a { color: var(--dashboard-accent); }
-.workbench-profile-switcher select:focus-visible, .workbench-profiles :is(button, input, textarea, select, a):focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: 3px; }
+.workbench-profiles :is(button, input, textarea, select, a):focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: 3px; }
 @media (max-width: 800px) {
   :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { left: 0; top: 44px; right: 0; width: auto; height: 54px; bottom: auto; flex-direction: row; align-items: center; gap: 6px; padding: 6px 12px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--dashboard-line-soft); }
   :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav h1 { display: none; }
   :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav > a { flex: 0 0 auto; white-space: nowrap; }
   .dashboard-profile-page { left: 0; top: 100px; }
 }
-
-.workbench-profile-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
-.workbench-profile-row select { flex: 1; width: 0; min-width: 0; height: 38px; }
 
 .workbench-profile-editor { width: min(700px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); overflow-y: auto; padding: 22px; border: 1px solid var(--dashboard-line-soft, #7776); color: var(--dashboard-text, inherit); background: var(--dashboard-page-surface, #f3f0e7); }
 .workbench-profile-editor::backdrop { background: #0008; }
