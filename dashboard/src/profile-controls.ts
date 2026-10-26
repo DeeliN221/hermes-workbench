@@ -1,5 +1,5 @@
 import { uiText } from './ui-locale';
-import { agentDisplayName } from './kanban-agent-picker';
+import { agentDisplayName, profileTabName } from './kanban-agent-picker';
 import { rememberChat, switchProfile } from './profile-scope';
 import type { FetchJSON } from './workbench-api';
 import { craftingIcon } from './crafting-icons';
@@ -35,47 +35,75 @@ export function createProfileControls(sdk: SDK) {
     }, []);
     return { rows, error, retry: () => { rosterRequest = null; setEpoch((n: number) => n + 1); } };
   }
-  function ProfileSwitcher({ profile, launcher }: { profile: string; launcher?: any }) {
+  function ProfileAction({ profile, label, className }: { profile: string; label?: string; className?: string }) {
     const { rows, error, retry } = useProfiles();
+    const [open, setOpen] = useState(false);
     const [switchError, setSwitchError] = useState('');
+    const [failedProfile, setFailedProfile] = useState('');
+    const root = useRef(null as HTMLDivElement | null);
+    const trigger = useRef(null as HTMLButtonElement | null);
+    const current = profileTabName(profile);
+    useEffect(() => { setOpen(false); }, [profile]);
     useEffect(() => {
       const failed = (event: CustomEvent) => setSwitchError(event.detail?.message || uiText("档案切换失败，请重试。", "Profile switch failed. Please retry."));
       window.addEventListener('workbench:profile-error', failed as EventListener);
       return () => window.removeEventListener('workbench:profile-error', failed as EventListener);
     }, []);
-    return h('div', { className: 'workbench-profile-switcher' },
-      h('div', { className: 'workbench-profile-row' }, launcher,
-        h('select', { name: 'profile', 'aria-label': uiText("切换配置档案", "Switch profile"), value: profile, disabled: !rows || !!error,
-          onChange: (event: any) => {
-            setSwitchError('');
-            try { switchProfile(event.target.value); }
-            catch (error) { setSwitchError(uiText(`档案切换失败：${String(error)}`, `Profile switch failed: ${String(error)}`)); }
-          } },
-          !rows?.some((row: Profile) => row.name === profile)
-            ? h('option', { value: profile }, rows ? uiText(`${profile}（不可用）`, `${profile} (unavailable)`) : profile) : null,
-          rows?.map((row: Profile) => h('option', { key: row.name, value: row.name }, agentDisplayName(row.name))))),
-      switchError ? h('div', { role: 'alert' }, switchError, h('button', {
-        type: 'button', onClick: () => { setSwitchError(''); switchProfile(profile); },
-      }, uiText("重试", "Retry"))) : null,
-      error ? h('div', { role: 'alert' }, uiText("档案加载失败 ", "Failed to load profiles "), h('button', { onClick: retry }, uiText("重试", "Retry"))) : null);
-  }
-  function ProfileAction({ profile, label, className }: { profile: string; label?: string; className?: string }) {
-    const dialog = useRef(null as HTMLDialogElement | null);
-    return h('div', { className: `workbench-profile-action${className ? ` ${className}` : ''}` },
+    useEffect(() => {
+      if (!open) return undefined;
+      const outside = (event: Event) => {
+        if (event.target instanceof Node && !root.current?.contains(event.target)) setOpen(false);
+      };
+      const escape = (event: KeyboardEvent) => {
+        if (event.key !== 'Escape') return;
+        event.stopPropagation();
+        setOpen(false);
+        trigger.current?.focus();
+      };
+      document.addEventListener('pointerdown', outside);
+      document.addEventListener('keydown', escape);
+      return () => {
+        document.removeEventListener('pointerdown', outside);
+        document.removeEventListener('keydown', escape);
+      };
+    }, [open]);
+    const choose = (name: string) => {
+      setOpen(false);
+      setSwitchError('');
+      setFailedProfile('');
+      try {
+        if (name !== profile) switchProfile(name);
+      } catch (error) {
+        setFailedProfile(name);
+        setSwitchError(uiText(`档案切换失败：${String(error)}`, `Profile switch failed: ${String(error)}`));
+      }
+    };
+    const unavailable = Boolean(rows && !rows.some((row: Profile) => row.name === profile));
+    return h('div', { className: `workbench-profile-action${className ? ` ${className}` : ''}`, ref: root },
       h('button', {
-        type: 'button', 'aria-label': uiText("切换 profile", "Switch profile"), 'aria-haspopup': 'dialog',
+        type: 'button', ref: trigger, 'aria-label': uiText("切换 profile", "Switch profile"),
+        'aria-haspopup': 'menu', 'aria-expanded': String(open), 'aria-controls': 'workbench-profile-menu',
         title: uiText(`切换 profile：${agentDisplayName(profile)}`, `Switch profile: ${agentDisplayName(profile)}`),
-        onClick: () => dialog.current?.showModal(),
-      }, craftingIcon(sdk.React, 'profile'), h('span', null, label || uiText("切换 profile", "Switch profile"))),
-      h('dialog', { ref: dialog, className: 'workbench-profile-dialog', 'aria-label': uiText("切换 profile", "Switch profile"),
-        onClick: (event: MouseEvent) => { if (event.target === dialog.current) {
-          const bounds = dialog.current!.getBoundingClientRect();
-          if (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom) dialog.current?.close();
-        } },
-        onChange: () => dialog.current?.close(),
-      }, h('header', null, h('strong', null, uiText("切换 profile", "Switch profile")), h('button', {
-        type: 'button', 'aria-label': uiText("关闭 profile 切换", "Close profile switcher"), onClick: () => dialog.current?.close(),
-      }, '×')), h(ProfileSwitcher, { profile })));
+        onClick: () => setOpen((value: boolean) => !value),
+      }, craftingIcon(sdk.React, 'profile'), h('span', null, label || current || uiText("切换 profile", "Switch profile")),
+        h('svg', { className: 'workbench-profile-chevron', viewBox: '0 0 24 24', width: 14, height: 14,
+          fill: 'none', stroke: 'currentColor', strokeWidth: 2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+          h('path', { d: 'm6 9 6 6 6-6' }))),
+      open ? h('div', { id: 'workbench-profile-menu', className: 'workbench-profile-menu', role: 'menu',
+        'aria-label': uiText("切换 profile", "Switch profile") },
+        !rows && !error ? h('p', { className: 'workbench-profile-menu-status', role: 'status' }, uiText("正在读取配置档案…", "Loading profiles…")) : null,
+        rows?.map((row: Profile) => h('button', {
+          key: row.name, type: 'button', role: 'menuitemradio', 'aria-checked': String(row.name === profile),
+          className: row.name === profile ? 'is-current' : '', onClick: () => choose(row.name),
+        }, h('span', { className: 'workbench-profile-option-label', title: row.name }, profileTabName(row.name)),
+          row.name === profile ? h('svg', { viewBox: '0 0 24 24', width: 15, height: 15, fill: 'none',
+            stroke: 'currentColor', strokeWidth: 2.2, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
+            h('path', { d: 'm5 12 4 4L19 6' })) : null)),
+        unavailable ? h('p', { className: 'workbench-profile-menu-status' }, uiText(`${profile}（不可用）`, `${profile} (unavailable)`)) : null,
+        switchError ? h('div', { className: 'workbench-profile-menu-error', role: 'alert' }, switchError,
+          failedProfile ? h('button', { type: 'button', onClick: () => choose(failedProfile) }, uiText("重试", "Retry")) : null) : null,
+        error ? h('div', { className: 'workbench-profile-menu-error', role: 'alert' }, uiText("档案加载失败 ", "Failed to load profiles "),
+          h('button', { type: 'button', onClick: retry }, uiText("重试", "Retry"))) : null) : null);
   }
   function ProfilesPage({ profile }: { profile: string }) {
     const mounted = useRef(true);
@@ -176,5 +204,5 @@ export function createProfileControls(sdk: SDK) {
       }) : editor && rows ? h('p', { role: 'alert' }, uiText('找不到要编辑的档案。', 'The profile to edit was not found.'), h('button', { onClick: closeEditor }, uiText('关闭', 'Close'))) : null,
       h('p', { className: 'workbench-profile-hint' }, uiText("当前选择仅保存在本浏览器标签页；切换不会更改 CLI、网关默认档案或中断后台任务。", "Your selection is local to this browser tab. Switching does not change CLI or gateway defaults or interrupt background tasks.")));
   }
-  return { ProfileSwitcher, ProfileAction, ProfilesPage };
+  return { ProfileAction, ProfilesPage };
 }

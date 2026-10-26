@@ -26,6 +26,24 @@ try {
     await page.close();
   }
 
+  const profilePage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const profileErrors = [];
+  profilePage.on('pageerror', error => profileErrors.push(error.stack || error.message));
+  await profilePage.goto(host.origin + '/sessions?profile=default', { waitUntil: 'domcontentloaded' });
+  await profilePage.locator('.workbench-recent-home').waitFor({ state: 'attached', timeout: 5000 });
+  const profileTrigger = profilePage.locator('.dashboard-nav-profile > button');
+  await profileTrigger.click();
+  const profileMenu = profilePage.locator('#workbench-profile-menu');
+  await profileMenu.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await profilePage.locator('dialog.workbench-profile-dialog').count(), 0, 'Profile choices must expand in place');
+  const [triggerBox, menuBox] = await Promise.all([profileTrigger.boundingBox(), profileMenu.boundingBox()]);
+  assert.ok(triggerBox && menuBox && menuBox.y >= triggerBox.y + triggerBox.height, 'Profile menu must sit below its trigger');
+  await profileMenu.locator('[role="menuitemradio"]', { hasText: 'writer' }).click();
+  await profilePage.waitForFunction(() => new URLSearchParams(location.search).get('profile') === 'writer', null, { timeout: 5000 });
+  assert.equal(await profileMenu.count(), 0, 'Choosing a profile must close the expanded menu');
+  assert.deepEqual(profileErrors, [], `Browser errors in the profile switcher:\n${profileErrors.join('\n')}`);
+  await profilePage.close();
+
   const filesPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const fileErrors = [];
   filesPage.on('pageerror', error => fileErrors.push(error.stack || error.message));
@@ -141,6 +159,7 @@ try {
   }));
   await organizerPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await organizerPage.locator('.hti-root').waitFor({ state: 'attached', timeout: 5000 });
+  await organizerPage.locator('.hti-session-organize').first().waitFor({ state: 'attached', timeout: 5000 });
   await organizerPage.evaluate(() => document.querySelector('.hti-session-organize')?.click());
   await organizerPage.locator('.hti-organizer-dialog').waitFor({ state: 'visible', timeout: 5000 });
   const organizerLayout = await organizerPage.evaluate(() => ({
