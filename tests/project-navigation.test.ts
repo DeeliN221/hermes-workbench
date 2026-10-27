@@ -4,19 +4,26 @@ import { createProjectNavigation, partitionProjectSessions, projectDropSession }
 describe('manual project membership', () => {
   const projects = [{ id: 'one', name: 'Research' }, { id: 'empty', name: 'Empty' }];
   const sessions = [
-    { id: 'assigned', groupId: 'one', favorite: true, workspacePath: '/same' },
-    { id: 'temporary', groupId: null, workspacePath: '/same' },
-    { id: 'orphan', groupId: 'removed' },
+    { id: 'assigned', groupId: 'one', favorite: true, updatedAtEpoch: 100, workspacePath: '/same' },
+    { id: 'temporary', groupId: null, updatedAtEpoch: 300, workspacePath: '/same' },
+    { id: 'orphan', groupId: 'removed', updatedAtEpoch: 200 },
     { id: 'archived', groupId: 'one', deleted: true },
   ];
-  it('keeps explicit membership and empty projects, pinning favorites within each section', () => {
+  it('keeps explicit membership and empty projects, ordering sessions by recent activity', () => {
     const result = partitionProjectSessions([
       { id: 'later-favorite', groupId: 'one', favorite: true },
       ...sessions,
     ], projects);
-    expect(result.groups.map(group => group.sessions.map(session => session.id))).toEqual([['later-favorite', 'assigned'], []]);
+    expect(result.groups.map(group => group.sessions.map(session => session.id))).toEqual([['assigned', 'later-favorite'], []]);
     expect(result.temporary.map(session => session.id)).toEqual(['temporary', 'orphan']);
-    expect(partitionProjectSessions(sessions, []).temporary.map(session => session.id)).toEqual(['assigned', 'temporary', 'orphan']);
+    expect(partitionProjectSessions(sessions, []).temporary.map(session => session.id)).toEqual(['temporary', 'orphan', 'assigned']);
+  });
+  it('sorts projects by their newest contained session, with older projects below', () => {
+    const result = partitionProjectSessions([
+      { id: 'old', groupId: 'one', updatedAtEpoch: 100 },
+      { id: 'new', groupId: 'two', updatedAtEpoch: 300 },
+    ], [{ id: 'one', name: 'Old' }, { id: 'two', name: 'New' }]);
+    expect(result.groups.map(group => group.project.id)).toEqual(['two', 'one']);
   });
   it('moves only known sessions within their profile, and allows moving back to temporary', () => {
     const drag = (sessionId: string, profile = 'default') => JSON.stringify({ sessionId, profile });

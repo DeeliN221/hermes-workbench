@@ -79,8 +79,44 @@ try {
   panePage.on('pageerror', error => paneErrors.push(error.stack || error.message));
   await panePage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await panePage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
-  assert.equal(await panePage.locator('.codex-session-id').innerText(), 'codex-preview');
+  assert.equal(await panePage.locator('.codex-session-id').count(), 0, 'The session id must not occupy a second header line');
   assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip');
+  const projectList = await panePage.locator('.project-list').evaluate(node => ({
+    count: node.querySelectorAll('.project-folder-row').length,
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+    scrollWidth: node.scrollWidth,
+    clientWidth: node.clientWidth,
+    overflowY: getComputedStyle(node).overflowY,
+  }));
+  assert.equal(projectList.count, 6, 'The preview must exercise more than five projects');
+  assert.equal(projectList.overflowY, 'auto');
+  assert.equal(projectList.clientHeight, 200, 'The project list must show five 40px project rows');
+  assert.ok(projectList.scrollHeight > projectList.clientHeight, 'The project list must scroll when it exceeds five rows');
+  assert.ok(projectList.scrollWidth <= projectList.clientWidth, 'The project list must not scroll horizontally');
+  const headerLayout = await panePage.evaluate(() => {
+    const picker = document.querySelector('.codex-pane-color-picker')?.getBoundingClientRect();
+    const title = document.querySelector('.codex-center-title')?.getBoundingClientRect();
+    const header = document.querySelector('.codex-center-header')?.getBoundingClientRect();
+    if (!picker || !title || !header) throw new Error('Missing center header controls');
+    return { pickerLeft: picker.left, titleLeft: title.left, pickerTop: picker.top, titleTop: title.top, height: header.height };
+  });
+  assert.ok(headerLayout.pickerLeft < headerLayout.titleLeft, 'The color picker must sit left of the title');
+  assert.ok(Math.abs(headerLayout.pickerTop - headerLayout.titleTop) < 16, 'The title and color picker must share one row');
+  await panePage.evaluate(() => {
+    window.__copiedSessionId = '';
+    Object.defineProperty(navigator, 'clipboard', {
+      configurable: true,
+      value: { writeText: async value => { window.__copiedSessionId = value; } },
+    });
+  });
+  const temporaryRow = panePage.locator('.project-temporary .codex-session-row-wrap').first();
+  await temporaryRow.hover();
+  await temporaryRow.locator('.codex-session-row-menu-toggle').click();
+  const sessionMenu = panePage.locator('.codex-session-row-menu');
+  await sessionMenu.waitFor({ state: 'visible', timeout: 5000 });
+  await sessionMenu.getByRole('menuitem', { name: 'Copy session ID' }).click();
+  assert.equal(await panePage.evaluate(() => window.__copiedSessionId), 'codex-preview');
   await panePage.locator('.project-temporary .codex-session-row').nth(1).click();
   await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
   const paneProfiles = await panePage.locator('.codex-pane-slot [data-profile]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-profile')));
@@ -96,6 +132,21 @@ try {
   assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip after switching profiles');
   assert.deepEqual(paneErrors, [], `Browser errors in the pane check:\n${paneErrors.join('\n')}`);
   await panePage.close();
+
+  const compactProjectsPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const compactProjectErrors = [];
+  compactProjectsPage.on('pageerror', error => compactProjectErrors.push(error.stack || error.message));
+  await compactProjectsPage.goto(host.origin + '/chat?session=codex-preview&profile=writer', { waitUntil: 'domcontentloaded' });
+  await compactProjectsPage.locator('.project-list').waitFor({ state: 'attached', timeout: 5000 });
+  const compactProjectList = await compactProjectsPage.locator('.project-list').evaluate(node => ({
+    count: node.querySelectorAll('.project-folder-row').length,
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+  }));
+  assert.equal(compactProjectList.count, 2);
+  assert.equal(compactProjectList.scrollHeight, compactProjectList.clientHeight, 'A short project list must not scroll');
+  assert.deepEqual(compactProjectErrors, [], `Browser errors in the short project list:\n${compactProjectErrors.join('\n')}`);
+  await compactProjectsPage.close();
 
   const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileErrors = [];

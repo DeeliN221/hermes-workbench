@@ -128,7 +128,15 @@ function apiPayload(url, method) {
     return { cached: true, turns: codexTurns() };
   }
   if (pathname === '/api/plugins/workbench/codex/session/read') return { ok: true };
-  if (pathname === '/api/plugins/workbench/codex/groups') return { items: [] };
+  if (pathname === '/api/plugins/workbench/codex/groups') {
+    const count = url.searchParams.get('profile') === 'writer' ? 2 : 6;
+    return { items: Array.from({ length: count }, (_, index) => ({
+      id: `preview-project-${index + 1}`,
+      name: `Preview Project ${index + 1}`,
+      workspaceId: 'preview-workspace',
+      workspacePath: '/home/preview/hermes-workbench',
+    })) };
+  }
   if (pathname === '/api/plugins/workbench/codex/workspaces') return { items: [{ id: 'preview-workspace', name: 'hermes-workbench', path: '/home/preview/hermes-workbench' }] };
   if (pathname === '/api/plugins/workbench/codex/models') return { data: [{
     model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, defaultReasoningEffort: 'medium',

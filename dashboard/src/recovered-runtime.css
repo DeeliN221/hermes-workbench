@@ -5142,7 +5142,14 @@ body[data-theme*="dark"] .hti-rich-markdown {
   min-height: 4.5rem;
   padding-block: 0.65rem;
 }
-.codex-center-header > div:not(.codex-header-actions) {
+.codex-center-header > .codex-center-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.codex-center-heading-copy {
   display: grid;
   flex: 1 1 auto;
   gap: 0.25rem;
@@ -6731,38 +6738,6 @@ body[data-theme*="dark"] .hti-rich-markdown {
 .codex-setting-choice[aria-pressed="true"] {
   color: var(--codex-accent-strong);
   background: var(--codex-accent-soft);
-}
-.codex-session-id {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  justify-self: start;
-  min-width: 0;
-  max-width: 100%;
-  border: 0;
-  border-radius: 0.25rem;
-  padding: 0.2rem 0;
-  color: var(--codex-muted);
-  background: transparent;
-  font:
-    0.8rem ui-monospace,
-    monospace;
-  cursor: pointer;
-  text-align: left;
-}
-.codex-session-id > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  -webkit-user-select: text;
-  user-select: text;
-}
-.codex-session-id:hover {
-  color: var(--codex-accent-strong);
-}
-.codex-session-id .codex-ui-icon {
-  width: 1rem;
-  height: 1rem;
 }
 .codex-multi-pane {
   --codex-sidebar: 16.5rem;
@@ -9880,14 +9855,6 @@ dialog.codex-session-search-dialog-backdrop::backdrop {
   width: 18px;
   height: 18px;
 }
-.codex-session-id {
-  max-width: 100%;
-  font-size: 11px;
-}
-.codex-session-id span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 .codex-nearby-button {
   display: inline-flex;
   align-items: center;
@@ -10309,8 +10276,8 @@ html.dark .hti-rich-text {
 .codex-pane-color-menu {
   position: absolute;
   top: calc(100% + 0.4rem);
-  right: 0;
-  left: auto;
+  right: auto;
+  left: 0;
   min-width: 11.5rem;
   z-index: 45;
 }

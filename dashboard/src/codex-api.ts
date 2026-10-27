@@ -11,7 +11,7 @@ const sessionQuery = (profile: string, session: string) => `profile=${encode(pro
 const json = (method: string, body: object): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 export interface CodexSession {
   id: string; threadId?: string; title: string; workspace: string; workspaceId: string; workspacePath: string;
-  favorite: boolean; groupId: string | null; deleted: boolean; updatedAt: string; createdAt: number;
+  favorite: boolean; groupId: string | null; deleted: boolean; updatedAt: string; updatedAtEpoch: number; createdAt: number;
   status: 'running' | 'waiting' | 'failed' | 'completed' | 'idle'; unread: boolean; lastCompletedSeq: number; readSeq: number;
   color: string;
 }
@@ -48,12 +48,16 @@ export function normalizeSession(value: unknown): CodexSession | null {
   const path = text(row.workspacePath ?? row.workspace_path ?? row.path ?? row.cwd);
   const completed = Number(row.lastCompletedSeq ?? row.last_completed_seq ?? row.completedSeq ?? 0), read = Number(row.readSeq ?? row.read_seq ?? 0);
   const group = row.groupId ?? row.group_id, color = text(row.color ?? row.sessionColor ?? row.session_color);
+  const updatedRaw = row.updatedAt ?? row.updated_at ?? row.timestamp;
+  const updatedAtEpoch = typeof updatedRaw === 'number' || typeof updatedRaw === 'string' && /^\d+(?:\.\d+)?$/.test(updatedRaw)
+    ? Number(updatedRaw) * (Number(updatedRaw) < 1e12 ? 1000 : 1) : 0;
   return { id, threadId: text(row.threadId ?? row.thread_id) || undefined, title: text(row.title ?? row.name ?? row.summary, id),
     workspace: text(row.workspaceName ?? row.workspace_name, path.split('/').filter(Boolean).at(-1) || path || uiText('默认工作区', 'Default workspace')),
     workspaceId: text(row.workspaceId ?? row.workspace_id), workspacePath: path,
     favorite: row.favorite === true || row.favourited === true || row.isFavorite === true,
     groupId: group == null || text(group).trim() === '' ? null : text(group), deleted: row.deleted === true,
-    updatedAt: displayTimestamp(row.updatedAt ?? row.updated_at ?? row.timestamp), createdAt: Number(row.createdAt ?? row.created_at) || 0,
+    updatedAt: displayTimestamp(updatedRaw), updatedAtEpoch: Number.isFinite(updatedAtEpoch) ? updatedAtEpoch : 0,
+    createdAt: Number(row.createdAt ?? row.created_at) || 0,
     status: sessionStatus(row.status ?? row.state ?? (row.running ? 'running' : 'idle')),
     unread: row.unread === true || row.hasUnread === true || completed > read,
     lastCompletedSeq: Number.isFinite(completed) ? completed : 0, readSeq: Number.isFinite(read) ? read : 0,

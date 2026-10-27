@@ -51,6 +51,7 @@ _NOTIFICATION_BATCH_WINDOW = 0.01
 _PREVIEW_TURN_LIMIT = 8
 _PREVIEW_ITEM_TEXT_LIMIT = 12000
 _PREVIEW_TOOL_OUTPUT_LIMIT = 1200
+_CAPACITY_RETRY_DELAYS = (30.0, 60.0, 120.0, 300.0, 600.0)
 from codex_user_input import USER_INPUT_METHOD, user_input_result
 
 _APPROVAL_METHODS = frozenset(
@@ -535,7 +536,7 @@ class BridgeStore:
                     user_id TEXT NOT NULL, profile TEXT NOT NULL, session_id TEXT NOT NULL,
                     client_request_id TEXT NOT NULL, upstream_request_id TEXT,
                     status TEXT NOT NULL, turn_id TEXT, payload TEXT NOT NULL,
-                    result TEXT, updated_at REAL NOT NULL,
+                    result TEXT, updated_at REAL NOT NULL, capacity_retry_count INTEGER NOT NULL DEFAULT 0,
                     PRIMARY KEY (user_id, profile, session_id, client_request_id)
                 );
                 CREATE TABLE IF NOT EXISTS codex_events (
@@ -593,6 +594,9 @@ class BridgeStore:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN session_scope TEXT NOT NULL DEFAULT 'personal'")
             if "execution_node_id" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN execution_node_id TEXT NOT NULL DEFAULT ''")
+            request_columns = {str(row[1]) for row in self.connection.execute("PRAGMA table_info(codex_requests)").fetchall()}
+            if "capacity_retry_count" not in request_columns:
+                self.connection.execute("ALTER TABLE codex_requests ADD COLUMN capacity_retry_count INTEGER NOT NULL DEFAULT 0")
             if "created_at" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN created_at REAL NOT NULL DEFAULT 0")
                 for row in self.connection.execute("SELECT user_id,profile,session_id,thread_id,updated_at FROM codex_sessions").fetchall():
@@ -1148,6 +1152,15 @@ class BridgeStore:
                 (user, profile, session_id, client_id),
             ).fetchone())
 
+    def request_for_turn(self, user: str, profile: str, session_id: str, turn_id: str) -> dict[str, Any] | None:
+        """Find the bridge request that produced one native turn."""
+
+        with self.lock:
+            return self._row(self.connection.execute(
+                "SELECT * FROM codex_requests WHERE user_id=? AND profile=? AND session_id=? AND turn_id=? ORDER BY updated_at DESC LIMIT 1",
+                (user, profile, session_id, turn_id),
+            ).fetchone())
+
     def set_title_if_empty(self, user: str, profile: str, session_id: str, title: str) -> None:
         """Set a first-message title without overwriting a user-selected title."""
 
@@ -1165,16 +1178,18 @@ class BridgeStore:
 
         existing = self.request(user, profile, session_id, client_id)
         payload = values.get("payload", existing.get("payload", "{}") if existing else "{}")
+        retry_count = int(values.get("capacity_retry_count", existing.get("capacity_retry_count", 0) if existing else 0) or 0)
         now = time.time()
         with self.lock:
             self.connection.execute(
                 """INSERT INTO codex_requests
-                (user_id,profile,session_id,client_request_id,upstream_request_id,status,turn_id,payload,result,updated_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,profile,session_id,client_request_id) DO UPDATE SET
+                (user_id,profile,session_id,client_request_id,upstream_request_id,status,turn_id,payload,result,updated_at,capacity_retry_count)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,profile,session_id,client_request_id) DO UPDATE SET
                 upstream_request_id=COALESCE(excluded.upstream_request_id,codex_requests.upstream_request_id),
                 status=excluded.status,turn_id=COALESCE(excluded.turn_id,codex_requests.turn_id),
-                result=COALESCE(excluded.result,codex_requests.result),updated_at=excluded.updated_at""",
-                (user, profile, session_id, client_id, values.get("upstream_request_id"), values.get("status", "pending"), values.get("turn_id"), payload, values.get("result"), now),
+                result=COALESCE(excluded.result,codex_requests.result),updated_at=excluded.updated_at,
+                capacity_retry_count=excluded.capacity_retry_count""",
+                (user, profile, session_id, client_id, values.get("upstream_request_id"), values.get("status", "pending"), values.get("turn_id"), payload, values.get("result"), now, retry_count),
             )
             self.connection.commit()
         return self.request(user, profile, session_id, client_id) or {}
@@ -1377,14 +1392,14 @@ class BridgeStore:
         """Return this identity's unconfirmed turn submissions for recovery UI."""
 
         with self.lock:
-            rows = self.connection.execute("SELECT client_request_id,status,turn_id,payload,result,updated_at FROM codex_requests WHERE user_id=? AND profile=? AND session_id=? AND status IN ('pending','unknown','failed') ORDER BY updated_at", (user, profile, session_id)).fetchall()
+            rows = self.connection.execute("SELECT client_request_id,status,turn_id,payload,result,updated_at,capacity_retry_count FROM codex_requests WHERE user_id=? AND profile=? AND session_id=? AND status IN ('pending','unknown','failed') ORDER BY updated_at", (user, profile, session_id)).fetchall()
         result: list[dict[str, Any]] = []
         for row in rows:
             try:
                 payload = json.loads(row["payload"])
             except (TypeError, json.JSONDecodeError):
                 payload = {}
-            result.append({"client_request_id": row["client_request_id"], "clientRequestId": row["client_request_id"], "status": row["status"], "turn_id": row["turn_id"], "payload": payload, "result": row["result"], "updated_at": row["updated_at"]})
+            result.append({"client_request_id": row["client_request_id"], "clientRequestId": row["client_request_id"], "status": row["status"], "turn_id": row["turn_id"], "payload": payload, "result": row["result"], "updated_at": row["updated_at"], "capacity_retry_count": row["capacity_retry_count"]})
         return result
 
     def latest_live_status(self, user: str, profile: str, session_id: str, after: int = 0) -> str | None:
@@ -1590,6 +1605,17 @@ def _native_error_message(error: Any) -> str:
     return " ".join(message.split())[:240]
 
 
+def _is_capacity_error(error: Any) -> bool:
+    """Recognize the explicit provider overload response that is safe to retry."""
+
+    try:
+        value = json.dumps(error, ensure_ascii=False, sort_keys=True)
+    except (TypeError, ValueError):
+        value = str(error)
+    compact = re.sub(r"[^a-z0-9]+", "", value.lower())
+    return "serveroverloaded" in compact or "selectedmodelisatcapacity" in compact
+
+
 class CodexBridge:
     """Coordinate shared Codex connections in a single sidecar worker."""
 
@@ -1605,6 +1631,7 @@ class CodexBridge:
         on_completed: Callable[[dict[str, Any]], Any] | None = None,
         attachment_store: AttachmentStore | None = None,
         permission_mode: str | None = None,
+        capacity_retry_delays: tuple[float, ...] | None = None,
     ) -> None:
         """Configure the bridge without opening a Codex process until first use."""
 
@@ -1620,12 +1647,15 @@ class CodexBridge:
         self.on_session_created = on_session_created
         self.on_completed = on_completed
         self.attachments = attachment_store or AttachmentStore()
+        self.capacity_retry_delays = tuple(capacity_retry_delays if capacity_retry_delays is not None else _CAPACITY_RETRY_DELAYS)
+        self.capacity_retry_limit = len(self.capacity_retry_delays)
         self._connections: dict[tuple[str, str], JsonRpcConnection] = {}
         self._subscribers: dict[tuple[str, str, str], set[asyncio.Queue[dict[str, Any]]]] = {}
         self._session_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
         self._request_locks: dict[tuple[str, str, str, str], asyncio.Lock] = {}
         self._history_inflight: dict[tuple[Any, ...], asyncio.Task[dict[str, Any]]] = {}
         self._observer_tasks: set[asyncio.Task[Any]] = set()
+        self._capacity_retry_tasks: dict[tuple[str, str, str, str], asyncio.Task[Any]] = {}
         self._active_completions: set[tuple[str, str, str, str]] = set()
         self._connection_lock = asyncio.Lock()
         self._closing = False
@@ -1786,6 +1816,11 @@ class CodexBridge:
         """Close all shared Codex connections during sidecar shutdown."""
 
         self._closing = True
+        retry_tasks = tuple(self._capacity_retry_tasks.values())
+        for task in retry_tasks:
+            task.cancel()
+        await asyncio.gather(*retry_tasks, return_exceptions=True)
+        self._capacity_retry_tasks.clear()
         async with self._connection_lock:
             connections = tuple(self._connections.values())
             self._connections.clear()
@@ -1911,6 +1946,23 @@ class CodexBridge:
             if session.get("status") != next_status:
                 session = await asyncio.to_thread(self.store.upsert_session, user, profile, {**session, "status": next_status})
             await asyncio.to_thread(self.store.remove_approvals_for_turn, user, profile, session_id, epoch, str(turn_id or params.get("turnId") or ""))
+            if turn_status in {"failed", "error"} and isinstance(turn_value, dict) and _is_capacity_error(turn_value.get("error")) and turn_id:
+                request = await asyncio.to_thread(self.store.request_for_turn, user, profile, session_id, str(turn_id))
+                if request and request.get("status") == "accepted":
+                    try:
+                        retry_payload = json.loads(request.get("payload") or "{}")
+                    except (TypeError, ValueError):
+                        retry_payload = {}
+                    if isinstance(retry_payload, dict) and retry_payload.get("threadId") and retry_payload.get("expectedTurnId") is None:
+                        await self._record_capacity_failure(
+                            user,
+                            profile,
+                            session_id,
+                            str(request["client_request_id"]),
+                            turn_value.get("error"),
+                            int(request.get("capacity_retry_count") or 0),
+                            turn_id=str(turn_id),
+                        )
             if turn_status in (None, "completed"):
                 completed_at = response_metrics.completion_time(turn_value if isinstance(turn_value, dict) else {}, event["created_at"])
                 identity = (user, profile, session_id)
@@ -1950,6 +2002,115 @@ class CodexBridge:
         session = context["session"]
         event = self.store.append_event(user, profile, str(session["session_id"]), str(context["method"]), context["event_message"])
         await self._deliver_notification(context, event)
+
+    def _capacity_retry_key(self, user: str, profile: str, session_id: str, client_id: str) -> tuple[str, str, str, str]:
+        return user, profile, session_id, client_id
+
+    def _schedule_capacity_retry(self, user: str, profile: str, session_id: str, client_id: str, retry_count: int) -> None:
+        """Start one delayed retry for an explicit overload without adding a chat message."""
+
+        if self._closing or retry_count < 1 or retry_count > self.capacity_retry_limit:
+            return
+        key = self._capacity_retry_key(user, profile, session_id, client_id)
+        current = self._capacity_retry_tasks.get(key)
+        if current is not None and not current.done() and current is not asyncio.current_task():
+            return
+        task = asyncio.create_task(self._run_capacity_retry(user, profile, session_id, client_id, retry_count))
+        self._capacity_retry_tasks[key] = task
+        self._observer_tasks.add(task)
+
+        def finished(done: asyncio.Task[Any]) -> None:
+            self._observer_tasks.discard(done)
+            if self._capacity_retry_tasks.get(key) is done:
+                self._capacity_retry_tasks.pop(key, None)
+            if not done.cancelled():
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    done.exception()
+
+        task.add_done_callback(finished)
+
+    async def _record_capacity_failure(
+        self,
+        user: str,
+        profile: str,
+        session_id: str,
+        client_id: str,
+        error: Any,
+        retry_count: int,
+        *,
+        turn_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Keep an overload request pending while its silent retries are scheduled."""
+
+        next_count = retry_count + 1
+        status = "pending" if next_count <= self.capacity_retry_limit else "failed"
+        result = await asyncio.to_thread(
+            self.store.save_request,
+            user,
+            profile,
+            session_id,
+            client_id,
+            status=status,
+            turn_id=turn_id,
+            result=json.dumps(error, ensure_ascii=False),
+            capacity_retry_count=min(next_count, self.capacity_retry_limit),
+        )
+        if status == "pending":
+            self._schedule_capacity_retry(user, profile, session_id, client_id, next_count)
+        return result
+
+    async def _run_capacity_retry(self, user: str, profile: str, session_id: str, client_id: str, retry_count: int) -> None:
+        """Retry the same idempotent native request after provider capacity recovers."""
+
+        await asyncio.sleep(self.capacity_retry_delays[retry_count - 1])
+        if self._closing:
+            return
+        key = self._capacity_retry_key(user, profile, session_id, client_id)
+        lock = self._request_locks.setdefault(key, asyncio.Lock())
+        async with lock:
+            request = await asyncio.to_thread(self.store.request, user, profile, session_id, client_id)
+            if not request or request.get("status") != "pending" or int(request.get("capacity_retry_count") or 0) != retry_count:
+                return
+            try:
+                payload = json.loads(request.get("payload") or "{}")
+            except (TypeError, ValueError):
+                payload = {}
+            if not isinstance(payload, dict) or not payload.get("threadId"):
+                await asyncio.to_thread(self.store.save_request, user, profile, session_id, client_id, status="failed", result=json.dumps({"message": "Invalid retry payload"}))
+                return
+            method = "turn/steer" if payload.get("expectedTurnId") is not None else "turn/start"
+            try:
+                connection = await self._connection(user, profile)
+                response = await connection.request(method, payload)
+            except UnknownAcceptance:
+                await asyncio.to_thread(self.store.save_request, user, profile, session_id, client_id, status="unknown")
+                return
+            except RpcFailure as exc:
+                if _is_capacity_error(exc.error):
+                    await self._record_capacity_failure(user, profile, session_id, client_id, exc.error, retry_count)
+                else:
+                    await asyncio.to_thread(self.store.save_request, user, profile, session_id, client_id, status="failed", result=json.dumps(exc.error, ensure_ascii=False))
+                return
+            turn = response.get("turn") if isinstance(response.get("turn"), dict) else {}
+            turn_id = str(turn.get("id") or response.get("turnId") or "")
+            turn_error = turn.get("error") if isinstance(turn, dict) else None
+            if _is_capacity_error(turn_error):
+                await self._record_capacity_failure(user, profile, session_id, client_id, turn_error, retry_count, turn_id=turn_id or None)
+                return
+            result = await asyncio.to_thread(
+                self.store.save_request,
+                user,
+                profile,
+                session_id,
+                client_id,
+                status="accepted",
+                turn_id=turn_id or None,
+                result=json.dumps(response, ensure_ascii=False),
+            )
+            turn_status = str(turn.get("status") or "").lower()
+            if turn_status not in {"completed", "failed", "interrupted"}:
+                await asyncio.to_thread(self.store.mark_submission_running, user, profile, session_id, turn_id)
+            return result
 
     async def _schedule_completion(self, session: dict[str, Any], event: dict[str, Any], turn_id: str) -> None:
         """Schedule one idempotent completion observer for a live or recovered turn."""
@@ -2150,9 +2311,21 @@ class CodexBridge:
         except UnknownAcceptance:
             return self.store.save_request(user, profile, session_id, client_id, status="unknown")
         except RpcFailure as exc:
+            if _is_capacity_error(exc.error) and method == "turn/start":
+                return await self._record_capacity_failure(user, profile, session_id, client_id, exc.error, 0)
             return self.store.save_request(user, profile, session_id, client_id, status="failed", result=json.dumps(exc.error))
         turn = response.get("turn") if isinstance(response.get("turn"), dict) else {}
         turn_id = response.get("turnId") if expected_turn_id is not None else turn.get("id")
+        if method == "turn/start" and _is_capacity_error(turn.get("error")):
+            return await self._record_capacity_failure(
+                user,
+                profile,
+                session_id,
+                client_id,
+                turn.get("error"),
+                0,
+                turn_id=str(turn_id) if turn_id else None,
+            )
         result = self.store.save_request(user, profile, session_id, client_id, status="accepted", turn_id=turn_id, result=json.dumps(response))
         turn_status = str(turn.get("status") or "").lower()
         if turn_status not in {"completed", "failed", "interrupted"}:
