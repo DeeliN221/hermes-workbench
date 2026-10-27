@@ -1,7 +1,7 @@
 import { Window } from 'happy-dom';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { enhanceCronPage } from '../dashboard/src/cron-page-bridge';
-import { attachCronHistories, cronRunHref } from '../dashboard/src/cron-run-history';
+import { attachCronHistories, cronRunHref, cronRunSessionId } from '../dashboard/src/cron-run-history';
 
 afterEach(() => { delete (globalThis as any).document; });
 
@@ -109,5 +109,9 @@ describe('Cron card redesign', () => {
   it('builds encoded read-only Workbench deep links', () => {
     expect(cronRunHref('writer profile', 'cron/a b'))
       .toBe('/chat?profile=writer+profile&session=cron%2Fa+b');
+  });
+
+  it('uses the session id when a run also carries an execution id', () => {
+    expect(cronRunSessionId({ id: 'execution-1', session_id: 'cron-session-1' })).toBe('cron-session-1');
   });
 });

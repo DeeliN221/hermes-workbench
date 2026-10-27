@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { cronForm, cronPayload, nativeCronPayload, needsExtendedCron, mergeCronHistory, updateCronJob, changeCronJobState } from '../dashboard/src/cron-api';
+import { cronForm, cronPayload, nativeCronPayload, needsExtendedCron, mergeCronHistory, cronSessionId, cronSessionProfiles, isCronSessionNotFound, updateCronJob, changeCronJobState } from '../dashboard/src/cron-api';
 import { listSkillEntries, mutateSkillFile, saveSkillFile, skillPreviewKind, downloadSkillFile } from '../dashboard/src/skills-api';
 import { answerCodexApproval, sendCodexMessage, normalizeSession, normalizeGoal, CodexSendError } from '../dashboard/src/codex-api';
 import type { FetchJSON } from '../dashboard/src/workbench-api';
@@ -16,6 +16,13 @@ describe('typed cron API', () => {
   });
   it('sorts native sessions and execution-only history together across timestamp formats', () => {
     expect(mergeCronHistory([{ session_id: 'older', started_at: 1800000000 }], [{ id: 'newer', finished_at: 1800000001000 }]).map(row => row.key)).toEqual(['execution:newer', 'session:older']);
+  });
+  it('keeps session identity ahead of an execution id and offers legacy profile fallbacks', () => {
+    expect(cronSessionId({ id: 'execution-1', session_id: 'cron-session-1' })).toBe('cron-session-1');
+    expect(cronSessionProfiles({ profile: 'writer' }, 'project-manager')).toEqual(['writer', 'project-manager', 'default']);
+    expect(isCronSessionNotFound(new Error('HTTP 404: Session not found'))).toBe(true);
+    expect(isCronSessionNotFound(new Error('HTTP 404: /api/sessions/cron-old/messages'))).toBe(true);
+    expect(isCronSessionNotFound(new Error('HTTP 500: upstream unavailable'))).toBe(false);
   });
   it('uses the host trigger action for an immediate run', async () => {
     const read = client({ job: { id: 'job' } });

@@ -89,6 +89,19 @@ function historyRows(value: unknown, ...keys: string[]): JsonRecord[] {
   return rows(value, ...keys).filter(value => value && typeof value === 'object').map(record);
 }
 export function cronSessionId(run: JsonRecord) { return text(run.session_id || run.id).trim(); }
+/** Profiles that may own a legacy cron session after profile storage moved. */
+export function cronSessionProfiles(run: JsonRecord, owner: string): string[] {
+  return [...new Set([run.profile, run.profile_name, owner, 'default']
+    .map(value => text(value).trim())
+    .filter(value => value && value.toLowerCase() !== 'all'))];
+}
+/** The host uses a 404 with this message when a cron session was pruned or moved. */
+export function isCronSessionNotFound(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : text(error);
+  return /(?:session|会话)\s*(?:not\s*found|不存在|不可用)/i.test(message)
+    || /(?:not\s*found|不存在)\D{0,24}(?:session|会话)/i.test(message)
+    || /\b404\b/i.test(message);
+}
 export function cronTimestamp(value: unknown) {
   if (typeof value === 'number') return value < 1e12 ? value * 1000 : value;
   const number = Number(value);
