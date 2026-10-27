@@ -35,6 +35,7 @@
 .project-heading-actions { display: flex; align-items: center; gap: 2px; }
 .project-history-panel { border: 1px solid var(--dashboard-line); border-radius: 8px; margin: 0 6px 8px; }
 .project-history-panel[hidden] { display: none; }
+.project-list { --project-row-height: 40px; max-height: calc(var(--project-row-height) * 5); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; }
 .project-create, .project-history-toggle, .project-actions button { display: grid; place-items: center; width: 28px; height: 28px;
   border: 0; border-radius: 6px; padding: 0; background: transparent; color: inherit; cursor: pointer; }
 .project-create:hover, .project-history-toggle:hover, .project-history-toggle[aria-expanded="true"],
@@ -100,6 +101,7 @@
   .dashboard-global-nav .dashboard-nav-primary > a,
   .dashboard-chat-actions .codex-navigation-create-actions > button { min-height: 40px; }
   .project-actions { display: flex; }
+  .project-list { --project-row-height: 48px; }
   .project-folder-row .project-folder-heading { min-height: 48px; padding-right: 92px; }
   .project-actions button, .project-create { width: 36px; height: 36px; }
   .project-count { display: none; }

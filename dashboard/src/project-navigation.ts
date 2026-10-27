@@ -2,13 +2,42 @@ import { uiText as sourceText } from './ui-locale';
 /** Manual project navigation. Membership persists through the existing organization API. */
 export interface ProjectSession {
   id: string;
+  threadId?: string;
   groupId?: string | null;
   deleted?: boolean;
   favorite?: boolean;
+  /** Prefer the numeric epoch supplied by the Codex session API. */
+  updatedAtEpoch?: number;
+  updatedAt?: string | number;
+  createdAt?: number;
 }
 export interface SessionProject { id: string; name: string }
 export const PANE_DRAG_TYPE = 'application/x-hermes-pane-sessions';
 export const SESSION_DRAG_TYPE = 'application/x-hermes-project-session';
+
+function sessionUpdatedAt(session: ProjectSession): number {
+  const rawValues = [session.updatedAtEpoch, session.updatedAt, session.createdAt];
+  for (const raw of rawValues) {
+    if (typeof raw === 'number' && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw;
+    if (typeof raw === 'string' && raw.trim()) {
+      const numeric = Number(raw);
+      if (Number.isFinite(numeric)) return numeric < 1e12 ? numeric * 1000 : numeric;
+      const parsed = Date.parse(raw);
+      if (Number.isFinite(parsed)) return parsed;
+    }
+  }
+  return 0;
+}
+
+function compareSessions<T extends ProjectSession>(a: T, b: T): number {
+  const recent = sessionUpdatedAt(b) - sessionUpdatedAt(a);
+  if (recent) return recent;
+  return Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+}
+
+function latestSessionUpdatedAt<T extends ProjectSession>(sessions: T[]): number {
+  return sessions.reduce((latest, session) => Math.max(latest, sessionUpdatedAt(session)), 0);
+}
 
 export function partitionProjectSessions<T extends ProjectSession>(sessions: T[], projects: SessionProject[]) {
   const groups = [...new Map(projects.filter(project => project.id).map(project => [project.id, project])).values()]
@@ -22,11 +51,9 @@ export function partitionProjectSessions<T extends ProjectSession>(sessions: T[]
     const group = session.groupId ? byId.get(session.groupId) : undefined;
     (group ? group.sessions : temporary).push(session);
   }
-  // Keep the user's existing order within each section, while making saved
-  // sessions immediately discoverable at the top of their current folder.
-  const pinFavorites = (items: T[]) => items.sort((a, b) => Number(Boolean(b.favorite)) - Number(Boolean(a.favorite)));
-  groups.forEach(group => pinFavorites(group.sessions));
-  pinFavorites(temporary);
+  groups.forEach(group => group.sessions.sort(compareSessions));
+  temporary.sort(compareSessions);
+  groups.sort((a, b) => latestSessionUpdatedAt(b.sessions) - latestSessionUpdatedAt(a.sessions));
   return { groups, temporary };
 }
 
@@ -209,7 +236,7 @@ export function createProjectNavigation(sdk: Record<string, any>) {
           onKeyDown: (event: KeyboardEvent) => {
             if (event.key === 'Escape') { event.stopPropagation(); setHistoryOpen(false); historyTrigger.current?.focus(); }
           } }, props.history),
-        ...groups.map(({ project, sessions: members }) => h('div', {
+        h('div', { className: 'project-list' }, ...groups.map(({ project, sessions: members }) => h('div', {
           key: project.id, className: 'project-folder-row',
         }, h('details', { className: `project-folder${dropTarget === project.id ? ' is-drop-target' : ''}`,
           'data-project-id': project.id,
@@ -232,7 +259,7 @@ export function createProjectNavigation(sdk: Record<string, any>) {
               onClick: (event: MouseEvent) => { event.preventDefault(); props.onRename(project, event.currentTarget as HTMLElement); } }, icon('m16 3 5 5-12 12H4v-5z')),
             h('button', { type: 'button', title: sourceText("删除项目", "Delete project"), 'aria-label': sourceText(`删除项目：${project.name}`, `Delete project: ${project.name}`),
               onClick: (event: MouseEvent) => { event.preventDefault(); props.onDelete(project); } }, icon('M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14'))))),
-        groups.length ? null : h('p', { className: 'project-empty' }, sourceText("新建项目后，将会话拖入整理", "Create a project, then drag in sessions to organize them"))),
+        groups.length ? null : h('p', { className: 'project-empty' }, sourceText("新建项目后，将会话拖入整理", "Create a project, then drag in sessions to organize them")))),
       h('section', { className: `project-temporary${dropTarget === null ? ' is-drop-target' : ''}`,
         'aria-label': sourceText("临时会话", "Temporary sessions"), ...dropProps(null) },
         h('div', { className: 'project-section-heading' }, h('span', null, sourceText("临时会话", "Temporary sessions")),

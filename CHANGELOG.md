@@ -12,6 +12,9 @@
 - Keep diagram source inside the browser and remove the PlantUML endpoint setting.
 - Reconcile streaming Markdown updates so trailing PlantUML fences render from the complete message.
 - Give each Codex session a persistent accent colour shared by its pane header and temporary-session card.
+- Limit the project list to five rows, scroll longer lists, and order projects and sessions by recent activity.
+- Keep chat headers on one line and move session-id copying into temporary-session menus.
+- Retry explicit Codex capacity failures in the background with the original request identity and backoff.
 
 ## Fresh public source snapshot
 

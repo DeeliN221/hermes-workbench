@@ -10062,8 +10062,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [me, ye] = o("main"),
         [Qt, qi] = o(!1),
         [Bd, bn] = o(""),
-        [Fo, As] = o(""),
-        Hn = s(null),
         F0 = s(null),
         jr = s(profileDrafts(M, f)),
         Ji = s(Ei);
@@ -10254,13 +10252,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 window.removeEventListener("resize", ee));
             }
           );
-        }, [ae]),
-        r(
-          () => () => {
-            Hn.current && clearTimeout(Hn.current);
-          },
-          [],
-        ));
+        }, [ae]));
       if (!kanbanChatContext.current) kanbanChatContext.current = createKanbanChatContext(window.location.search, j, !!p);
       const kanbanPrefillDone = s(new Set());
       const kanbanLiveState = s({ session: "", loading: true, count: 0 });
@@ -10302,8 +10294,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             re(!1),
             ye("main"),
             qi(!1),
-            bn(""),
-            As(""));
+            bn(""));
           const xe = new URL(window.location.href);
           if (!kanbanChatContext.current.matches(L)) {
             kanbanChatContext.current.clear();
@@ -11032,17 +11023,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           },
           [Yd, M, Ko],
         ),
-        AM = async () => {
-          const L = ei?.threadId;
-          if (L)
-            try {
-              (await navigator.clipboard.writeText(L),
-                As(L),
-                Hn.current && clearTimeout(Hn.current),
-                (Hn.current = setTimeout(() => As(""), 1600)));
-            } catch {
-              Pt(runtimeText("复制失败，请选中会话 ID 手动复制。", "Copy failed. Select and copy the session ID manually."));
-            }
+        copySessionId = async (L) => {
+          const U = L?.threadId || L?.id;
+          if (!U) return;
+          try {
+            await navigator.clipboard.writeText(U);
+            Pt(runtimeText("会话 ID 已复制。", "Session ID copied."));
+          } catch {
+            Pt(runtimeText("复制失败，请选中会话 ID 手动复制。", "Copy failed. Select and copy the session ID manually."));
+          }
         },
         cv = t(
           async (L) => {
@@ -11818,6 +11807,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                             maxWidth: `${Qe.maxWidth}px`,
                           },
                         },
+                        !L.groupId
+                          ? W(
+                              e,
+                              "button",
+                              {
+                                type: "button",
+                                role: "menuitem",
+                                onClick: () => {
+                                  (Ce(""), copySessionId(L));
+                                },
+                              },
+                              runtimeText("复制 session ID", "Copy session ID"),
+                            )
+                          : null,
                         W(
                           e,
                           "button",
@@ -12659,7 +12662,60 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             W(
               e,
               "div",
-              null,
+              { className: "codex-center-heading" },
+              k && !B
+                ? W(
+                    e,
+                    "div",
+                    { className: "codex-pane-color-picker" },
+                    W(
+                      e,
+                      "button",
+                      {
+                        type: "button",
+                        ref: colorTrigger,
+                        className: "codex-icon-button codex-pane-color-trigger",
+                        onClick: () => setPaneColorMenu((value) => !value),
+                        "aria-label": runtimeText("会话颜色", "Session color"),
+                        "aria-expanded": paneColorMenu,
+                        "aria-haspopup": "menu",
+                        title: runtimeText("会话颜色", "Session color"),
+                      },
+                      W(e, "span", {
+                        className: "codex-pane-color-dot",
+                        style: { background: paneColor },
+                        "aria-hidden": "true",
+                      }),
+                    ),
+                    paneColorMenu
+                      ? W(
+                          e,
+                          "div",
+                          {
+                            className: "codex-session-row-menu codex-pane-color-menu",
+                            role: "menu",
+                            "aria-label": runtimeText("会话颜色", "Session color"),
+                          },
+                          W(
+                            e,
+                            "div",
+                            {
+                              className: "codex-session-color-grid",
+                              role: "group",
+                              "aria-label": runtimeText("会话颜色", "Session color"),
+                            },
+                            ...renderSessionColorChoices(k, ei?.color || "", () =>
+                              setPaneColorMenu(!1),
+                            ),
+                          ),
+                          renderSessionColorReset(k, ei?.color || "", () =>
+                            setPaneColorMenu(!1),
+                          ),
+                        )
+                      : null,
+                  )
+                : null,
+              W(e, "div", { className: "codex-center-heading-copy" },
               W(
                 e,
                 "strong",
@@ -12677,82 +12733,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     },
                     runtimeText("Hermes 历史 · 只读", "Hermes history · Read-only"),
                   )
-                : ei?.threadId
-                  ? W(
-                      e,
-                      "button",
-                      {
-                        type: "button",
-                        className: "codex-session-id",
-                        title: runtimeText(`点击复制会话 ID：${ei.threadId}`, `Click to copy session ID: ${ei.threadId}`),
-                        "aria-label": runtimeText("复制会话 ID", "Copy session ID"),
-                        onClick: () => {
-                          AM();
-                        },
-                      },
-                      W(e, "span", null, ei.threadId),
-                      st(e, Fo === ei.threadId ? "check" : "copy"),
-                      W(
-                        e,
-                        "span",
-                        { className: "codex-copy-feedback", role: "status" },
-                        Fo === ei.threadId ? runtimeText("已复制", "Copied") : "",
-                      ),
-                    )
-                  : null,
+                : null,
+              ),
             ),
-            k && !B
-              ? W(
-                  e,
-                  "div",
-                  { className: "codex-pane-color-picker" },
-                  W(
-                    e,
-                    "button",
-                    {
-                      type: "button",
-                      ref: colorTrigger,
-                      className: "codex-icon-button codex-pane-color-trigger",
-                      onClick: () => setPaneColorMenu((value) => !value),
-                      "aria-label": runtimeText("会话颜色", "Session color"),
-                      "aria-expanded": paneColorMenu,
-                      "aria-haspopup": "menu",
-                      title: runtimeText("会话颜色", "Session color"),
-                    },
-                    W(e, "span", {
-                      className: "codex-pane-color-dot",
-                      style: { background: paneColor },
-                      "aria-hidden": "true",
-                    }),
-                  ),
-                  paneColorMenu
-                    ? W(
-                        e,
-                        "div",
-                        {
-                          className: "codex-session-row-menu codex-pane-color-menu",
-                          role: "menu",
-                          "aria-label": runtimeText("会话颜色", "Session color"),
-                        },
-                        W(
-                          e,
-                          "div",
-                          {
-                            className: "codex-session-color-grid",
-                            role: "group",
-                            "aria-label": runtimeText("会话颜色", "Session color"),
-                          },
-                          ...renderSessionColorChoices(k, ei?.color || "", () =>
-                            setPaneColorMenu(!1),
-                          ),
-                        ),
-                        renderSessionColorReset(k, ei?.color || "", () =>
-                          setPaneColorMenu(!1),
-                        ),
-                      )
-                    : null,
-                )
-              : null,
             _
               ? W(
                   e,
