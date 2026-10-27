@@ -6,10 +6,10 @@ profile has its own ``SOUL.md``, ``USER.md`` and skill tree.  This module keeps
 the base index as the fallback for ``default`` and builds a bounded role brief
 for a named profile instead.
 
-Detailed topic files and skills remain read-on-demand; only the role identity,
-the compact user brief and the durable profile memory are inlined.  That makes
-identity and scope available on the first turn without turning every topic into
-prompt text.
+Detailed topic files and role skills under ``memories/role-skills`` remain
+read-on-demand; only the role identity, the compact user brief and the durable
+profile memory are inlined.  That makes identity and scope available on the
+first turn without turning every topic into prompt text.
 """
 
 from __future__ import annotations
@@ -167,14 +167,25 @@ def _skill_files(skills_root: Path) -> list[Path]:
 
 def _profile_skills(home: Path) -> list[tuple[str, str, Path]]:
     skills: list[tuple[str, str, Path]] = []
-    for path in _skill_files(home / "skills"):
+    candidates = [
+        *_skill_files(home / "memories" / "role-skills"),
+        *_skill_files(home / "skills"),
+    ]
+    seen: set[str] = set()
+    for path in candidates:
         name, description = _skill_metadata(path)
-        if name in _BASELINE_SKILLS:
+        if name in _BASELINE_SKILLS or name in seen:
             continue
+        seen.add(name)
         skills.append((name, description, path))
         if len(skills) >= _MAX_SKILLS:
             break
-    skills.sort(key=lambda item: (0 if "routers" in item[2].parts else 1, str(item[2])))
+    skills.sort(
+        key=lambda item: (
+            0 if item[0].endswith("-router") or "routers" in item[2].parts else 1,
+            str(item[2]),
+        )
+    )
     return skills
 
 
