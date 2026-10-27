@@ -1,6 +1,7 @@
 """Creation failures must remain recoverable without sending placeholder IDs."""
 import asyncio
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -85,6 +86,33 @@ class SessionCreationContract(unittest.IsolatedAsyncioTestCase):
         await self.create()
         self.assertEqual(len(self.calls), 2)
         self.assertEqual(self.calls[-1][1]['config']['model_reasoning_effort'], 'medium')
+
+    async def test_named_profile_context_reaches_thread_start(self):
+        with tempfile.TemporaryDirectory() as temp:
+            home = Path(temp)
+            profile = home / 'profiles' / 'health-advisor'
+            (profile / 'memories').mkdir(parents=True)
+            (profile / 'SOUL.md').write_text('# Health role\nHEALTH_SOUL_MARKER\n', encoding='utf-8')
+            (profile / 'memories' / 'USER.md').write_text('HEALTH_USER_MARKER\n', encoding='utf-8')
+            (profile / 'memories' / 'MEMORY.md').write_text('HEALTH_MEMORY_MARKER\n', encoding='utf-8')
+            previous = os.environ.get('HERMES_HOME')
+            os.environ['HERMES_HOME'] = temp
+            try:
+                await self.bridge.create_session(
+                    'qa', 'health-advisor',
+                    {'session_id': 'health-session', 'model': 'chosen', 'effort': 'medium'},
+                )
+            finally:
+                if previous is None:
+                    os.environ.pop('HERMES_HOME', None)
+                else:
+                    os.environ['HERMES_HOME'] = previous
+        method, params = self.calls[-1]
+        self.assertEqual(method, 'thread/start')
+        self.assertIn('health-advisor', params['developerInstructions'])
+        self.assertIn('HEALTH_SOUL_MARKER', params['developerInstructions'])
+        self.assertIn('HEALTH_USER_MARKER', params['developerInstructions'])
+        self.assertIn('HEALTH_MEMORY_MARKER', params['developerInstructions'])
 
     async def test_connection_failure_and_rpc_rejection_persist_recoverable_state(self):
         self.connection_failure = OSError('offline')

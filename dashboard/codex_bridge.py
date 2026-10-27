@@ -2010,11 +2010,11 @@ class CodexBridge:
             "cwd": pending["workspace_path"],
             "approvalPolicy": values.get("approvalPolicy"),
         }
-        # Personal sessions may use the compact cross-session memory index.
+        # Personal sessions get the selected profile's context and memory index.
         # Repository sessions retain local context compaction but do not read
         # the controlling Workbench's memory from an execution node.
         if policy.cross_session_recall:
-            params["developerInstructions"] = build_codex_memory_instructions()
+            params["developerInstructions"] = build_codex_memory_instructions(profile)
         for key in ("model", "sandbox", "serviceTier", "personality"):
             if values.get(key) is not None:
                 params[key] = values[key]
