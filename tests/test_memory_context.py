@@ -31,8 +31,8 @@ class MemoryContextContract(unittest.TestCase):
     def make_profile(self, name: str, marker: str) -> Path:
         home = self.root / "profiles" / name
         (home / "memories" / "topics").mkdir(parents=True)
-        (home / "skills" / "routers" / "hermes-health-router").mkdir(parents=True)
-        (home / "skills" / "health" / "exam-planning").mkdir(parents=True)
+        (home / "memories" / "role-skills" / "hermes-health-router").mkdir(parents=True)
+        (home / "memories" / "role-skills" / "exam-planning").mkdir(parents=True)
         (home / "profile.yaml").write_text(
             f"description: {marker} role\n", encoding="utf-8"
         )
@@ -47,11 +47,11 @@ class MemoryContextContract(unittest.TestCase):
             f"# Sources {marker}\nPoint to {marker} source.\n\nTOPIC BODY {marker} should stay on demand.\n",
             encoding="utf-8",
         )
-        (home / "skills" / "routers" / "hermes-health-router" / "SKILL.md").write_text(
+        (home / "memories" / "role-skills" / "hermes-health-router" / "SKILL.md").write_text(
             "---\nname: hermes-health-router\ndescription: Route health work.\n---\n# Router\n",
             encoding="utf-8",
         )
-        (home / "skills" / "health" / "exam-planning" / "SKILL.md").write_text(
+        (home / "memories" / "role-skills" / "exam-planning" / "SKILL.md").write_text(
             "---\nname: exam-planning\ndescription: Plan an exam.\n---\n# Exam\n",
             encoding="utf-8",
         )
@@ -76,8 +76,8 @@ class MemoryContextContract(unittest.TestCase):
         self.assertIn("Role boundary: HEALTH", instructions)
         self.assertIn("Identity: HEALTH user", instructions)
         self.assertIn("Durable fact: HEALTH memory", instructions)
-        router = str(home / "skills" / "routers" / "hermes-health-router" / "SKILL.md")
-        leaf = str(home / "skills" / "health" / "exam-planning" / "SKILL.md")
+        router = str(home / "memories" / "role-skills" / "hermes-health-router" / "SKILL.md")
+        leaf = str(home / "memories" / "role-skills" / "exam-planning" / "SKILL.md")
         self.assertIn(router, instructions)
         self.assertLess(instructions.index(router), instructions.index(leaf))
         self.assertIn(leaf, instructions)
