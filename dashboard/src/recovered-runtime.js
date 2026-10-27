@@ -8,7 +8,7 @@ import { normalizeSession as Ll, listCodexSessions as i0, normalizeGroup as yd, 
 import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
 import { optionalNumber as pn, firstDefined as oi, timestamp as El, record as mt, text as Ae } from './api-values';
-import { cronList as Sn, cronSchedule as I5, cronTimezone as $0, cronForm as N5, cronPayload as Td, nativeCronPayload as B5, needsExtendedCron as z5, cronSessionId as T0, mergeCronHistory as E0, cronTimestamp as A0, listCronJobs as q5, listCronRuns as Z5, listCronExecutions as j5, createNativeCronJob as F5, createExtendedCronJob as H5, updateCronJob as V5, changeCronJobState as U5, deleteCronJob as Y5 } from './cron-api';
+import { cronList as Sn, cronSchedule as I5, cronTimezone as $0, cronForm as N5, cronPayload as Td, nativeCronPayload as B5, needsExtendedCron as z5, cronSessionId as T0, cronSessionProfiles, isCronSessionNotFound, mergeCronHistory as E0, cronTimestamp as A0, listCronJobs as q5, listCronRuns as Z5, listCronExecutions as j5, createNativeCronJob as F5, createExtendedCronJob as H5, updateCronJob as V5, changeCronJobState as U5, deleteCronJob as Y5 } from './cron-api';
 import { listSkills as iM, readSkillDescription as rM, listSkillEntries as B0, readSkillFile as nM, saveSkillFile as sM, mutateSkillFile as Md, skillPreviewUrl as oM, skillArchiveUrl as aM, isSkillTextPath as zl, skillPreviewKind as z0, downloadSkillFile as lM, uploadSkillArchive as cM, uploadSkillFile as hM } from './skills-api';
 import { ProcessSummary } from './process-summary';
 import { displayCommand } from './command-display';
@@ -4078,9 +4078,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       turns: mm(o, [s]),
     };
   }
-  async function _m(i, e, t) {
-    const r = await iC(i, e, t),
-      n = await bm(i, e, r),
+  async function _m(i, e, t, flatSession = !1) {
+    const r = flatSession ? t : await iC(i, e, t),
+      n = flatSession ? [await Zs(i, e, r)] : await bm(i, e, r),
       o = (await Promise.all(n.map((l) => rC(i, e, String(l.id))))).flatMap(
         (l, c) =>
           l.map((u) => ({ ...u, session_id: u.session_id || String(n[c].id) })),
@@ -7482,8 +7482,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       );
     return i;
   }
-  async function h_(i, e, t) {
-    const r = await _m(i, e, t);
+  async function h_(i, e, t, flatSession = !1) {
+    const r = await _m(i, e, t, flatSession);
     return FR(r);
   }
   function u_(i) {
@@ -13728,7 +13728,22 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           let le = !0;
           return (
             R(!0),
-            h_(i.fetchJSON, owner, J)
+            j(""),
+            (async () => {
+              let lastError;
+              for (const profile of cronSessionProfiles(ae.run, owner)) {
+                try {
+                  // Cron runs are flat sessions. Avoid latest-descendant here:
+                  // that endpoint currently reads the process default profile.
+                  return await h_(i.fetchJSON, profile, J, !0);
+                } catch (error) {
+                  lastError = error;
+                  if (!isCronSessionNotFound(error)) throw error;
+                }
+              }
+              if (lastError && !isCronSessionNotFound(lastError)) throw lastError;
+              return null;
+            })()
               .then((we) => {
                 le && y(we);
               })

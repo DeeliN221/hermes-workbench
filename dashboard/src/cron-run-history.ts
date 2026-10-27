@@ -13,6 +13,8 @@ export type CronJobSummary = {
 export type CronRunSummary = {
   id?: unknown;
   session_id?: unknown;
+  profile?: unknown;
+  profile_name?: unknown;
   title?: unknown;
   started_at?: unknown;
   last_active?: unknown;
@@ -39,7 +41,11 @@ export function cronJobProfile(job: CronJobSummary): string {
 }
 
 export function cronRunSessionId(run: CronRunSummary): string {
-  return text(run.id) || text(run.session_id);
+  return text(run.session_id) || text(run.id);
+}
+
+export function cronRunProfile(run: CronRunSummary, fallback: string): string {
+  return text(run.profile) || text(run.profile_name) || fallback;
 }
 
 export function cronRunHref(profile: string, sessionId: string): string {
@@ -97,7 +103,7 @@ function renderRuns(container: HTMLElement, runs: CronRunSummary[], profile: str
     if (!sessionId) continue;
     const item = document.createElement('li');
     const link = document.createElement('a');
-    link.href = cronRunHref(profile, sessionId);
+    link.href = cronRunHref(cronRunProfile(run, profile), sessionId);
     link.dataset.htiCronRunLink = 'true';
     const label = text(run.title) || sessionId;
     const title = document.createElement('span');
