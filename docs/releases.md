@@ -2,7 +2,7 @@
 
 ```mermaid
 flowchart LR
-    S["Daily 07:00 · UTC+08:00"] --> C{"Main commits yesterday?"}
+    S["Daily 04:00 · UTC+08:00"] --> C{"Main commits yesterday?"}
     C -- No --> X[Skip]
     C -- Yes --> N["Allocate vYYYYMMDD-N"]
     M["Actions → Release → Run workflow"] --> N
@@ -19,9 +19,11 @@ installable.
 
 ## Automatic and manual publishing
 
-- **Daily:** the Release workflow runs at 07:00 UTC+08:00 (`0 23 * * *` UTC).
-  It publishes only if main's first-parent history has a commit in the previous
-  UTC+08:00 calendar day, from 00:00 inclusive to the next 00:00 exclusive.
+- **Daily:** the Release workflow is scheduled at 04:00 UTC+08:00
+  (`0 20 * * *` UTC), three hours before the intended 07:00 publication, to
+  absorb GitHub's typical schedule delay. It publishes only if main's
+  first-parent history has a commit in the previous UTC+08:00 calendar day,
+  from 00:00 inclusive to the next 00:00 exclusive.
   Changes merged after midnight are included in the current main snapshot if
   yesterday also had changes. Unmerged branch changes do not count.
 - **Manual:** open **Actions → Release → Run workflow**, select **main**, and run.
@@ -38,8 +40,9 @@ Release notes compare the new tag with the newest published stable release.
 Drafts and prereleases are skipped; the first release starts at the repository
 root. The notes list merged Pull Request titles, not commits inside each PR.
 
-GitHub schedules can start late or be dropped during high load; 07:00 is the
-requested trigger time, not a guaranteed publication time. See
+GitHub schedules can start late or be dropped during high load; 04:00 is the
+requested trigger time, not a guaranteed publication time. The three-hour
+offset is intentional: observed delays have been 1.5–3 hours. See
 [GitHub's schedule documentation](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
 A missed day's release can be triggered manually.
 
