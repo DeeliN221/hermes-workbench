@@ -1,8 +1,9 @@
 name: Release
 on:
   schedule:
-    # 07:00 UTC+08:00, every day.
-    - cron: '0 23 * * *'
+    # 04:00 UTC+08:00, every day. Runs three hours before the intended
+    # 07:00 publication to absorb GitHub's typical schedule delay.
+    - cron: '0 20 * * *'
   workflow_dispatch:
     inputs:
       dry_run:
