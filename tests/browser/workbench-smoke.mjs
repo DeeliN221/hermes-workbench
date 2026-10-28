@@ -63,6 +63,32 @@ try {
   assert.deepEqual(profileErrors, [], `Browser errors in the profile switcher:\n${profileErrors.join('\n')}`);
   await profilePage.close();
 
+  const searchPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const searchErrors = [];
+  searchPage.on('pageerror', error => searchErrors.push(error.stack || error.message));
+  await searchPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await searchPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  await searchPage.waitForTimeout(300);
+  // The sidebar may be collapsed in the chat pane; the trigger still owns the dialog.
+  await searchPage.evaluate(() => document.querySelector('.codex-session-search-trigger')?.click());
+  await searchPage.locator('.codex-session-search-input').fill('servercontent');
+  await searchPage.waitForFunction(
+    () => document.querySelectorAll('.codex-session-search-result-snippet').length >= 2,
+    null,
+    { timeout: 5000 },
+  );
+  const searchRows = await searchPage.evaluate(() => [...document.querySelectorAll('.codex-session-search-result')].map(row => ({
+    id: row.getAttribute('data-result-id'),
+    kind: row.getAttribute('data-result-kind'),
+    text: row.textContent || '',
+    snippet: row.querySelector('.codex-session-search-result-snippet')?.textContent || '',
+  })));
+  assert.ok(searchRows.some(row => row.id === 'codex-regression' && row.kind === 'session'), 'Codex content hits must appear');
+  assert.ok(searchRows.some(row => row.id === 'hermes-preview' && row.kind === 'hermes'), 'Hermes content hits must appear');
+  assert.ok(searchRows.every(row => row.snippet.includes('Server-side content needle')), 'Content hits must show their snippet');
+  assert.deepEqual(searchErrors, [], `Browser errors in session search:\n${searchErrors.join('\n')}`);
+  await searchPage.close();
+
   const filesPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const fileErrors = [];
   filesPage.on('pageerror', error => fileErrors.push(error.stack || error.message));

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Search every Codex session by message content as well as title and id, and merge Hermes full-text history hits into the same session picker.
 - Expand profile choices inline beneath the sidebar profile control instead of opening a modal.
 - Prefill card discussions directly with a short, editable `Check task <id>` prompt instead of showing a card prompt panel or sending a fixed brainstorm request.
 - Add the versioned `standard@1` Kanban card form and structured drawer editor, with explicit review mode metadata.

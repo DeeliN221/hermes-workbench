@@ -774,6 +774,79 @@ class BridgeStore:
                 result.append(value)
             return result
 
+    def search_sessions(self, user: str, profile: str, query: str, limit: int = 80) -> list[dict[str, Any]]:
+        """Find every mapped session whose title, id, or thread id matches a query."""
+
+        term = str(query or "").strip()
+        if not term:
+            return []
+        # Treat user input literally inside LIKE: no caller can turn a wildcard
+        # into an unbounded scan, and a pasted session id stays searchable.
+        escaped = term.replace("!", "!!").replace("%", "!%").replace("_", "!_")
+        pattern = f"%{escaped}%"
+        from contextlib import closing
+        with closing(sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True)) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute('BEGIN')
+            rows = connection.execute(
+                """SELECT s.*, COALESCE(o.favorite, 0) AS favorite,
+                    o.group_id AS organization_group_id, COALESCE(o.deleted, 0) AS deleted,
+                    COALESCE(o.color, '') AS color, COALESCE(g.name, '') AS group_name
+                    FROM codex_sessions AS s
+                    LEFT JOIN codex_session_organization AS o
+                    ON o.user_id=s.user_id AND o.profile=s.profile AND o.session_id=s.session_id
+                    LEFT JOIN codex_session_groups AS g
+                    ON g.user_id=s.user_id AND g.profile=s.profile AND g.group_id=o.group_id
+                    WHERE s.user_id=? AND s.profile=? AND (
+                        s.title LIKE ? ESCAPE '!' OR s.session_id LIKE ? ESCAPE '!' OR s.thread_id LIKE ? ESCAPE '!'
+                    )
+                    ORDER BY s.updated_at DESC, s.rowid DESC LIMIT ?""",
+                (user, profile, pattern, pattern, pattern, max(1, min(int(limit), 200))),
+            ).fetchall()
+        return [self._search_value(row) for row in rows]
+
+    def sessions_by_thread_ids(self, user: str, profile: str, thread_ids: list[str]) -> dict[str, dict[str, Any]]:
+        """Resolve native thread ids to their identity-scoped Workbench sessions."""
+
+        values = [str(value) for value in thread_ids if value]
+        if not values:
+            return {}
+        placeholders = ",".join("?" for _ in values)
+        from contextlib import closing
+        with closing(sqlite3.connect(self.path.as_uri() + '?mode=ro', uri=True)) as connection:
+            connection.row_factory = sqlite3.Row
+            connection.execute('BEGIN')
+            rows = connection.execute(
+                f"""SELECT s.*, COALESCE(o.favorite, 0) AS favorite,
+                    o.group_id AS organization_group_id, COALESCE(o.deleted, 0) AS deleted,
+                    COALESCE(o.color, '') AS color, COALESCE(g.name, '') AS group_name
+                    FROM codex_sessions AS s
+                    LEFT JOIN codex_session_organization AS o
+                    ON o.user_id=s.user_id AND o.profile=s.profile AND o.session_id=s.session_id
+                    LEFT JOIN codex_session_groups AS g
+                    ON g.user_id=s.user_id AND g.profile=s.profile AND g.group_id=o.group_id
+                    WHERE s.user_id=? AND s.profile=? AND s.thread_id IN ({placeholders})""",
+                (user, profile, *values),
+            ).fetchall()
+        return {str(row["thread_id"]): self._search_value(row) for row in rows}
+
+    @staticmethod
+    def _search_value(row: sqlite3.Row) -> dict[str, Any]:
+        """Convert one joined session row to the search response shape."""
+
+        value = dict(row)
+        value["favorite"] = bool(value.get("favorite"))
+        value["groupId"] = value.pop("organization_group_id")
+        value["deleted"] = bool(value.get("deleted"))
+        value["id"] = value["session_id"]
+        value["workspace"] = value["workspace_id"]
+        value["workspacePath"] = value["workspace_path"]
+        value["updatedAt"] = value["updated_at"]
+        value["createdAt"] = value["created_at"]
+        value["title"] = value.get("title") or value["session_id"]
+        value["groupName"] = value.pop("group_name", "") or ""
+        return value
+
     def execution_nodes(self, user: str, profile: str) -> list[dict[str, Any]]:
         """List execution nodes observed in this user's session mappings."""
 
@@ -2712,6 +2785,78 @@ class CodexBridge:
                     detail = f"{detail}: {message}"
                 raise HTTPException(status_code=502, detail=detail) from exc
 
+    async def search_sessions(self, user: str, profile: str, query: str, limit: int = 60) -> dict[str, Any]:
+        """Search every mapped session by metadata and native thread content."""
+
+        term = " ".join(str(query or "").split()).strip()[:200]
+        if not term:
+            return {"results": [], "contentSearch": False, "contentError": "", "truncated": False}
+        limit = max(1, min(int(limit), 100))
+        results: dict[str, dict[str, Any]] = {}
+        for session in await asyncio.to_thread(self.store.search_sessions, user, profile, term, limit):
+            identity = f"{session.get('session_id', '')}\n{session.get('thread_id', '')}".casefold()
+            results[str(session["session_id"])] = {
+                **session,
+                "matched": "id" if term.casefold() in identity else "title",
+                "snippet": "",
+            }
+
+        content_search = False
+        content_error = ""
+        truncated = False
+        try:
+            connection = await self._connection(user, profile)
+            cursor: str | None = None
+            seen_threads: set[str] = set()
+            for _ in range(4):
+                params: dict[str, Any] = {"searchTerm": term}
+                if cursor:
+                    params["cursor"] = cursor
+                response = await connection.request("thread/search", params)
+                content_search = True
+                data = response.get("data") if isinstance(response, dict) else None
+                if not isinstance(data, list):
+                    break
+                page: list[tuple[str, dict[str, Any]]] = []
+                for item in data:
+                    if not isinstance(item, dict):
+                        continue
+                    thread = item.get("thread") if isinstance(item.get("thread"), dict) else {}
+                    thread_id = str(thread.get("id") or "")
+                    if thread_id and thread_id not in seen_threads:
+                        seen_threads.add(thread_id)
+                        page.append((thread_id, item))
+                mapped = await asyncio.to_thread(
+                    self.store.sessions_by_thread_ids, user, profile, [thread_id for thread_id, _ in page]
+                )
+                for thread_id, item in page:
+                    session = mapped.get(thread_id)
+                    if session is None:
+                        continue
+                    snippet = str(item.get("snippet") or "").strip()[:400]
+                    existing = results.get(str(session["session_id"]))
+                    if existing is None:
+                        results[str(session["session_id"])] = {**session, "matched": "content", "snippet": snippet}
+                    elif snippet and not existing.get("snippet"):
+                        existing["snippet"] = snippet
+                cursor = str(response.get("nextCursor") or "") or None
+                if not cursor or len(results) >= limit:
+                    break
+            truncated = bool(cursor)
+        except (RpcFailure, UnknownAcceptance, OSError, RuntimeError, TimeoutError, HTTPException) as exc:
+            content_error = _native_error_message(getattr(exc, "error", None)) or str(exc).strip()[:160]
+
+        ordered = sorted(
+            results.values(),
+            key=lambda item: (0 if item.get("matched") in ("title", "id") else 1, -float(item.get("updated_at") or 0)),
+        )
+        return {
+            "results": ordered[:limit],
+            "contentSearch": content_search,
+            "contentError": content_error,
+            "truncated": truncated or len(ordered) > limit,
+        }
+
     async def get_goal(self, user: str, profile: str, session_id: str) -> dict[str, Any]:
         """Return the native goal, including ``null`` when the session has none."""
 
@@ -2891,6 +3036,12 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
         """Return a page of identity-scoped session mappings."""
 
         return {"items": await asyncio.to_thread(service.store.list_sessions, _user(request), _safe(profile, "profile"), min(max(limit, 1), _MAX_PAGE), max(offset, 0), deleted, recent)}
+
+    @router.get("/search")
+    async def search(request: Request, profile: str = "default", q: str = "", limit: int = 60) -> dict[str, Any]:
+        """Search every session by title, id, or message content across the profile."""
+
+        return await service.search_sessions(_user(request), _safe(profile, "profile"), q, min(max(limit, 1), 100))
 
     @router.get("/execution-nodes")
     async def execution_nodes(request: Request, profile: str = "default") -> dict[str, Any]:

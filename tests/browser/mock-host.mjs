@@ -125,6 +125,13 @@ function apiPayload(url, method) {
     if (method === 'POST') return { session: { ...codex[0], id: `codex-new-${Date.now()}`, title: 'New chat' } };
     return { items: url.searchParams.get('deleted') === 'true' ? [] : codex };
   }
+  if (pathname === '/api/plugins/workbench/codex/search') {
+    return { results: [{
+      session_id: 'codex-regression', thread_id: 'codex-regression', title: 'Home rendering regression',
+      snippet: 'Server-side content needle: the render pipeline recovered after a stale snapshot.',
+      matched: 'content', updated_at: codex[1].updatedAt, deleted: false, group_name: 'Preview Project 1', status: 'idle',
+    }], contentSearch: true, contentError: '', truncated: false };
+  }
   if (pathname === '/api/plugins/workbench/codex/session' || pathname === '/api/plugins/workbench/codex/session/preview') {
     return { cached: true, turns: codexTurns() };
   }
@@ -149,6 +156,10 @@ function apiPayload(url, method) {
   } };
   if (pathname === '/api/plugins/workbench/session-prompts') return { first: 'Verify the local preview.', latest: 'Confirm that the home page and chat panes open correctly.' };
   if (pathname === '/api/profiles/sessions') return { sessions: hermes, total: hermes.length };
+  if (pathname === '/api/sessions/search') return { results: [{
+    session_id: 'hermes-preview', snippet: 'Server-side content needle: release workflow drill notes.',
+    role: 'user', source: 'web', model: 'preview-model', session_started: hermes[0].updated_at,
+  }] };
   if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/latest-descendant')) return {
     session_id: pathname.split('/')[3], path: [pathname.split('/')[3]],
   };
