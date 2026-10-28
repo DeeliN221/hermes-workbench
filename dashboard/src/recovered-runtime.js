@@ -4,7 +4,7 @@ import { reconcileMarkdownHtml } from './markdown-html';
 import { EditorView as Te, lineNumbers as aS, highlightActiveLine as iS, highlightActiveLineGutter as cS,
   syntaxHighlighting as Su, defaultHighlightStyle as mS, codeHighlightStyle as O2,
   codeLanguage as w2, fileLanguage as AL, fileLanguage as fM } from './editor-runtime';
-import { normalizeSession as Ll, listCodexSessions as i0, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessage as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
+import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as yQ, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessage as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
 import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
 import { optionalNumber as pn, firstDefined as oi, timestamp as El, record as mt, text as Ae } from './api-values';
@@ -3977,6 +3977,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       `/api/sessions/search?q=${ci(t)}&limit=100&profile=${ci(e)}&exclude_sources=cron`,
     );
     return Array.isArray(r.results) ? r.results : [];
+  }
+  function searchStamp(i) {
+    const e = Number(i);
+    if (!Number.isFinite(e) || e <= 0) return void 0;
+    return e < 1e12 ? e * 1e3 : e;
   }
   async function Zs(i, e, t) {
     return await i(`/api/sessions/${ci(t)}?profile=${ci(e)}`);
@@ -8524,6 +8529,38 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             (o.groupId && r.get(o.groupId)) || runtimeText("未整理", "Unorganized"),
             e,
           );
+    for (const o of i.serverHits || []) {
+      const kind = o.kind === "hermes" ? "hermes" : o.deleted ? "archived" : "session",
+        id = String(o.id || ""),
+        key = `${kind}:${id}`;
+      if (!id) continue;
+      const existing = n.find((row) => `${row.kind}:${row.id}` === key);
+      if (existing) {
+        existing.snippet ||= o.snippet || "";
+        existing.updatedAt ??= o.updatedAt;
+        continue;
+      }
+      if (s.has(key)) continue;
+      const known =
+        kind === "hermes"
+          ? i.hermesSessions.find((row) => String(row.id ?? row.session_id) === id)
+          : [...i.sessions, ...i.archivedSessions].find((row) => String(row.id) === id);
+      s.add(key);
+      n.push({
+        kind,
+        id,
+        title: o.title || known?.title || o.snippet || id,
+        updatedAt: o.updatedAt ?? known?.updatedAt,
+        groupName:
+          kind === "hermes"
+            ? runtimeText("Hermes 历史", "Hermes history")
+            : (known?.groupId && r.get(known.groupId)) || o.groupName || runtimeText("未整理", "Unorganized"),
+        score: 0,
+        matchedField: o.matched || "content",
+        snippet: o.snippet || "",
+        session: kind === "archived" ? known || { id, title: o.title || id, deleted: !0 } : void 0,
+      });
+    }
     return n.sort((o, a) => {
       if (t && a.score !== o.score) return a.score - o.score;
       const l = p0(a.updatedAt) - p0(o.updatedAt);
@@ -8552,6 +8589,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [b, p] = s(0),
         [m, O] = s(""),
         [g, _] = s(""),
+        [serverHits, setServerHits] = s([]),
+        [serverLoading, setServerLoading] = s(!1),
+        [serverError, setServerError] = s(""),
         w = r(
           () =>
             c5({
@@ -8560,8 +8600,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               archivedSessions: a.archivedSessions,
               groups: a.groups,
               hermesSessions: a.hermesSessions,
+              serverHits,
             }),
-          [a.archivedSessions, a.groups, a.hermesSessions, a.sessions, f],
+          [a.archivedSessions, a.groups, a.hermesSessions, a.sessions, f, serverHits],
         ),
         v = w.slice(0, xd),
         x = w.length > v.length;
@@ -8592,6 +8633,65 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             }
           );
         }, [a.open]),
+        t(() => {
+          if (!a.open) {
+            (setServerHits([]), setServerLoading(!1), setServerError(""));
+            return;
+          }
+          const R = f.trim();
+          if (!R) {
+            (setServerHits([]), setServerLoading(!1), setServerError(""));
+            return;
+          }
+          let M = !0;
+          (setServerLoading(!0), setServerError(""));
+          const H = window.setTimeout(() => {
+            Promise.allSettled([
+              a.fetchJSON && a.profile ? yQ(a.fetchJSON, a.profile, R) : Promise.resolve([]),
+              a.fetchJSON && a.profile ? Jx(a.fetchJSON, a.profile, R) : Promise.resolve([]),
+            ])
+              .then(([U, ee]) => {
+                if (!M) return;
+                const ne = [];
+                if (U.status === "fulfilled")
+                  for (const xe of U.value)
+                    ne.push({
+                      ...xe,
+                      kind: xe.deleted ? "archived" : "session",
+                      updatedAt: searchStamp(xe.updatedAt),
+                    });
+                if (ee.status === "fulfilled")
+                  for (const xe of ee.value) {
+                    if (String(xe.source || "").toLowerCase() === "codex") continue;
+                    const Ge = String(xe.session_id || "");
+                    Ge &&
+                      ne.push({
+                        kind: "hermes",
+                        id: Ge,
+                        title: "",
+                        snippet: String(xe.snippet || ""),
+                        updatedAt: searchStamp(xe.session_started),
+                        matched: "content",
+                      });
+                  }
+                (setServerHits(ne),
+                  U.status === "rejected" &&
+                    ee.status === "rejected" &&
+                    setServerError(
+                      runtimeText(
+                        "全量会话搜索暂时不可用，仅显示已加载的会话。",
+                        "Full session search is unavailable; showing loaded sessions only.",
+                      ),
+                    ));
+              })
+              .finally(() => {
+                M && setServerLoading(!1);
+              });
+          }, 220);
+          return () => {
+            ((M = !1), window.clearTimeout(H));
+          };
+        }, [a.open, a.profile, f]),
         t(() => {
           p((R) => Math.min(R, Math.max(v.length - 1, 0)));
         }, [v.length]),
@@ -8692,6 +8792,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     { className: "codex-session-search-result-meta" },
                     E(R),
                   ),
+                  R.snippet
+                    ? Mt(
+                        e,
+                        "span",
+                        { className: "codex-session-search-result-snippet" },
+                        R.snippet,
+                      )
+                    : null,
                 ),
                 Mt(
                   e,
@@ -8737,6 +8845,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   { className: "codex-session-search-result-meta" },
                   E(R),
                 ),
+                R.snippet
+                  ? Mt(
+                      e,
+                      "span",
+                      { className: "codex-session-search-result-snippet" },
+                      R.snippet,
+                    )
+                  : null,
               );
         }),
         A = w.length
@@ -8745,10 +8861,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               e,
               "div",
               { className: "codex-session-search-empty", role: "status" },
-              a.hermesHistoryLoading
-                ? runtimeText("正在读取 Hermes 历史…", "Loading Hermes history…")
+              a.hermesHistoryLoading || serverLoading
+                ? runtimeText("正在搜索全部会话…", "Searching all sessions…")
                 : f.trim()
-                  ? runtimeText("没有匹配的已加载会话", "No matching loaded sessions")
+                  ? runtimeText("没有匹配的会话", "No matching sessions")
                   : runtimeText("暂无最近会话", "No recent sessions"),
             );
       return Mt(
@@ -8794,7 +8910,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               (S(R.target.value), p(0));
             },
             onKeyDown: C,
-            placeholder: runtimeText("搜索标题、会话 ID 或项目", "Search titles, session IDs or projects"),
+            placeholder: runtimeText("搜索标题、内容、会话 ID 或项目", "Search titles, content, session IDs or projects"),
             "aria-label": runtimeText("搜索会话", "Search sessions"),
             "aria-activedescendant": v[b] ? Cd(v[b]) : void 0,
             autoComplete: "off",
@@ -8805,7 +8921,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 e,
                 "div",
                 { className: "codex-session-search-notice", role: "status" },
-                runtimeText("仅搜索已加载的 Hermes 历史记录", "Searches loaded Hermes history only"),
+                runtimeText("Hermes 历史列表未全部加载；内容搜索仍覆盖服务端历史", "The Hermes history list is partial; content search still covers server history"),
               ),
           x
             ? Mt(
@@ -8817,12 +8933,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   : runtimeText(`仅显示最近的 ${xd} 条，可输入关键词查找其他会话`, `Showing the latest ${xd} sessions. Enter keywords to find others.`),
               )
             : null,
-          g
+          g || serverError
             ? Mt(
                 e,
                 "div",
                 { className: "codex-session-search-error", role: "alert" },
-                g,
+                g || serverError,
               )
             : null,
           Mt(
@@ -11897,6 +12013,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               hermesSessions: Ye,
               hermesHistoryLoading: Ni,
               hermesHistoryComplete: ut,
+              fetchJSON: i.fetchJSON,
+              profile: M,
               triggerRef: Fd,
               onClose: xM,
               onSelectSession: ev,

@@ -71,6 +71,26 @@ export async function listCodexSessions(read: FetchJSON, profile: string, option
     if (page.length < 100) return result.sort((a, b) => b.createdAt - a.createdAt || a.id.localeCompare(b.id));
   }
 }
+export interface CodexSessionSearchHit {
+  id: string; threadId: string; title: string; snippet: string; matched: 'title' | 'id' | 'content';
+  updatedAt: number | undefined; deleted: boolean; groupName: string; status: string; workspace: string; workspacePath: string;
+}
+/** Search all mapped Codex sessions; content comes from the native thread index. */
+export async function searchCodexSessions(read: FetchJSON, profile: string, query: string, limit = 60): Promise<CodexSessionSearchHit[]> {
+  const response = record(await read(`${API}/search?profile=${encode(profile)}&q=${encode(query)}&limit=${Math.max(1, Math.min(limit, 100))}`));
+  return rows(response, 'results').flatMap(value => {
+    const row = record(value), id = text(row.session_id ?? row.sessionId ?? row.id).trim();
+    if (!id) return [];
+    const matched = text(row.matched), rawUpdated = Number(row.updated_at ?? row.updatedAt);
+    return [{
+      id, threadId: text(row.thread_id ?? row.threadId), title: text(row.title, id), snippet: text(row.snippet),
+      matched: matched === 'id' || matched === 'content' ? matched : 'title',
+      updatedAt: Number.isFinite(rawUpdated) && rawUpdated > 0 ? rawUpdated : undefined, deleted: row.deleted === true,
+      groupName: text(row.group_name ?? row.groupName), status: text(row.status),
+      workspace: text(row.workspace_id ?? row.workspace), workspacePath: text(row.workspace_path ?? row.workspacePath),
+    }];
+  });
+}
 export function normalizeGroup(value: unknown): CodexGroup | null {
   const row = record(value), id = text(row.id ?? row.groupId ?? row.group_id).trim(), name = text(row.name ?? row.title).trim();
   return id && name ? { id, name, workspaceId: text(row.workspaceId ?? row.workspace_id).trim(), workspacePath: text(row.workspacePath ?? row.workspace_path ?? row.path).trim() } : null;

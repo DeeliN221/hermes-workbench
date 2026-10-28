@@ -7901,6 +7901,17 @@ dialog.codex-session-search-dialog-backdrop::backdrop {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.codex-session-search-result-snippet {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--codex-search-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
 .codex-session-search-result-action {
   flex: 0 0 auto;
   min-width: max-content;
@@ -7939,6 +7950,15 @@ dialog.codex-session-search-dialog-backdrop::backdrop {
   border-radius: 0.4rem;
   color: var(--codex-search-muted);
   background: var(--codex-search-surface-soft);
+  font-size: 0.8rem;
+}
+.codex-session-search-error {
+  flex: 0 0 auto;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid color-mix(in srgb, var(--mc-danger, #c45151) 42%, var(--codex-search-border));
+  border-radius: 0.4rem;
+  color: var(--mc-danger, #c45151);
+  background: color-mix(in srgb, var(--mc-danger, #c45151) 8%, transparent);
   font-size: 0.8rem;
 }
 .codex-session-search-dialog button,
