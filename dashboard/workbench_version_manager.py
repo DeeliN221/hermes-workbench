@@ -32,7 +32,8 @@ if not re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', REPOSITORY):
 VERSION_RE = re.compile(r'^[0-9A-Za-z][0-9A-Za-z._+-]{0,63}$')
 DATE_VERSION_RE = re.compile(r'^[0-9]{8}-[1-9][0-9]*$')
 SEMVER_RE = re.compile(r'^(\d+)\.(\d+)\.(\d+)(?:-([\w.-]+))?(?:\+[\w.-]+)?$')
-ASSETS = ('workbench.js', 'workbench.css', 'mermaid.min.js')
+ASSETS = ('workbench.js', 'workbench.css', 'pele.global.js', 'mermaid.min.js')
+OPTIONAL_ASSETS = frozenset(('pele.global.js', 'mermaid.min.js'))
 _lock = threading.Lock()
 _catalog_lock = threading.Lock()
 _admission_lock = threading.Lock()
@@ -315,7 +316,12 @@ def _download_release(version: str, progress=None) -> Path:
             if manifest.get('version') != version or metadata.get('version') != version:
                 raise ValueError('Release version mismatch')
             for asset in ASSETS:
-                content = read_member('plugin/dashboard/dist/' + asset, 20 * 1024 * 1024)
+                try:
+                    content = read_member('plugin/dashboard/dist/' + asset, 20 * 1024 * 1024)
+                except KeyError:
+                    if asset in OPTIONAL_ASSETS:
+                        continue
+                    raise
                 if not content:
                     raise ValueError('Empty release asset')
                 (stage / asset).write_bytes(content)

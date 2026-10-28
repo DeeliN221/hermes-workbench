@@ -6,14 +6,13 @@ import { uiText } from './ui-locale';
 
 type PreviewKind = 'markdown' | 'image' | 'pdf' | 'text' | 'download' | 'plantuml';
 type EditableDocument = { path: string; content: string; version: string };
-type MermaidAPI = {
-  initialize: (config: Record<string, unknown>) => void;
-  render: (id: string, definition: string, container?: Element) => Promise<{ svg: string; bindFunctions?: (element: Element) => void }>;
+type PeleAPI = {
+  render: (source: string, options?: Record<string, unknown>) => { svg: string };
 };
 
-const MERMAID_SCRIPT_ID = 'hti-mermaid-runtime';
-const MERMAID_SCRIPT_URL = '/dashboard-plugins/workbench/dist/mermaid.min.js';
-let mermaidLoad: Promise<MermaidAPI> | undefined;
+const PELE_SCRIPT_ID = 'hti-pele-runtime';
+const PELE_SCRIPT_URL = '/dashboard-plugins/workbench/dist/pele.global.js';
+let peleLoad: Promise<PeleAPI> | undefined;
 let previewObjectUrls: string[] = [];
 let mermaidSequence = 0;
 const previewHistory: { overlay: HTMLElement; urls: string[]; scrollTop: number; focus: HTMLElement | null }[] = [];
@@ -59,52 +58,51 @@ function objectUrl(blob: Blob): string {
   return url;
 }
 
-function mermaidGlobal(): MermaidAPI | undefined {
-  return (window as unknown as { mermaid?: MermaidAPI }).mermaid;
+function peleGlobal(): PeleAPI | undefined {
+  return (window as unknown as { pele?: PeleAPI }).pele;
 }
 
-function loadMermaid(): Promise<MermaidAPI> {
-  const loaded = mermaidGlobal();
+function diagramFontFamily(): string {
+  const root = getComputedStyle(document.documentElement).getPropertyValue('--theme-font-sans').trim();
+  const body = document.body
+    ? getComputedStyle(document.body).getPropertyValue('--theme-font-sans').trim()
+    : '';
+  return root || body || '"Workbench Sans SC", ui-sans-serif, system-ui, sans-serif';
+}
+
+function loadPele(): Promise<PeleAPI> {
+  const loaded = peleGlobal();
   if (loaded) return Promise.resolve(loaded);
-  if (mermaidLoad) return mermaidLoad;
-  mermaidLoad = new Promise<MermaidAPI>((resolve, reject) => {
-    const existing = document.getElementById(MERMAID_SCRIPT_ID) as HTMLScriptElement | null;
+  if (peleLoad) return peleLoad;
+  peleLoad = new Promise<PeleAPI>((resolve, reject) => {
+    const existing = document.getElementById(PELE_SCRIPT_ID) as HTMLScriptElement | null;
     const script = existing || document.createElement('script');
     const finish = () => {
-      const api = mermaidGlobal();
+      const api = peleGlobal();
       if (api) resolve(api);
-      else reject(new Error(uiText('Mermaid 运行时未注册', 'Mermaid runtime is unavailable')));
+      else reject(new Error(uiText('Pele 运行时未注册', 'Pele runtime is unavailable')));
     };
     script.addEventListener('load', finish, { once: true });
-    script.addEventListener('error', () => reject(new Error(uiText('Mermaid 运行时加载失败', 'Could not load Mermaid runtime'))), { once: true });
+    script.addEventListener('error', () => reject(new Error(uiText('Pele 运行时加载失败', 'Could not load Pele runtime'))), { once: true });
     if (!existing) {
-      script.id = MERMAID_SCRIPT_ID;
-      script.src = MERMAID_SCRIPT_URL;
+      script.id = PELE_SCRIPT_ID;
+      script.src = PELE_SCRIPT_URL;
       script.async = true;
       document.head.appendChild(script);
     }
   }).catch(error => {
-    mermaidLoad = undefined;
+    peleLoad = undefined;
     throw error;
   });
-  return mermaidLoad;
+  return peleLoad;
 }
 
-/** Render fenced ```mermaid blocks after safe Markdown conversion. */
+/** Render fenced ```mermaid blocks with the local Pele renderer. */
 export async function renderMermaidBlocks(root: HTMLElement): Promise<number> {
   const blocks = Array.from(root.querySelectorAll<HTMLElement>('pre > code.language-mermaid'));
   if (!blocks.length) return 0;
-  const mermaid = await loadMermaid();
-  const dark = document.documentElement.classList.contains('dark')
-    || document.documentElement.getAttribute('data-theme')?.includes('dark');
-  mermaid.initialize({
-    startOnLoad: false,
-    securityLevel: 'strict',
-    suppressErrorRendering: true,
-    layout: 'dagre',
-    look: 'classic',
-    theme: dark ? 'dark' : 'default',
-  });
+  const pele = await loadPele();
+  const fontFamily = diagramFontFamily();
   let rendered = 0;
   for (const code of blocks) {
     const source = code.textContent || '';
@@ -113,9 +111,14 @@ export async function renderMermaidBlocks(root: HTMLElement): Promise<number> {
     host.setAttribute('role', 'img');
     host.setAttribute('aria-label', uiText('Mermaid 图表', 'Mermaid diagram'));
     try {
-      const result = await mermaid.render(`hti-mermaid-${Date.now()}-${mermaidSequence++}`, source);
+      const result = pele.render(source, {
+        idPrefix: `hti-mermaid-${Date.now()}-${mermaidSequence++}`,
+        fontFamily,
+        responsive: true,
+        autoDirection: true,
+        linkRel: 'noopener noreferrer',
+      });
       host.innerHTML = result.svg;
-      result.bindFunctions?.(host);
       code.parentElement?.replaceWith(host);
       rendered += 1;
     } catch (error) {

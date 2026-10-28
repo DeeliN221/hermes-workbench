@@ -9,7 +9,7 @@ describe('Files preview browser interaction', () => {
     document.getElementById('hti-file-preview')?.remove();
     delete (window as any).__HERMES_WORKBENCH_FILES_PREVIEW__;
     delete (window as any).__HERMES_PLUGIN_SDK__;
-    delete (window as any).mermaid;
+    delete (window as any).pele;
     window.history.replaceState(null, '', '/');
   });
 
@@ -54,9 +54,9 @@ describe('Files preview browser interaction', () => {
     expect(implicitDownloads).toBe(0);
   });
 
-  it('uses Mermaid render without a detached container argument', async () => {
-    const render = vi.fn(async () => ({ svg: '<svg aria-label="diagram"></svg>' }));
-    (window as any).mermaid = { initialize: vi.fn(), render };
+  it('renders Mermaid fences with the local Pele runtime', async () => {
+    const render = vi.fn(() => ({ svg: '<svg aria-label="diagram"></svg>' }));
+    (window as any).pele = { render };
     const root = document.createElement('div');
     const pre = document.createElement('pre');
     const code = document.createElement('code');
@@ -66,7 +66,10 @@ describe('Files preview browser interaction', () => {
     root.appendChild(pre);
 
     expect(await renderMermaidBlocks(root)).toBe(1);
-    expect(render).toHaveBeenCalledWith(expect.stringMatching(/^hti-mermaid-/), 'graph LR\nA-->B');
+    expect(render).toHaveBeenCalledWith('graph LR\nA-->B', expect.objectContaining({
+      idPrefix: expect.stringMatching(/^hti-mermaid-/),
+      responsive: true,
+    }));
     expect(root.querySelector('.hti-mermaid svg')).not.toBeNull();
   });
 

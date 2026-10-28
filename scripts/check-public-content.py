@@ -41,7 +41,7 @@ def main():
     if dist.exists():
         files.extend(
             p for p in dist.rglob('*')
-            if p.is_file() and p.name not in {'mermaid.min.js', 'build-provenance.json'}
+            if p.is_file() and p.name not in {'pele.global.js', 'build-provenance.json'}
         )
     errors = []
     for path in files:

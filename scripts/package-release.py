@@ -24,7 +24,7 @@ with tempfile.TemporaryDirectory() as tmp:
     dist.mkdir(parents=True)
     for src, dst in [('dist/loader.js', 'index.js'), ('loader.css', 'style.css'),
                      ('dist/index.js', 'workbench.js'), ('dist/style.css', 'workbench.css'),
-                     ('dist/mermaid.min.js', 'mermaid.min.js')]:
+                     ('dist/pele.global.js', 'pele.global.js')]:
         shutil.copy2(root / 'dashboard' / src, dist / dst)
     shutil.copytree(root / 'dashboard/dist/plantuml', dist / 'plantuml')
     shutil.copy2(root / 'dashboard/manifest.json', plugin / 'manifest.json')

@@ -70,7 +70,7 @@ Install `plugin/` into the host's Workbench plugin directory. In `dashboard/dist
 
 - `index.js` and `style.css` are stable thin loaders.
 - `workbench.js` and `workbench.css` contain this release's actual interface.
-- `mermaid.min.js` supplies local Mermaid rendering.
+- `pele.global.js` supplies local Mermaid rendering with Pele.
 
 Do not overwrite the plugin loader's `index.js` with the source build's `index.js`.
 The backend uses `sidecar/dashboard/`, retaining its original `dist/index.js` and

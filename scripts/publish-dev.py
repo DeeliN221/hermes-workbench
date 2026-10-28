@@ -43,7 +43,7 @@ backup.mkdir(parents=True)
 files = {'dist/index.js': args.source / 'dist/loader.js',
          'dist/workbench.js': args.source / 'dist/index.js',
          'dist/workbench.css': args.source / 'dist/style.css',
-         'dist/mermaid.min.js': args.source / 'dist/mermaid.min.js',
+         'dist/pele.global.js': args.source / 'dist/pele.global.js',
          'manifest.json': args.source / 'manifest.json'}
 for asset in sorted((args.source / 'dist/plantuml').glob('*')):
     if asset.is_file():files['dist/plantuml/'+asset.name] = asset

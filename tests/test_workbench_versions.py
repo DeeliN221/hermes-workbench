@@ -28,12 +28,14 @@ def home(tmp_path, monkeypatch):
     return tmp_path
 
 
-def bundle(version='0.7.0'):
+def bundle(version='0.7.0', renderer='pele'):
+    renderer_asset = {'pele': 'pele.global.js', 'mermaid': 'mermaid.min.js'}[renderer]
     data = io.BytesIO()
     with tarfile.open(fileobj=data, mode='w:gz') as archive:
         files = {'release.json': json.dumps({'version': version}),
                  'plugin/dashboard/manifest.json': json.dumps({'version': version})}
-        files.update({'plugin/dashboard/dist/' + name: 'new-' + name for name in versions.ASSETS})
+        files.update({'plugin/dashboard/dist/' + name: 'new-' + name
+                      for name in (*versions.ASSETS[:2], renderer_asset)})
         for name, value in files.items():
             encoded = value.encode()
             member = tarfile.TarInfo(f'hermes-workbench-v0.7.0/{name}')
@@ -79,10 +81,17 @@ def test_manual_switch_downloads_and_retains_rollback(home, monkeypatch):
     setup_remote(monkeypatch)
     assert versions._switch('0.7.0')['active'] == '0.7.0'
     assert versions._manifest_version() == '0.7.0'
-    assert (versions.DIST / 'mermaid.min.js').read_text() == 'new-mermaid.min.js'
+    assert (versions.DIST / 'pele.global.js').read_text() == 'new-pele.global.js'
     versions._switch('0.6.43-codex.14')
     assert (versions.DIST / 'workbench.js').read_text() == 'old-workbench.js'
     assert versions._manifest_version() == '0.6.43-codex.14'
+
+
+def test_download_accepts_legacy_mermaid_release(home, monkeypatch):
+    setup_remote(monkeypatch, data=bundle(renderer='mermaid'))
+    target = versions._download_release('0.7.0')
+    assert (target / 'mermaid.min.js').read_text() == 'new-mermaid.min.js'
+    assert not (target / 'pele.global.js').exists()
 
 
 @pytest.mark.parametrize('kind', ['checksum', 'version'])

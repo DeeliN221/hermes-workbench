@@ -307,8 +307,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       }
     );
   }
-  const Jf = "hti-mermaid-runtime",
-    S1 = "/dashboard-plugins/workbench/dist/mermaid.min.js";
+  const Jf = "hti-pele-runtime",
+    S1 = "/dashboard-plugins/workbench/dist/pele.global.js";
   let Xs,
     vc = [],
     b1 = 0;
@@ -337,7 +337,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return (vc.push(e), e);
   }
   function ep() {
-    return window.mermaid;
+    return window.pele;
   }
   function kc() {
     const i = ep();
@@ -354,8 +354,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   : t(
                       new Error(
                         ge(
-                          "Mermaid 运行时未注册",
-                          "Mermaid runtime is unavailable",
+                          "Pele 运行时未注册",
+                          "Pele runtime is unavailable",
                         ),
                       ),
                     );
@@ -367,8 +367,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   t(
                     new Error(
                       ge(
-                        "Mermaid 运行时加载失败",
-                        "Could not load Mermaid runtime",
+                        "Pele 运行时加载失败",
+                        "Could not load Pele runtime",
                       ),
                     ),
                   ),
@@ -386,35 +386,22 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   }
   function v1() {
     const i = document.documentElement,
-      e = sr(i.getAttribute(bc)),
-      t = i.getAttribute("data-theme") || "",
-      r =
-        e === "dark" ||
-        i.classList.contains("dark") ||
-        t.toLowerCase().includes("dark"),
+      e = document.body,
       n =
         getComputedStyle(i).getPropertyValue("--theme-font-sans").trim() ||
-        (document.body
-          ? getComputedStyle(document.body)
+        (e
+          ? getComputedStyle(e)
               .getPropertyValue("--theme-font-sans")
               .trim()
           : "") ||
         '"Workbench Sans SC", ui-sans-serif, system-ui, sans-serif';
-    return { theme: r ? "dark" : "default", themeVariables: { fontFamily: n } };
+    return { fontFamily: n, responsive: !0, autoDirection: !0 };
   }
   async function y1(i) {
     const e = Array.from(i.querySelectorAll("pre > code.language-mermaid"));
     if (!e.length) return 0;
     const t = await kc(),
       r = v1();
-    t.initialize({
-      startOnLoad: !1,
-      securityLevel: "strict",
-      suppressErrorRendering: !0,
-      layout: "dagre",
-      look: "classic",
-      ...r,
-    });
     let n = 0;
     for (const s of e) {
       const o = s.textContent || "",
@@ -423,9 +410,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         a.setAttribute("role", "img"),
         a.setAttribute("aria-label", ge("Mermaid 图表", "Mermaid diagram")));
       try {
-        const l = await t.render(`hti-mermaid-${Date.now()}-${b1++}`, o);
+        const l = t.render(o, {
+          idPrefix: `hti-mermaid-${Date.now()}-${b1++}`,
+          linkRel: "noopener noreferrer",
+          ...r,
+        });
         ((a.innerHTML = l.svg),
-          l.bindFunctions?.(a),
           s.parentElement?.replaceWith(a),
           (n += 1));
       } catch (l) {
@@ -4406,23 +4396,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       i.appendChild(t));
   }
   function zb(i) {
-    i.initialize({
-      startOnLoad: !1,
-      securityLevel: "strict",
-      suppressErrorRendering: !0,
-      layout: "dagre",
-      look: "classic",
-      theme: Q2() ? "dark" : "default",
-      themeVariables: { fontFamily: P2() },
-    });
+    void i;
   }
   async function Xb(i, e, t, r = () => !0) {
     const n = e.querySelector(".hti-rich-mermaid-svg");
     if (!n) return;
-    const s = await i.render(`hti-rich-mermaid-${Date.now()}-${m2++}`, t);
+    const s = i.render(t, {
+      idPrefix: `hti-rich-mermaid-${Date.now()}-${m2++}`,
+      fontFamily: P2(),
+      responsive: !0,
+      autoDirection: !0,
+      linkRel: "noopener noreferrer",
+    });
     r() &&
       ((n.innerHTML = s.svg),
-      s.bindFunctions?.(n),
       e.classList.remove("hti-rich-mermaid-error"),
       e.querySelector(".hti-rich-mermaid-error-note")?.remove());
   }
