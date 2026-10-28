@@ -6,6 +6,7 @@ import './recovered-runtime.css';
 // Workbench runtime's smaller embedded dictionary alone.
 import './zh-locale';
 import './recovered-runtime.js';
+import './pele-theme.css';
 import { installKanbanDeleteBoardScope } from './kanban-delete-board-scope';
 
 installKanbanDeleteBoardScope();

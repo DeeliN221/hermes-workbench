@@ -18,7 +18,7 @@ def source_digest(root):
 
 def asset_hashes(root):
     return {name: hashlib.sha256((root/'dashboard/dist'/name).read_bytes()).hexdigest()
-            for name in ['index.js', 'loader.js', 'style.css', 'mermaid.min.js']
+            for name in ['index.js', 'loader.js', 'style.css', 'pele.global.js']
             + [str(p.relative_to(root/'dashboard/dist')) for p in sorted((root/'dashboard/dist/plantuml').rglob('*')) if p.is_file()]}
 
 if __name__ == '__main__':

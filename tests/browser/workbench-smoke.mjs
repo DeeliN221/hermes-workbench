@@ -26,6 +26,25 @@ try {
     await page.close();
   }
 
+  const diagramPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const diagramErrors = [];
+  diagramPage.on('pageerror', error => diagramErrors.push(error.stack || error.message));
+  await diagramPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  const diagram = diagramPage.locator('.hti-rich-mermaid-svg svg').first();
+  await diagram.waitFor({ state: 'visible', timeout: 8000 });
+  const diagramInfo = await diagram.evaluate(node => ({
+    className: node.getAttribute('class') || '',
+    text: node.textContent || '',
+    width: node.getBoundingClientRect().width,
+  }));
+  assert.match(diagramInfo.className, /pele/);
+  assert.match(diagramInfo.text, /Chat/);
+  assert.match(diagramInfo.text, /Pele/);
+  assert.ok(diagramInfo.width > 0, 'Pele must render a visible SVG');
+  assert.equal(await diagramPage.locator('.hti-rich-mermaid-error').count(), 0, 'Pele must render without an error note');
+  assert.deepEqual(diagramErrors, [], `Browser errors while rendering Mermaid with Pele:\n${diagramErrors.join('\n')}`);
+  await diagramPage.close();
+
   const profilePage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const profileErrors = [];
   profilePage.on('pageerror', error => profileErrors.push(error.stack || error.message));

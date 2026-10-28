@@ -6,7 +6,7 @@ Dependencies and any retained third-party notices remain under their original li
 The optional Hermes compatibility patch in `integrations/hermes` is distributed
 under MIT. Its upstream notice is retained in `integrations/hermes/LICENSE-Hermes.txt`.
 
-The browser bundle uses CodeMirror (MIT), xterm.js (MIT), Mermaid (MIT),
+The browser bundle uses CodeMirror (MIT), xterm.js (MIT), Pele (MIT),
 micromark (MIT) and micromark-extension-gfm (MIT). Transitive dependencies
 are recorded in pnpm-lock.yaml. Hermes supplies React through its plugin SDK;
 Workbench must not bundle another React runtime.

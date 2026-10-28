@@ -11,6 +11,7 @@ const ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const ASSETS = new Map([
   ['/workbench.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/index.js') }],
   ['/style.css', { type: 'text/css; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/style.css') }],
+  ['/dashboard-plugins/workbench/dist/pele.global.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/pele.global.js') }],
   ['/react.development.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'node_modules/react/umd/react.development.js') }],
   ['/react-dom.development.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'node_modules/react-dom/umd/react-dom.development.js') }],
 ]);
@@ -103,7 +104,7 @@ function codexTurns() {
     id: 'preview-turn', status: 'completed',
     items: [
       { id: 'preview-user', type: 'userMessage', content: [{ type: 'text', text: 'Please verify that the local preview opens correctly.' }] },
-      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.' }] },
+      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.\n\n```mermaid\nflowchart LR\n  Chat --> Pele\n  Pele --> SVG\n```' }] },
     ],
   }];
 }

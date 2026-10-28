@@ -68,9 +68,10 @@ class ReleaseStore:
                     'sidecar/dashboard/sidecar_app.py', 'sidecar/dashboard/workbench_version_manager.py',
                     'sidecar/dashboard/release_runtime.py', 'plugin/dashboard/dist/index.js',
                     'plugin/dashboard/dist/style.css', 'plugin/dashboard/dist/workbench.js',
-                    'plugin/dashboard/dist/workbench.css', 'plugin/dashboard/dist/mermaid.min.js',
+                    'plugin/dashboard/dist/workbench.css',
                     'sidecar/dashboard/dist/index.js', 'sidecar/dashboard/dist/style.css']
-        if not all(name in hashes for name in required):
+        renderer_assets = ('plugin/dashboard/dist/pele.global.js', 'plugin/dashboard/dist/mermaid.min.js')
+        if not all(name in hashes for name in required) or not any(name in hashes for name in renderer_assets):
             raise ValueError('Incomplete release inventory')
         for name, digest in hashes.items():
             relative = PurePosixPath(name)

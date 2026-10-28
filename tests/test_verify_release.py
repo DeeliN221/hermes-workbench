@@ -18,7 +18,7 @@ def verify(tmp_path, bundle, missing_asset=None):
         "index.js": bundle,
         "loader.js": "/* compiled loader */",
         "style.css": "body{}",
-        "mermaid.min.js": "window.mermaid={}",
+        "pele.global.js": "window.pele={}",
         "plantuml/runtime.js": "window.plantuml={}",
         "plantuml/plantuml.js": "window.plantuml.render=()=>{}",
         "plantuml/viz-global.js": "window.Viz={}",
@@ -46,7 +46,7 @@ def test_rejects_invalid_bundle(tmp_path, bundle):
     assert verify(tmp_path, bundle).returncode != 0
 
 
-@pytest.mark.parametrize("asset", ["index.js", "loader.js", "style.css", "mermaid.min.js",
+@pytest.mark.parametrize("asset", ["index.js", "loader.js", "style.css", "pele.global.js",
                                    "plantuml/runtime.js", "plantuml/plantuml.js", "plantuml/viz-global.js"])
 def test_requires_all_assets(tmp_path, asset):
     bundle = 'hermes.workbench.zh-dashboard;{Achievements:"成就",kanban:"看板"}'

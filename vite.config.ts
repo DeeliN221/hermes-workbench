@@ -66,10 +66,10 @@ function dashboardSDKBoundary(): Plugin {
   };
 }
 
-/** Ship Mermaid as a same-origin lazy asset instead of inflating the main IIFE. */
-function selfHostedMermaid(): Plugin {
+/** Ship Pele as a same-origin lazy asset instead of inflating the main IIFE. */
+function selfHostedDiagramRuntimes(): Plugin {
   return {
-    name: 'self-hosted-mermaid-runtime',
+    name: 'self-hosted-diagram-runtimes',
     apply: 'build',
     buildStart() {
       for (const name of readdirSync(path.resolve(integrationRoot, 'dashboard/vendor/plantuml'))) {
@@ -78,8 +78,8 @@ function selfHostedMermaid(): Plugin {
       }
       this.emitFile({
         type: 'asset',
-        fileName: 'mermaid.min.js',
-        source: readFileSync(path.resolve(integrationRoot, 'node_modules/mermaid/dist/mermaid.min.js')),
+        fileName: 'pele.global.js',
+        source: readFileSync(path.resolve(integrationRoot, 'node_modules/pele/dist/pele.global.js')),
       });
     },
   };
@@ -88,7 +88,7 @@ function selfHostedMermaid(): Plugin {
 export default defineConfig({
   // 独立插件只发布自身 bundle，不复制任何宿主应用的静态资源。
   publicDir: false,
-  plugins: [dashboardSDKBoundary(), selfHostedMermaid()],
+  plugins: [dashboardSDKBoundary(), selfHostedDiagramRuntimes()],
   build: {
     outDir: path.resolve(integrationRoot, 'dashboard/dist'),
     emptyOutDir: true,

@@ -1,0 +1,33 @@
+/* Keep Pele SVGs in the same light/dark palette as the surrounding Markdown. */
+.hti-mermaid,
+.hti-rich-mermaid {
+  --pele-bg: transparent;
+  --pele-fg: var(--hti-md-text, var(--color-foreground, #172033));
+  --pele-muted: var(--hti-md-muted, var(--color-muted-foreground, #64748b));
+  --pele-line: color-mix(in srgb, var(--hti-md-text, currentColor) 72%, transparent);
+  --pele-surface: color-mix(in srgb, var(--hti-md-code, transparent) 82%, var(--hti-md-text, currentColor) 5%);
+  --pele-surface-alt: color-mix(in srgb, var(--hti-md-code, transparent) 72%, var(--hti-md-text, currentColor) 10%);
+  --pele-border: var(--hti-md-border, var(--color-border, #cbd5e1));
+  --pele-accent: var(--hti-md-accent, var(--color-primary, #2563eb));
+  --pele-font: var(--theme-font-sans, ui-sans-serif, system-ui, sans-serif);
+  --pele-font-mono: var(--theme-font-mono, ui-monospace, SFMono-Regular, Menlo, monospace);
+  --pele-radius: 4px;
+  --pele-critical: var(--color-destructive, var(--mc-danger, #b42318));
+  --pele-error: var(--color-destructive, var(--mc-danger, #b42318));
+  --pele-series-1: var(--hti-md-accent, var(--color-primary, #2563eb));
+  --pele-series-2: var(--color-success, #12866f);
+  --pele-series-3: var(--color-warning, #f28c28);
+  --pele-series-4: var(--color-destructive, #d94c4c);
+  --pele-series-5: color-mix(in srgb, var(--hti-md-accent, #2563eb) 55%, var(--color-success, #12866f));
+  --pele-series-6: color-mix(in srgb, var(--color-warning, #f28c28) 58%, var(--hti-md-accent, #2563eb));
+  --pele-series-7: color-mix(in srgb, var(--color-destructive, #d94c4c) 55%, var(--hti-md-accent, #2563eb));
+  --pele-series-8: var(--hti-md-muted, var(--color-muted-foreground, #64748b));
+}
+
+.hti-rich-mermaid-svg > svg,
+.hti-file-preview-body .hti-mermaid > svg {
+  display: block;
+  height: auto;
+  max-width: 100%;
+  margin-inline: auto;
+}

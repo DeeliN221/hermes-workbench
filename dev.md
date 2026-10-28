@@ -3,7 +3,7 @@
 # Development
 
 Requirements: Node.js 22.12+, the pnpm version declared in package.json, and Python 3.13 / uv.
-Mermaid diagrams require an ES2024-capable browser (Safari 17.4+ or a current Chrome/Firefox).
+Mermaid diagrams are rendered locally with Pele.
 
 ```sh
 pnpm install --frozen-lockfile
@@ -75,7 +75,7 @@ Workbench --> User : Show response
 
 Source viewing and copying remain available, including after a rendering error.
 Local rendering currently rejects `!include` and `!import`; inline those definitions.
-Mermaid fences continue to use Mermaid syntax and the existing renderer.
+Mermaid fences use Mermaid syntax and render with Pele.
 
 ## README showcase images
 

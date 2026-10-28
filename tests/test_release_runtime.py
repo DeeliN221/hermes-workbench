@@ -16,7 +16,7 @@ from release_runtime import ReleaseController, ReleaseStore, write_json, stop_si
 import workbench_version_manager as versions
 
 
-def release(store, version, broken=False):
+def release(store, version, broken=False, renderer='pele'):
     target = store.target(version)
     target.mkdir(parents=True)
     app = ('raise RuntimeError("deliberately broken test release")' if broken else f'''
@@ -37,7 +37,7 @@ HTTPServer(('127.0.0.1',int(sys.argv[1])),Handler).serve_forever()
         'sidecar/dashboard/release_runtime.py': 'test fixture',
         'plugin/dashboard/dist/index.js': 'loader', 'plugin/dashboard/dist/style.css': 'loader-css',
         'plugin/dashboard/dist/workbench.js': 'js', 'plugin/dashboard/dist/workbench.css': 'css',
-        'plugin/dashboard/dist/mermaid.min.js': 'mermaid',
+        'plugin/dashboard/dist/' + ('pele.global.js' if renderer == 'pele' else 'mermaid.min.js'): renderer,
         'sidecar/dashboard/dist/index.js': 'js', 'sidecar/dashboard/dist/style.css': 'css',
     }
     for name, text in files.items():
@@ -108,6 +108,12 @@ def test_verified_archive_and_cache_revalidation(store, tmp_path):
     file.write_text('tampered')
     with pytest.raises(ValueError, match='checksum'):
         store.stage(archive(source), '1.0.0')
+
+
+def test_accepts_legacy_mermaid_release(store, tmp_path):
+    source = release(ReleaseStore(tmp_path / 'source'), '1.0.0', renderer='mermaid')
+    store.stage(archive(source), '1.0.0')
+    assert (store.target('1.0.0') / 'plugin/dashboard/dist/mermaid.min.js').read_text() == 'mermaid'
 
 
 @pytest.mark.parametrize('extra', ['../../escape', '/absolute', 'plugin/dashboard/manifest.json'])
