@@ -27,8 +27,16 @@ import './selectable-markdown.css';
 
 import './kanban-workflow.css';
 import './kanban-card-schema.css';
+import './kanban-overview.css';
+import './kanban-assignee-recommendation.css';
 import { installKanbanCreateDialogBridge } from './kanban-create-dialog-bridge';
+import { installKanbanBoardOverview } from './kanban-overview';
+import { installChatCapacityFallback } from './chat-capacity-fallback';
+import './chat-capacity-fallback.css';
+
 installKanbanCreateDialogBridge();
+installKanbanBoardOverview();
+installChatCapacityFallback();
 
 import { installFilesDirectoryNavigation } from './files-directory-navigation';
 installFilesDirectoryNavigation();

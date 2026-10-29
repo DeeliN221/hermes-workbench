@@ -182,6 +182,80 @@ def test_kanban_activity_reads_many_logs_without_starting_sessions(
     assert rejected.status_code == 400
 
 
+def test_kanban_overview_reports_progress_and_delivery_success(
+    sidecar, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Board progress, card summaries and the run success rate share one read."""
+
+    module, client = sidecar
+    home = module.plugin_api._workspace_root()
+    monkeypatch.setenv("HERMES_KANBAN_HOME", str(home))
+    database = home / "kanban" / "boards" / "digital-hub" / "kanban.db"
+    database.parent.mkdir(parents=True)
+    connection = sqlite3.connect(database)
+    connection.executescript(
+        """
+        CREATE TABLE tasks (
+            id TEXT PRIMARY KEY, title TEXT, status TEXT, assignee TEXT, result TEXT,
+            created_at REAL, started_at REAL, completed_at REAL, last_failure_error TEXT
+        );
+        CREATE TABLE task_runs (
+            id INTEGER PRIMARY KEY, task_id TEXT, status TEXT, outcome TEXT,
+            summary TEXT, started_at REAL, ended_at REAL
+        );
+        """
+    )
+    connection.executemany(
+        "INSERT INTO tasks VALUES (?,?,?,?,?,?,?,?,?)",
+        [
+            ("t_done", "Ship the overview", "done", "project-manager", "Delivered the board overview", 10, 11, 12, None),
+            ("t_live", "Track the rollout", "running", "writer", None, 20, 21, None, None),
+            ("t_stuck", "Blocked delivery", "blocked", "default", None, 30, 31, None, "Provider refused the request"),
+        ],
+    )
+    connection.executemany(
+        "INSERT INTO task_runs VALUES (?,?,?,?,?,?,?)",
+        [
+            (1, "t_done", "done", "completed", "First delivery", 11, 12),
+            (2, "t_done", "crashed", "crashed", "Worker exited", 13, 14),
+            (3, "t_done", "done", "completed", "Second delivery", 15, 16),
+            (4, "t_live", "running", None, None, 21, None),
+            (5, "t_stuck", "blocked", "blocked", "Waiting for input", 31, None),
+        ],
+    )
+    connection.commit()
+    connection.close()
+    headers = {"X-Hermes-Proxy-Secret": "proxy-secret", "Remote-User": "alice"}
+    endpoint = "/api/plugins/workbench/kanban-overview"
+
+    response = client.post(endpoint, headers=headers, json={"board": "digital-hub"})
+    missing = client.post(endpoint, headers=headers, json={"board": "research"})
+    rejected = client.post(endpoint, headers=headers, json={"board": "../etc"})
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["available"] is True
+    assert payload["stats"]["tasks_total"] == 3
+    assert payload["stats"]["by_status"] == {"done": 1, "running": 1, "blocked": 1}
+    assert payload["stats"]["runs_total"] == 5
+    assert payload["stats"]["runs_completed"] == 2
+    assert payload["stats"]["runs_failed"] == 1
+    assert payload["stats"]["runs_in_flight"] == 1
+    assert payload["stats"]["runs_neutral"] == 1
+    assert payload["stats"]["success_rate"] == 0.6667
+    tasks = {item["task_id"]: item for item in payload["tasks"]}
+    assert tasks["t_done"]["summary"] == "Delivered the board overview"
+    assert tasks["t_done"]["latest_run"]["outcome"] == "completed"
+    assert tasks["t_done"]["run_count"] == 3
+    assert tasks["t_done"]["failed_runs"] == 1
+    assert tasks["t_live"]["latest_run"]["status"] == "running"
+    assert tasks["t_stuck"]["failure"] == "Provider refused the request"
+    assert missing.status_code == 200
+    assert missing.json()["available"] is False
+    assert missing.json()["stats"] is None
+    assert rejected.status_code == 400
+
+
 def test_kanban_task_keeps_its_first_session_binding(sidecar) -> None:
     """A board/task pair remains pinned to its first conversation."""
 

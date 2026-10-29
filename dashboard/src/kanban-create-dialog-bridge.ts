@@ -1,6 +1,9 @@
 import { uiText as sourceText } from './ui-locale';
 import { cardDocumentFromBody, renderCardDocument, validateCardDocument } from './kanban-card-schema';
 import { createCardFields } from './kanban-card-fields';
+import { agentDisplayName, loadKanbanProfiles } from './kanban-agent-picker';
+import { historyFromTasks, recommendAssignee, recommendationText, type AssigneeHistory, type AssigneeRecommendation } from './kanban-assignee-recommendation';
+import { fetchKanbanOverview } from './kanban-overview';
 /**
  * Shape the native Kanban create form without replacing its React submit/state logic.
  * Keep the fields needed to describe and schedule a task visible at the first level.
@@ -90,6 +93,109 @@ function labelText(element: Element): string {
   return element.textContent?.replace(/\s+/g, ' ').trim() || '';
 }
 
+type AssigneeAssistant = { root: HTMLElement; value: () => string };
+
+async function getUserJSON(url: string): Promise<any> {
+  const sdk = (window as any).__HERMES_PLUGIN_SDK__;
+  if (sdk?.fetchJSON) return sdk.fetchJSON(url);
+  const response = await authedFetch(url);
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  return response.json();
+}
+
+/**
+ * Suggest an execution profile while the card is being written.
+ *
+ * The suggestion is prefilled only until the person touches the selector, so
+ * typing a title never overwrites a deliberate choice.
+ */
+export function createAssigneeAssistant(
+  form: HTMLElement,
+  readIntent: () => { title: string; body: string },
+): AssigneeAssistant {
+  const root = document.createElement('div');
+  root.className = 'hti-kanban-create-assignee';
+  const label = document.createElement('label');
+  label.textContent = sourceText("执行 Agent（智能推荐）", "Execution agent (suggested)");
+  const select = document.createElement('select');
+  select.setAttribute('aria-label', sourceText("选择执行 Agent", "Select execution agent"));
+  const fallback = document.createElement('option');
+  fallback.value = '';
+  fallback.textContent = sourceText("交给调度器决定", "Let the dispatcher decide");
+  select.append(fallback);
+  const hint = document.createElement('p');
+  hint.className = 'hti-kanban-recommendation';
+  hint.hidden = true;
+  const apply = document.createElement('button');
+  apply.type = 'button';
+  apply.className = 'hti-kanban-apply-recommendation';
+  apply.textContent = sourceText("使用推荐", "Use suggestion");
+  apply.hidden = true;
+  const note = document.createElement('p');
+  note.className = 'hti-kanban-create-assignee-note';
+  note.textContent = sourceText(
+    "推荐依据标题、卡片要点和本看板的交付记录；可随时改写。",
+    "Suggested from the title, card details, and this board's delivery record; you can change it.",
+  );
+  root.append(label, select, hint, apply, note);
+
+  let profiles: string[] = [];
+  let history: AssigneeHistory = {};
+  let recommendation: AssigneeRecommendation | null = null;
+  let touched = false;
+  let timer = 0;
+
+  const render = () => {
+    const { title, body } = readIntent();
+    recommendation = profiles.length
+      ? recommendAssignee({ title, body, board: boardFromLocation(), profiles, history })
+      : null;
+    hint.hidden = !recommendation;
+    hint.textContent = recommendation ? recommendationText(recommendation) : '';
+    const current = recommendation;
+    apply.hidden = !current || select.value === current.assignee;
+    if (!touched && current && !select.value
+      && Array.from(select.options).some(option => option.value === current.assignee)) {
+      select.value = current.assignee;
+    }
+  };
+  const schedule = () => {
+    if (timer) window.clearTimeout(timer);
+    timer = window.setTimeout(render, 180);
+  };
+
+  select.addEventListener('change', () => {
+    touched = true;
+    apply.hidden = true;
+  });
+  apply.addEventListener('click', () => {
+    if (!recommendation) return;
+    select.value = recommendation.assignee;
+    touched = true;
+    apply.hidden = true;
+  });
+  // The title and card fields are siblings of this block, so listen on the form.
+  form.addEventListener('input', schedule, true);
+  form.addEventListener('change', schedule, true);
+
+  void Promise.all([
+    loadKanbanProfiles(getUserJSON, api('/profiles')).catch(() => [] as string[]),
+    fetchKanbanOverview(boardFromLocation()).catch(() => null),
+  ]).then(([names, overview]) => {
+    profiles = names;
+    history = historyFromTasks(overview?.tasks || []);
+    for (const name of profiles) {
+      const option = document.createElement('option');
+      option.value = name;
+      option.textContent = agentDisplayName(name);
+      select.append(option);
+    }
+    render();
+  });
+  window.setTimeout(render, 0);
+  return { root, value: () => select.value.trim() };
+}
+
 function installForm(form: HTMLElement): void {
   localizeDialogTitle(form);
   applyResolvedColors(form);
@@ -170,6 +276,14 @@ function installForm(form: HTMLElement): void {
   const createButton = () => Array.from(form.querySelectorAll<HTMLButtonElement>('button'))
     .find(button => /^(create|创建)$/i.test(button.textContent?.trim() || ''));
   const titleInput = titleField.querySelector<HTMLTextAreaElement | HTMLInputElement>('textarea, input');
+  const assigneeAssistant = createAssigneeAssistant(form, () => {
+    const card = editor.read();
+    return {
+      title: titleInput?.value || '',
+      body: [card.fields.background, card.fields.output, ...card.fields.acceptance, ...card.fields.boundaries].join('\n'),
+    };
+  });
+  editor.root.after(assigneeAssistant.root);
   let busy = false;
   const submit = async () => {
     if (busy) return;
@@ -186,7 +300,8 @@ function installForm(form: HTMLElement): void {
     };
     const assignee = Array.from(form.querySelectorAll<HTMLInputElement>('input')).find(input =>
       /assignee|specifier|负责人|分配/i.test(input.placeholder || ''));
-    if (assignee?.value.trim()) payload.assignee = assignee.value.trim();
+    const chosenAgent = assigneeAssistant.value() || assignee?.value.trim() || '';
+    if (chosenAgent) payload.assignee = chosenAgent;
     const numberInputs = Array.from(form.querySelectorAll<HTMLInputElement>('input[type=number]'));
     const priority = numberInputs.find(input => /pri/i.test(input.placeholder || ''));
     if (priority?.value) payload.priority = Number(priority.value) || 0;
@@ -245,6 +360,14 @@ function installInlineCreate(form: HTMLElement): void {
   form.dataset.htiCreateDialog = 'ready';
   const editor = createCardFields(cardDocumentFromBody(''), { showReview: true });
   title.after(editor.root);
+  const assigneeAssistant = createAssigneeAssistant(form, () => {
+    const card = editor.read();
+    return {
+      title: title.value || '',
+      body: [card.fields.background, card.fields.output, ...card.fields.acceptance, ...card.fields.boundaries].join('\n'),
+    };
+  });
+  editor.root.after(assigneeAssistant.root);
   const cancelButton = () => Array.from(form.querySelectorAll<HTMLButtonElement>('button'))
     .find(button => /^(cancel|取消)$/i.test(button.textContent?.trim() || ''));
   let busy = false;
@@ -262,7 +385,8 @@ function installInlineCreate(form: HTMLElement): void {
     };
     const inputs = Array.from(form.querySelectorAll<HTMLInputElement>('input'));
     const assignee = inputs.find(input => /assignee|specifier/i.test(input.placeholder || ''));
-    if (assignee?.value.trim()) payload.assignee = assignee.value.trim();
+    const chosenAgent = assigneeAssistant.value() || assignee?.value.trim() || '';
+    if (chosenAgent) payload.assignee = chosenAgent;
     const priority = inputs.find(input => input.type === 'number' && /pri/i.test(input.placeholder || ''));
     if (priority?.value) payload.priority = Number(priority.value) || 0;
     const skills = inputs.find(input => /skills/i.test(input.placeholder || ''));

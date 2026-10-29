@@ -13,7 +13,9 @@ const integrationRoot = path.dirname(fileURLToPath(import.meta.url));
 const MAX_IIFE_BYTES = 2 * 1024 * 1024;
 // The user-message navigator, custom color input, and Codex snapshot cache add
 // small UI/state helpers; keep headroom while the raw bundle stays below 2 MiB.
-const MAX_IIFE_GZIP_BYTES = 610 * 1024;
+// Kanban progress, profile suggestions, and the capacity notice add one more
+// small block of UI/state helpers; the raw bundle keeps ~160 KiB of slack.
+const MAX_IIFE_GZIP_BYTES = 616 * 1024;
 const FORBIDDEN_REACT_IMPORT = /^(?:react(?:\/.*)?|react-dom(?:\/.*)?)$/;
 const EMBEDDED_REACT_FINGERPRINTS = [
   '__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED',

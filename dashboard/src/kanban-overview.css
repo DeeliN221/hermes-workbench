@@ -1,0 +1,123 @@
+/* Compact board progress: one statistics strip plus per-card stage and result. */
+.hti-kanban-overview {
+  position: sticky;
+  inset-block-start: 0;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  min-width: 0;
+  padding: 8px max(10px, env(safe-area-inset-left)) 8px max(10px, env(safe-area-inset-right));
+  border: 0;
+  border-block-end: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-background, #fff) 92%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: 12px;
+  line-height: 1.35;
+  backdrop-filter: blur(6px);
+}
+
+.hti-kanban-overview[hidden] { display: none; }
+
+.hti-kanban-overview-rate {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 5px;
+  white-space: nowrap;
+}
+
+.hti-kanban-overview-rate strong {
+  color: var(--color-foreground, currentColor);
+  font-size: 16px;
+  font-weight: 750;
+  letter-spacing: -.01em;
+}
+
+.hti-kanban-overview-detail {
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+}
+
+.hti-kanban-overview-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: transparent;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.hti-kanban-overview-chip::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  background: currentColor;
+}
+
+.hti-kanban-overview-chip.live { color: #2f9e68; }
+.hti-kanban-overview-chip.ok { color: #3f7fbe; }
+.hti-kanban-overview-chip.warn { color: #b5852c; }
+
+/* Cards: a text stage pill and one result line; the colour columns remain. */
+.hti-kanban-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  margin: .32rem 0 0;
+  padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, currentColor 26%, transparent);
+  color: var(--color-muted-foreground);
+  font-size: .64rem;
+  font-weight: 650;
+  line-height: 1.5;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.hti-kanban-stage[data-hti-tone="live"] { color: #2f9e68; }
+.hti-kanban-stage[data-hti-tone="ok"] { color: #3f7fbe; }
+.hti-kanban-stage[data-hti-tone="warn"] { color: #a97a24; }
+.hti-kanban-stage[data-hti-tone="bad"] { color: var(--color-destructive, #d14a4a); }
+
+.hti-kanban-result {
+  display: -webkit-box;
+  pointer-events: none;
+  margin: .18rem 0 0;
+  overflow: hidden;
+  color: var(--color-muted-foreground);
+  font-size: .68rem;
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.hti-kanban-result[data-hti-tone="bad"] { color: var(--color-destructive, #d14a4a); }
+.hti-kanban-result[data-hti-tone="ok"] { color: var(--color-muted-foreground); }
+
+@media (max-width: 640px) {
+  .hti-kanban-overview {
+    gap: 4px 8px;
+    padding-block: 6px;
+    font-size: 11px;
+  }
+  .hti-kanban-overview-rate strong { font-size: 14px; }
+  .hti-kanban-overview-detail { flex-basis: 100%; order: 3; font-size: 10px; }
+  .hti-kanban-overview-chip { font-size: 10px; padding: 0 6px; }
+  .hti-kanban-stage { font-size: .6rem; }
+  .hti-kanban-result { -webkit-line-clamp: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hti-kanban-overview { backdrop-filter: none; }
+}

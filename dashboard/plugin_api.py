@@ -177,6 +177,22 @@ class KanbanActivityBody(BaseModel):
     tail_bytes: int = Field(default=8192, ge=512, le=16384)
 
 
+class KanbanOverviewBody(BaseModel):
+    """One bounded read-only request for board progress and run statistics."""
+
+    board: str = Field(default="", max_length=64)
+    task_ids: list[str] = Field(default_factory=list, max_length=64)
+    limit: int = Field(default=200, ge=1, le=500)
+
+
+# Terminal run outcomes that count as a delivered result or an honest failure.
+# Review, blocked and reclaimed runs stay neutral so a paused card cannot
+# depress the delivery success rate.
+_KANBAN_SUCCESS_OUTCOMES = frozenset({"completed"})
+_KANBAN_FAILURE_OUTCOMES = frozenset({"crashed", "gave_up", "spawn_failed", "timed_out"})
+_KANBAN_SUMMARY_LIMIT = 400
+
+
 class HomeReadStateBody(BaseModel):
     """One acknowledged recent-home card, stored outside the browser."""
 
@@ -708,6 +724,216 @@ def _read_kanban_activity(body: KanbanActivityBody) -> dict[str, Any]:
     return {"board": board, "items": items}
 
 
+def _kanban_home() -> Path:
+    """Resolve the Kanban runtime home exactly like the worker-log reader."""
+
+    return Path(
+        os.environ.get("HERMES_KANBAN_HOME")
+        or os.environ.get("HERMES_HOME")
+        or os.environ.get("HOME")
+        or "/opt/data"
+    ).expanduser()
+
+
+def _resolve_kanban_board(raw_board: str) -> str:
+    """Pick the explicit board, then the runtime environment, then ``current``."""
+
+    board = str(raw_board or "").strip().lower()
+    if board:
+        if re.fullmatch(r"[a-z0-9][a-z0-9_-]{0,63}", board) is None:
+            raise HTTPException(status_code=400, detail="Invalid board slug")
+        return board
+    from_environment = str(os.environ.get("HERMES_KANBAN_BOARD") or "").strip().lower()
+    if from_environment:
+        return from_environment
+    try:
+        current = (_kanban_home() / "kanban" / "current").read_text(encoding="utf-8").strip().lower()
+    except OSError:
+        current = ""
+    return current or "default"
+
+
+def _kanban_board_db(board: str) -> Path:
+    """Return the board-local Kanban database without creating anything."""
+
+    home = _kanban_home()
+    if board == "default":
+        return home / "kanban.db"
+    return home / "kanban" / "boards" / board / "kanban.db"
+
+
+def _bounded_summary(value: Any) -> str:
+    """Keep one short result line for card summaries without dumping a report."""
+
+    text = " ".join(str(value or "").split())
+    if len(text) > _KANBAN_SUMMARY_LIMIT:
+        return text[: _KANBAN_SUMMARY_LIMIT - 1].rstrip() + "…"
+    return text
+
+
+def _kanban_overview_stats(connection: sqlite3.Connection) -> dict[str, Any]:
+    """Aggregate board task counts and true delivery-run outcomes."""
+
+    by_status: dict[str, int] = {}
+    for row in connection.execute("SELECT status, COUNT(*) AS total FROM tasks GROUP BY status"):
+        by_status[str(row[0] or "unknown")] = int(row[1])
+    stats: dict[str, Any] = {
+        "tasks_total": sum(by_status.values()),
+        "by_status": by_status,
+        "runs_total": 0,
+        "runs_completed": 0,
+        "runs_failed": 0,
+        "runs_in_flight": 0,
+        "runs_neutral": 0,
+        "success_rate": None,
+    }
+    try:
+        rows = connection.execute(
+            "SELECT outcome, status, COUNT(*) FROM task_runs GROUP BY outcome, status"
+        ).fetchall()
+    except sqlite3.OperationalError:
+        return stats
+    for outcome_value, status_value, total in rows:
+        count = int(total)
+        stats["runs_total"] += count
+        outcome = str(outcome_value or "").strip().lower()
+        if outcome in _KANBAN_SUCCESS_OUTCOMES:
+            stats["runs_completed"] += count
+        elif outcome in _KANBAN_FAILURE_OUTCOMES:
+            stats["runs_failed"] += count
+        elif not outcome:
+            stats["runs_in_flight"] += count
+        else:
+            stats["runs_neutral"] += count
+    decided = stats["runs_completed"] + stats["runs_failed"]
+    if decided:
+        stats["success_rate"] = round(stats["runs_completed"] / decided, 4)
+    return stats
+
+
+def _read_kanban_overview(body: KanbanOverviewBody) -> dict[str, Any]:
+    """Read board progress, per-card run state and delivery success in one call."""
+
+    board = _resolve_kanban_board(body.board)
+    task_ids: list[str] = []
+    for raw_task_id in body.task_ids:
+        task_id = str(raw_task_id or "").strip()
+        if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", task_id) is None:
+            raise HTTPException(status_code=400, detail="Invalid task ID")
+        if task_id not in task_ids:
+            task_ids.append(task_id)
+
+    unavailable = {
+        "available": False,
+        "board": board,
+        "stats": None,
+        "tasks": [],
+    }
+    database = _kanban_board_db(board)
+    if not database.is_file() or database.is_symlink():
+        return unavailable
+
+    connection: sqlite3.Connection | None = None
+    try:
+        connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=5)
+        connection.row_factory = sqlite3.Row
+        columns = {str(row[1]) for row in connection.execute("PRAGMA table_info(tasks)").fetchall()}
+        if "id" not in columns:
+            return unavailable
+        wanted = [
+            name
+            for name in (
+                "id",
+                "title",
+                "status",
+                "assignee",
+                "result",
+                "created_at",
+                "started_at",
+                "completed_at",
+                "consecutive_failures",
+                "last_failure_error",
+            )
+            if name in columns
+        ]
+        selection = ", ".join(wanted)
+        parameters: list[Any] = []
+        clause = ""
+        if task_ids:
+            clause = f"WHERE id IN ({','.join('?' for _ in task_ids)})"
+            parameters = list(task_ids)
+        parameters.append(int(body.limit))
+        order = "COALESCE(completed_at, started_at, created_at)" if "completed_at" in columns else "created_at"
+        rows = connection.execute(
+            f"SELECT {selection} FROM tasks {clause} ORDER BY {order} DESC LIMIT ?",
+            parameters,
+        ).fetchall()
+        stats = _kanban_overview_stats(connection)
+
+        selected_ids = [str(row["id"]) for row in rows]
+        latest_runs: dict[str, sqlite3.Row] = {}
+        run_counts: dict[str, dict[str, int]] = {}
+        if selected_ids:
+            placeholders = ",".join("?" for _ in selected_ids)
+            try:
+                for run in connection.execute(
+                    "SELECT id, task_id, status, outcome, summary, started_at, ended_at "
+                    f"FROM task_runs WHERE task_id IN ({placeholders}) ORDER BY id DESC LIMIT 2000",
+                    selected_ids,
+                ):
+                    task_id = str(run["task_id"])
+                    latest_runs.setdefault(task_id, run)
+                for aggregate in connection.execute(
+                    "SELECT task_id, COUNT(*) AS total, "
+                    "SUM(CASE WHEN outcome IN ('completed') THEN 1 ELSE 0 END) AS completed, "
+                    "SUM(CASE WHEN outcome IN ('crashed','gave_up','spawn_failed','timed_out') THEN 1 ELSE 0 END) AS failed "
+                    f"FROM task_runs WHERE task_id IN ({placeholders}) GROUP BY task_id",
+                    selected_ids,
+                ):
+                    run_counts[str(aggregate["task_id"])] = {
+                        "total": int(aggregate["total"] or 0),
+                        "completed": int(aggregate["completed"] or 0),
+                        "failed": int(aggregate["failed"] or 0),
+                    }
+            except sqlite3.OperationalError:
+                latest_runs = {}
+                run_counts = {}
+
+        tasks: list[dict[str, Any]] = []
+        for row in rows:
+            task_id = str(row["id"])
+            latest = latest_runs.get(task_id)
+            counts = run_counts.get(task_id, {"total": 0, "completed": 0, "failed": 0})
+            tasks.append(
+                {
+                    "task_id": task_id,
+                    "title": str(row["title"] or "") if "title" in columns else "",
+                    "status": str(row["status"] or "") if "status" in columns else "",
+                    "assignee": str(row["assignee"] or "") if "assignee" in columns else "",
+                    "summary": _bounded_summary(row["result"]) if "result" in columns else "",
+                    "failure": _bounded_summary(row["last_failure_error"]) if "last_failure_error" in columns else "",
+                    "run_count": counts["total"],
+                    "completed_runs": counts["completed"],
+                    "failed_runs": counts["failed"],
+                    "latest_run": None
+                    if latest is None
+                    else {
+                        "id": int(latest["id"]),
+                        "status": str(latest["status"] or ""),
+                        "outcome": str(latest["outcome"] or ""),
+                        "summary": _bounded_summary(latest["summary"]),
+                        "started_at": latest["started_at"],
+                        "ended_at": latest["ended_at"],
+                    },
+                }
+            )
+        return {"available": True, "board": board, "stats": stats, "tasks": tasks}
+    except sqlite3.Error:
+        return unavailable
+    finally:
+        if connection is not None:
+            connection.close()
+
 
 def _hermes_state_db_path() -> Path:
     """Return the profile-local Hermes session store used for legacy link discovery."""
@@ -982,6 +1208,13 @@ async def post_kanban_activity(body: KanbanActivityBody) -> dict[str, Any]:
     """Return bounded worker log tails for several cards in one request."""
 
     return await asyncio.to_thread(_read_kanban_activity, body)
+
+
+@router.post("/kanban-overview")
+async def post_kanban_overview(body: KanbanOverviewBody) -> dict[str, Any]:
+    """Return board progress, per-card run state, and delivery success."""
+
+    return await asyncio.to_thread(_read_kanban_overview, body)
 
 
 @router.get("/files")

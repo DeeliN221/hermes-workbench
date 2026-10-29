@@ -1,0 +1,50 @@
+/* One compact notice when the bridge retries a turn on a backup model. */
+.hti-model-fallback-notice {
+  position: fixed;
+  z-index: 60;
+  inset-inline: auto 16px;
+  inset-block-end: max(16px, env(safe-area-inset-bottom));
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 9px 12px;
+  border: 1px solid var(--color-border);
+  border-inline-start: 3px solid #d4b348;
+  border-radius: 8px;
+  background: var(--color-popover, var(--color-card));
+  color: var(--color-popover-foreground, var(--color-card-foreground));
+  box-shadow: 0 8px 24px #0003;
+  font-size: 12.5px;
+  line-height: 1.45;
+}
+
+.hti-model-fallback-notice[hidden] { display: none; }
+
+.hti-model-fallback-text { min-width: 0; overflow-wrap: anywhere; }
+
+.hti-model-fallback-dismiss {
+  flex-shrink: 0;
+  padding: 2px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.hti-model-fallback-dismiss:hover {
+  background: var(--color-accent);
+  color: var(--color-accent-foreground);
+}
+
+@media (max-width: 640px) {
+  .hti-model-fallback-notice {
+    inset-inline: 8px;
+    inset-block-end: max(8px, env(safe-area-inset-bottom));
+    max-width: none;
+    font-size: 12px;
+  }
+}

@@ -54,6 +54,12 @@ _PREVIEW_TURN_LIMIT = 8
 _PREVIEW_ITEM_TEXT_LIMIT = 12000
 _PREVIEW_TOOL_OUTPUT_LIMIT = 1200
 _CAPACITY_RETRY_DELAYS = (30.0, 60.0, 120.0, 300.0, 600.0)
+# A model switch must not wait for the same model's backoff: one second is
+# enough to let a stray concurrent request settle while keeping the chat live.
+_FALLBACK_SWITCH_DELAY = 1.0
+_FALLBACK_MODELS_ENV = "HERMES_WORKBENCH_FALLBACK_MODELS"
+_FALLBACK_CATALOG_TTL = 300.0
+_FALLBACK_CATALOG_EMPTY_TTL = 30.0
 from codex_user_input import USER_INPUT_METHOD, user_input_result
 
 _APPROVAL_METHODS = frozenset(
@@ -1789,6 +1795,7 @@ class CodexBridge:
         attachment_store: AttachmentStore | None = None,
         permission_mode: str | None = None,
         capacity_retry_delays: tuple[float, ...] | None = None,
+        fallback_models: tuple[str, ...] | None = None,
     ) -> None:
         """Configure the bridge without opening a Codex process until first use."""
 
@@ -1806,6 +1813,16 @@ class CodexBridge:
         self.attachments = attachment_store or AttachmentStore()
         self.capacity_retry_delays = tuple(capacity_retry_delays if capacity_retry_delays is not None else _CAPACITY_RETRY_DELAYS)
         self.capacity_retry_limit = len(self.capacity_retry_delays)
+        if fallback_models is None:
+            fallback_models = tuple(
+                model.strip()
+                for model in os.environ.get(_FALLBACK_MODELS_ENV, "").split(",")
+                if model.strip()
+            )
+        # One configured backup model per retry attempt; the same model is
+        # never retried twice once a backup exists.
+        self.fallback_models = tuple(dict.fromkeys(model for model in fallback_models if model))
+        self._fallback_catalog: dict[tuple[str, str], tuple[float, tuple[str, ...]]] = {}
         self._connections: dict[tuple[str, str], JsonRpcConnection] = {}
         self._subscribers: dict[tuple[str, str, str], set[asyncio.Queue[dict[str, Any]]]] = {}
         self._session_locks: dict[tuple[str, str, str], asyncio.Lock] = {}
@@ -2223,13 +2240,107 @@ class CodexBridge:
             self._schedule_capacity_retry(user, profile, session_id, client_id, next_count)
         return result
 
-    async def _run_capacity_retry(self, user: str, profile: str, session_id: str, client_id: str, retry_count: int) -> None:
-        """Retry the same idempotent native request after provider capacity recovers."""
+    def _fallback_model_for(self, payload: dict[str, Any], attempt: int, candidates: tuple[str, ...]) -> str | None:
+        """Return the backup model for one retry attempt of a fresh turn."""
 
-        await asyncio.sleep(self.capacity_retry_delays[retry_count - 1])
+        current = str(payload.get("model") or "").strip().lower()
+        if not current:
+            return None
+        remaining = [model for model in candidates if model and model.lower() != current]
+        if not remaining or attempt < 1 or attempt > len(remaining):
+            return None
+        return remaining[attempt - 1]
+
+    def _catalog_models(self, catalog: Any) -> tuple[str, ...]:
+        """Model ids advertised by the app server, in catalog order."""
+
+        if not isinstance(catalog, dict):
+            return ()
+        rows: Any = catalog.get("models")
+        data = catalog.get("data")
+        if isinstance(data, dict) and isinstance(data.get("models"), list):
+            rows = data["models"]
+        if not isinstance(rows, list):
+            return ()
+        ids = []
+        for row in rows:
+            if not isinstance(row, dict) or row.get("hidden") is True:
+                continue
+            model = str(row.get("model") or row.get("id") or "").strip()
+            if model:
+                ids.append(model)
+        return tuple(dict.fromkeys(ids))
+
+    async def _fallback_candidates(self, user: str, profile: str) -> tuple[str, ...]:
+        """Backup models from configuration, else from the live model catalog.
+
+        The catalog is cached briefly: a capacity retry must not pay one extra
+        round trip per attempt, and the choices rarely change mid-incident.
+        """
+
+        if self.fallback_models:
+            return self.fallback_models
+        key = (user, profile)
+        now = time.monotonic()
+        cached = self._fallback_catalog.get(key)
+        if cached and now - cached[0] < (_FALLBACK_CATALOG_TTL if cached[1] else _FALLBACK_CATALOG_EMPTY_TTL):
+            return cached[1]
+        try:
+            models = self._catalog_models(await self.models(user, profile))
+        except Exception:
+            logging.getLogger(__name__).warning("Model catalog unavailable for a capacity fallback")
+            return ()
+        self._fallback_catalog[key] = (now, models)
+        return models
+
+    async def _publish_bridge_event(
+        self,
+        user: str,
+        profile: str,
+        session_id: str,
+        method: str,
+        params: dict[str, Any],
+    ) -> None:
+        """Append and broadcast one bridge-owned event to live subscribers."""
+
+        event = await asyncio.to_thread(
+            self.store.append_event, user, profile, session_id, method, {"params": params}
+        )
+        for queue in tuple(self._subscribers.get((user, profile, session_id), ())):
+            try:
+                queue.put_nowait(event)
+            except asyncio.QueueFull:
+                while not queue.empty():
+                    with contextlib.suppress(asyncio.QueueEmpty):
+                        queue.get_nowait()
+                queue.put_nowait({"seq": event["seq"], "type": "resync_required"})
+
+    async def _run_capacity_retry(self, user: str, profile: str, session_id: str, client_id: str, retry_count: int) -> None:
+        """Retry one overloaded request, switching to a backup model when configured."""
+
+        key = self._capacity_retry_key(user, profile, session_id, client_id)
+        request = await asyncio.to_thread(self.store.request, user, profile, session_id, client_id)
+        if not request or request.get("status") != "pending" or int(request.get("capacity_retry_count") or 0) != retry_count:
+            return
+        try:
+            payload = json.loads(request.get("payload") or "{}")
+        except (TypeError, ValueError):
+            payload = {}
+        if not isinstance(payload, dict) or not payload.get("threadId"):
+            await asyncio.to_thread(self.store.save_request, user, profile, session_id, client_id, status="failed", result=json.dumps({"message": "Invalid retry payload"}))
+            return
+        # A model switch is what keeps the chat responsive: retrying the
+        # overloaded model waits out its backoff, a backup does not.
+        planned = None
+        if payload.get("expectedTurnId") is None:
+            planned = self._fallback_model_for(payload, retry_count, await self._fallback_candidates(user, profile))
+        delay = self.capacity_retry_delays[retry_count - 1]
+        if planned:
+            delay = min(delay, _FALLBACK_SWITCH_DELAY)
+        if delay > 0:
+            await asyncio.sleep(delay)
         if self._closing:
             return
-        key = self._capacity_retry_key(user, profile, session_id, client_id)
         lock = self._request_locks.setdefault(key, asyncio.Lock())
         async with lock:
             request = await asyncio.to_thread(self.store.request, user, profile, session_id, client_id)
@@ -2242,10 +2353,19 @@ class CodexBridge:
             if not isinstance(payload, dict) or not payload.get("threadId"):
                 await asyncio.to_thread(self.store.save_request, user, profile, session_id, client_id, status="failed", result=json.dumps({"message": "Invalid retry payload"}))
                 return
+            retry_payload = payload
+            switched_from = ""
+            switched_to = ""
+            if payload.get("expectedTurnId") is None:
+                candidate = self._fallback_model_for(payload, retry_count, await self._fallback_candidates(user, profile))
+                if candidate:
+                    retry_payload = {**payload, "model": candidate}
+                    switched_from = str(payload.get("model") or "")
+                    switched_to = candidate
             method = "turn/steer" if payload.get("expectedTurnId") is not None else "turn/start"
             try:
                 connection = await self._connection(user, profile)
-                response = await connection.request(method, payload)
+                response = await connection.request(method, retry_payload)
             except UnknownAcceptance:
                 await asyncio.to_thread(self.store.save_request, user, profile, session_id, client_id, status="unknown")
                 return
@@ -2261,6 +2381,22 @@ class CodexBridge:
             if _is_capacity_error(turn_error):
                 await self._record_capacity_failure(user, profile, session_id, client_id, turn_error, retry_count, turn_id=turn_id or None)
                 return
+            if switched_to:
+                # Announce the switch before the request flips to accepted so a
+                # client that sees the accepted turn already has the notice.
+                await self._publish_bridge_event(
+                    user,
+                    profile,
+                    session_id,
+                    "workbench/modelFallback",
+                    {
+                        "turnId": turn_id or None,
+                        "clientRequestId": client_id,
+                        "fromModel": switched_from,
+                        "toModel": switched_to,
+                        "attempt": retry_count,
+                    },
+                )
             result = await asyncio.to_thread(
                 self.store.save_request,
                 user,
