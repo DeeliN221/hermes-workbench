@@ -6,8 +6,14 @@ import type { FetchJSON } from './workbench-api';
 const LINK_ATTR = 'data-workbench-version-link';
 const MODEL_LINK_ATTR = 'data-workbench-model-link';
 const PANEL_ATTR = 'data-workbench-version-panel';
+const PRESERVED_ATTR = 'data-workbench-settings-preserved';
 
 type SettingsRoute = 'versions' | 'models';
+
+function shellManagesSettings(): boolean {
+  return document.documentElement.dataset.workbenchShell === 'true'
+    || Boolean((window as any).__HERMES_PLUGINS__);
+}
 
 function settingsRoute(): SettingsRoute | null {
   const url = new URL(window.location.href);
@@ -89,8 +95,8 @@ function addSettingsLinks(): void {
   addSettingsLink(nav, LINK_ATTR, `/config?workbench=versions&profile=${profile}`, sourceText("版本切换", "Version switching"));
 }
 
-async function renderModelVisibility(panel: HTMLElement): Promise<void> {
-  const profile = currentProfile();
+async function renderModelVisibility(panel: HTMLElement, explicitProfile?: string): Promise<void> {
+  const profile = explicitProfile?.trim() || currentProfile();
   const list = panel.querySelector<HTMLElement>('[data-model-visibility-list]');
   const status = panel.querySelector<HTMLElement>('[data-model-visibility-status]');
   const showAll = panel.querySelector<HTMLButtonElement>('[data-model-show-all]');
@@ -112,7 +118,11 @@ async function renderModelVisibility(panel: HTMLElement): Promise<void> {
     const stale = [...hidden].filter(id => !known.has(id));
     if (stale.length) hidden = writeHiddenModels(profile, [...hidden].filter(id => known.has(id)));
     const visibleCount = () => models.filter(model => !hidden.has(model.id)).length;
+    const syncShowAll = () => {
+      showAll.disabled = hidden.size === 0;
+    };
     const render = () => {
+      syncShowAll();
       const groups = new Map<string, ChatModelChoice[]>();
       for (const model of models) {
         const slash = model.id.lastIndexOf('/');
@@ -124,8 +134,18 @@ async function renderModelVisibility(panel: HTMLElement): Promise<void> {
       list.replaceChildren(...[...groups].map(([provider, rows]) => {
         const section = document.createElement('section');
         section.className = 'workbench-model-group';
+        const header = document.createElement('header');
+        header.className = 'workbench-model-group-header';
         const heading = document.createElement('h3');
         heading.textContent = provider;
+        const groupCount = document.createElement('span');
+        groupCount.className = 'workbench-model-group-count';
+        const updateGroupCount = () => {
+          const activeInGroup = rows.filter(row => !hidden.has(row.id)).length;
+          groupCount.textContent = `${activeInGroup} / ${rows.length}`;
+        };
+        updateGroupCount();
+        header.append(heading, groupCount);
         const options = document.createElement('div');
         options.className = 'workbench-model-options';
         for (const model of rows) {
@@ -135,28 +155,48 @@ async function renderModelVisibility(panel: HTMLElement): Promise<void> {
           checkbox.type = 'checkbox';
           checkbox.checked = !hidden.has(model.id);
           checkbox.value = model.id;
+          option.dataset.visible = String(checkbox.checked);
           const copy = document.createElement('span');
           copy.className = 'workbench-model-copy';
+          const titleRow = document.createElement('span');
+          titleRow.className = 'workbench-model-title-row';
           const name = document.createElement('strong');
           name.textContent = model.label;
+          titleRow.append(name);
+          if (model.isDefault) {
+            const badge = document.createElement('span');
+            badge.className = 'workbench-model-tag is-default';
+            badge.textContent = sourceText('默认', 'Default');
+            titleRow.append(badge);
+          }
+          if (model.supportsFast) {
+            const fastBadge = document.createElement('span');
+            fastBadge.className = 'workbench-model-tag';
+            fastBadge.textContent = 'Fast';
+            titleRow.append(fastBadge);
+          }
           const id = document.createElement('small');
           id.textContent = model.id;
-          copy.append(name, id);
+          copy.append(titleRow, id);
           option.append(checkbox, copy);
           checkbox.addEventListener('change', () => {
             if (!checkbox.checked && visibleCount() <= 1) {
               checkbox.checked = true;
+              option.dataset.visible = 'true';
               status.textContent = sourceText("至少保留一个可见模型。", "Keep at least one model visible.");
               return;
             }
             if (checkbox.checked) hidden.delete(model.id);
             else hidden.add(model.id);
             hidden = writeHiddenModels(profile, hidden);
+            option.dataset.visible = String(checkbox.checked);
+            updateGroupCount();
+            syncShowAll();
             status.textContent = sourceText(`已保存：聊天框显示 ${visibleCount()}/${models.length} 个模型`, `Saved: ${visibleCount()}/${models.length} models visible in chat`);
           });
           options.append(option);
         }
-        section.append(heading, options);
+        section.append(header, options);
         return section;
       }));
       status.textContent = sourceText(`聊天框显示 ${visibleCount()}/${models.length} 个模型`, `${visibleCount()}/${models.length} models visible in chat`);
@@ -173,15 +213,97 @@ async function renderModelVisibility(panel: HTMLElement): Promise<void> {
   }
 }
 
+export async function renderModelVisibilityPanel(panel: HTMLElement, explicitProfile?: string): Promise<void> {
+  const profileName = explicitProfile?.trim() || currentProfile();
+  panel.setAttribute(PANEL_ATTR, 'true');
+  panel.dataset.workbenchSettingsRoute = 'models';
+  panel.innerHTML = sourceText(
+    '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong>。这里只改变 Workbench 聊天框的模型菜单，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. This only changes the Workbench chat model menu; it does not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
+  );
+  const profile = panel.querySelector<HTMLElement>('[data-model-profile]');
+  if (profile) profile.textContent = profileName;
+  await renderModelVisibility(panel, profileName);
+}
+
+export async function renderVersionSettingsPanel(panel: HTMLElement): Promise<void> {
+  panel.setAttribute(PANEL_ATTR, 'true');
+  panel.dataset.workbenchSettingsRoute = 'versions';
+  panel.innerHTML = sourceText(
+    '<header class="workbench-settings-subpage-header"><h1>版本切换</h1></header><h2>Codex App Server</h2><p class="workbench-version-muted">每天自动检查稳定版更新。更新会重启 App Server，正在运行的 Codex 任务可能中断。</p><div class="workbench-version-row"><strong data-codex-runtime-status role="status">正在检查 Codex 版本…</strong><button type="button" data-codex-runtime-update hidden>立即更新并重启</button></div><h2>Workbench 版本切换</h2><p class="workbench-version-muted" data-workbench-version-description>正在读取更新方式…</p><div class="workbench-version-list" role="list">正在读取版本…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>Version switching</h1></header><h2>Codex App Server</h2><p class="workbench-version-muted">Checks stable releases daily. Updating restarts App Server and may interrupt active Codex tasks.</p><div class="workbench-version-row"><strong data-codex-runtime-status role="status">Checking Codex version…</strong><button type="button" data-codex-runtime-update hidden>Update and restart now</button></div><h2>Workbench version switching</h2><p class="workbench-version-muted" data-workbench-version-description>Loading update mode…</p><div class="workbench-version-list" role="list">Loading releases…</div>',
+  );
+  void renderCodexRuntime(panel);
+  await renderWorkbenchVersions(panel);
+}
+
+export function createModelVisibilitySettings(sdk: any) {
+  const h = sdk.React.createElement;
+  const { useEffect, useRef } = sdk.hooks;
+  return function ModelVisibilitySettings({ profile }: { profile?: string }) {
+    const ref = useRef(null as HTMLElement | null);
+    useEffect(() => {
+      const node = ref.current;
+      if (!node) return;
+      const render = () => { void renderModelVisibilityPanel(node, profile); };
+      render();
+      const observer = new MutationObserver(render);
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+      return () => observer.disconnect();
+    }, [profile]);
+    return h('section', {
+      ref,
+      className: 'workbench-settings-subpage',
+      'data-testid': 'model-visibility-settings',
+    });
+  };
+}
+
+export function createVersionSettings(sdk: any) {
+  const h = sdk.React.createElement;
+  const { useEffect, useRef } = sdk.hooks;
+  return function VersionSettings() {
+    const ref = useRef(null as HTMLElement | null);
+    useEffect(() => {
+      const node = ref.current;
+      if (!node) return;
+      const render = () => { void renderVersionSettingsPanel(node); };
+      render();
+      const observer = new MutationObserver(render);
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+      return () => observer.disconnect();
+    }, []);
+    return h('section', {
+      ref,
+      className: 'workbench-settings-subpage',
+      'data-testid': 'version-settings',
+    });
+  };
+}
+
+function cleanupFallbackPanel(): void {
+  document.querySelectorAll<HTMLElement>(`[${PRESERVED_ATTR}]`).forEach(node => {
+    node.style.display = '';
+    node.removeAttribute(PRESERVED_ATTR);
+  });
+  document.querySelectorAll<HTMLElement>(`main:not(.dashboard-owned-page) > [${PANEL_ATTR}]`).forEach(node => node.remove());
+}
+
 async function renderPanel(): Promise<void> {
+  if (shellManagesSettings()) {
+    cleanupFallbackPanel();
+    return;
+  }
   const main = document.querySelector<HTMLElement>('.dashboard-owned-page') || document.querySelector<HTMLElement>('main');
   if (!main) return;
   let panel = main.querySelector<HTMLElement>(`[${PANEL_ATTR}]`);
   const route = settingsRoute();
   if (!route) {
-    main.querySelectorAll<HTMLElement>('[data-workbench-settings-preserved]').forEach(node => {
-      node.style.display = '';
-      node.removeAttribute('data-workbench-settings-preserved');
+    const otherCustomActive = new URL(window.location.href).pathname === '/config'
+      && new URL(window.location.href).searchParams.get('workbench') === 'display';
+    main.querySelectorAll<HTMLElement>(`[${PRESERVED_ATTR}]`).forEach(node => {
+      if (!otherCustomActive) node.style.display = '';
+      node.removeAttribute(PRESERVED_ATTR);
     });
     panel?.remove();
     return;
@@ -191,7 +313,7 @@ async function renderPanel(): Promise<void> {
   const preserved = Array.from(main.children).filter(node => !(node as HTMLElement).hasAttribute(PANEL_ATTR));
   preserved.forEach(node => {
     const element = node as HTMLElement;
-    element.setAttribute('data-workbench-settings-preserved', 'true');
+    element.setAttribute(PRESERVED_ATTR, 'true');
     element.style.display = 'none';
   });
   panel = document.createElement('section');
@@ -199,14 +321,9 @@ async function renderPanel(): Promise<void> {
   panel.dataset.workbenchSettingsRoute = route;
   main.append(panel);
   if (route === 'models') {
-    panel.innerHTML = sourceText("<h2>聊天模型显示</h2><p class=\"workbench-version-muted\">当前档案 <strong data-model-profile>default</strong>。这里只改变 Workbench 聊天框的模型菜单，不会修改 Codex 配置或后端模型目录。</p><div class=\"workbench-model-toolbar\"><button type=\"button\" data-model-show-all>全部显示</button><span data-model-visibility-status role=\"status\">正在读取模型…</span></div><div class=\"workbench-model-list\" data-model-visibility-list>正在读取模型…</div>", "<h2>Chat model visibility</h2><p class=\"workbench-version-muted\">Profile <strong data-model-profile>default</strong>. This only changes the Workbench chat model menu; it does not change Codex configuration or the backend catalog.</p><div class=\"workbench-model-toolbar\"><button type=\"button\" data-model-show-all>Show all</button><span data-model-visibility-status role=\"status\">Loading models…</span></div><div class=\"workbench-model-list\" data-model-visibility-list>Loading models…</div>");
-    const profile = panel.querySelector<HTMLElement>('[data-model-profile]');
-    if (profile) profile.textContent = currentProfile();
-    await renderModelVisibility(panel);
+    await renderModelVisibilityPanel(panel);
   } else {
-    panel.innerHTML = sourceText("<h2>Codex App Server</h2><p class=\"workbench-version-muted\">每天自动检查稳定版更新。更新会重启 App Server，正在运行的 Codex 任务可能中断。</p><div class=\"workbench-version-row\"><strong data-codex-runtime-status role=\"status\">正在检查 Codex 版本…</strong><button type=\"button\" data-codex-runtime-update hidden>立即更新并重启</button></div><h2>Workbench 版本切换</h2><p class=\"workbench-version-muted\" data-workbench-version-description>正在读取更新方式…</p><div class=\"workbench-version-list\" role=\"list\">正在读取版本…</div>", "<h2>Codex App Server</h2><p class=\"workbench-version-muted\">Checks stable releases daily. Updating restarts App Server and may interrupt active Codex tasks.</p><div class=\"workbench-version-row\"><strong data-codex-runtime-status role=\"status\">Checking Codex version\u2026</strong><button type=\"button\" data-codex-runtime-update hidden>Update and restart now</button></div><h2>Workbench version switching</h2><p class=\"workbench-version-muted\" data-workbench-version-description>Loading update mode\u2026</p><div class=\"workbench-version-list\" role=\"list\">Loading releases\u2026</div>");
-    void renderCodexRuntime(panel);
-    await renderWorkbenchVersions(panel);
+    await renderVersionSettingsPanel(panel);
   }
 
 }
@@ -373,8 +490,15 @@ export async function renderWorkbenchVersions(panel: HTMLElement, reload = () =>
 export function installWorkbenchVersionSettings(): void {
   if ((window as any).__HERMES_WORKBENCH_VERSION_SETTINGS__) return;
   (window as any).__HERMES_WORKBENCH_VERSION_SETTINGS__ = true;
-  const schedule = () => window.requestAnimationFrame(() => { addSettingsLinks(); void renderPanel(); });
-  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["lang"] });
+  const schedule = () => window.requestAnimationFrame(() => {
+    if (shellManagesSettings()) {
+      cleanupFallbackPanel();
+      return;
+    }
+    addSettingsLinks();
+    void renderPanel();
+  });
+  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["lang", "data-workbench-shell"] });
   window.addEventListener('popstate', schedule);
   schedule();
 }

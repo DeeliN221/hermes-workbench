@@ -26,7 +26,7 @@ export function installMobileSettings(): void {
     const show = active && opened;
     const mode = active ? (show ? 'detail' : 'list') : '';
     if (root.dataset.mobileSettings !== mode) root.dataset.mobileSettings = mode;
-    const next = show ? document.querySelector<HTMLElement>('.dashboard-profile-page, .dashboard-shortcuts-page') || document.querySelector<HTMLElement>('#app-sidebar + div') : null;
+    const next = show ? document.querySelector<HTMLElement>('.dashboard-owned-page') || document.querySelector<HTMLElement>('#app-sidebar + div') : null;
     if (panel !== next) {
       if (panel) { panel.classList.remove('workbench-mobile-settings-panel'); panel.removeAttribute('role'); panel.removeAttribute('aria-modal'); panel.removeAttribute('aria-labelledby'); panel.removeAttribute('aria-owns'); }
       panel = next;
@@ -35,7 +35,9 @@ export function installMobileSettings(): void {
     if (show) {
       if (!header.isConnected) document.body.append(header);
       const links = Array.from(nav!.querySelectorAll<HTMLAnchorElement>('a'));
-      const current = links.find(a => new URL(a.href).pathname === location.pathname && new URL(a.href).searchParams.get('workbench') === new URLSearchParams(location.search).get('workbench'));
+      const rawTab = new URLSearchParams(location.search).get('workbench');
+      const activeTab = rawTab === 'settings' ? 'versions' : rawTab;
+      const current = links.find(a => new URL(a.href).pathname === location.pathname && new URL(a.href).searchParams.get('workbench') === activeTab);
       const label = current?.textContent || uiText('设置', 'Settings');
       if (title.textContent !== label) title.textContent = label;
       const backLabel = uiText('← 返回设置', '← Settings');

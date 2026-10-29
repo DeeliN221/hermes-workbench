@@ -1,13 +1,33 @@
-[data-workbench-chat-display-panel] {
+.workbench-settings-subpage,
+[data-workbench-chat-display-panel],
+[data-workbench-version-panel] {
+  width: 100%;
+  box-sizing: border-box;
   overflow: auto;
   min-width: 0;
-  max-width: 980px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 28px 32px;
+  padding: clamp(20px, 3vw, 40px);
 }
+.workbench-settings-subpage-header {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.workbench-settings-subpage-header h1 {
+  margin: 0;
+  font-size: 26px;
+  line-height: 1.25;
+}
+.workbench-settings-subpage-header p {
+  margin: 0;
+  max-width: 720px;
+  color: var(--dashboard-muted);
+  line-height: 1.65;
+}
+[data-workbench-chat-display-panel] h1,
 [data-workbench-chat-display-panel] h2 {
   margin: 0 0 8px;
-  font-size: 20px;
 }
 .workbench-chat-display-muted {
   max-width: 720px;
@@ -61,8 +81,13 @@
   color: var(--dashboard-muted);
   font-size: 13px;
 }
-@media (max-width: 600px) {
-  [data-workbench-chat-display-panel] {
-    padding: 16px 12px;
+@media (max-width: 800px) {
+  .workbench-settings-subpage,
+  [data-workbench-chat-display-panel],
+  [data-workbench-version-panel] {
+    padding: 8px 0 16px;
+  }
+  .workbench-settings-subpage-header h1 {
+    font-size: 22px;
   }
 }

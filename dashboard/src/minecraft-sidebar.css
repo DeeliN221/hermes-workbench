@@ -187,9 +187,17 @@
   :root[data-workbench-shell="true"][data-workbench-view="/chat"] .codex-center-header { padding-inline-start: 12px !important; }
   :root[data-workbench-shell="true"] header[class~="lg:hidden"] { padding-left: 12px !important; }
   :root[data-workbench-shell="true"] .dashboard-profile-page,
-  :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { left: var(--dashboard-action-width); }
-  :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { top: 0; }
+  :root:not([data-mobile-settings])[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { left: var(--dashboard-action-width); }
+  :root:not([data-mobile-settings])[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { top: 0; }
   :root[data-workbench-shell="true"] .dashboard-profile-page { top: 54px; }
+  :root[data-workbench-shell="true"]:not([data-mobile-settings="detail"]) body > .fixed.inset-0:is(.z-\[100\], .z-\[200\]) {
+    left: var(--dashboard-action-width, 0px);
+    z-index: 120;
+  }
+  :root[data-workbench-shell="true"]:not([data-mobile-settings="detail"]) #app-sidebar + div .fixed.inset-0.z-\[100\] {
+    left: var(--dashboard-action-width, 0px);
+    z-index: 120;
+  }
 }
 .dashboard-action-rail > .workbench-theme-error {
   position: fixed; left: 54px; bottom: 12px; z-index: 110;
@@ -298,6 +306,12 @@ html[data-workbench-accessory]:not([data-workbench-page="custom"]):not([data-wor
   margin: 0 !important; padding: 0 !important; visibility: visible !important; overflow: hidden;
   border: 3px solid #493523; border-radius: 12px; background: var(--dashboard-page-surface, #fff);
   box-shadow: 0 24px 64px #0007, inset 2px 2px var(--craft-light, #e5e2d4), inset -2px -2px var(--craft-shadow, #68685e);
+}
+html[data-workbench-accessory]:not([data-workbench-page="custom"]) #app-sidebar + div:has(.fixed.inset-0) {
+  z-index: 85;
+}
+:root[data-workbench-shell="true"] #app-sidebar + div main > .z-2 {
+  z-index: auto !important;
 }
 html[data-workbench-accessory][data-workbench-accessory="terminal"] #app-sidebar + div { visibility: hidden !important; }
 html[data-workbench-accessory][data-workbench-page="custom"] #app-sidebar + div { visibility: hidden !important; }

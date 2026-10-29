@@ -6,13 +6,13 @@
     flex-direction: column !important; align-items: stretch !important;
     padding: 20px 16px; overflow: auto; border: 0;
   }
-  :root[data-mobile-settings="list"] .dashboard-settings-nav h1 { display: block; }
-  :root[data-mobile-settings="list"] .dashboard-settings-nav > a { min-height: 44px; white-space: normal; }
-  :root[data-mobile-settings="list"] :is(#app-sidebar + div, .dashboard-profile-page, .dashboard-shortcuts-page) { display: none !important; }
+  :root[data-mobile-settings="list"] .dashboard-settings-nav h1 { display: block !important; }
+  :root[data-mobile-settings="list"] .dashboard-settings-nav > a { display: flex; align-items: center; min-height: 44px; white-space: normal !important; }
+  :root[data-mobile-settings="list"] :is(#app-sidebar + div, .dashboard-owned-page) { display: none !important; }
   :root[data-mobile-settings="detail"] :is(.dashboard-settings-nav, .dashboard-action-rail, .dashboard-global-nav, .dashboard-nav-backdrop) { display: none !important; }
   :root[data-mobile-settings="detail"] #app-sidebar + .workbench-mobile-settings-panel,
   :root[data-mobile-settings="detail"] .workbench-mobile-settings-panel {
-    position: fixed !important; inset: 0 !important; z-index: 110;
+    position: fixed !important; inset: 0 !important; z-index: 90;
     width: 100% !important; max-width: none !important; min-width: 0 !important;
     height: 100dvh !important; margin: 0 !important;
     padding: calc(60px + env(safe-area-inset-top)) 16px max(20px, env(safe-area-inset-bottom)) !important;
@@ -23,7 +23,7 @@
   :root[data-mobile-settings="detail"] .workbench-mobile-settings-panel main { min-width: 0; max-width: 100%; padding: 0; }
   :root[data-mobile-settings="detail"] .workbench-mobile-settings-panel :is(input, select, textarea) { max-width: 100%; min-width: 0; }
   :root[data-mobile-settings="detail"] .workbench-mobile-settings-header {
-    position: fixed; inset: 0 0 auto; z-index: 111;
+    position: fixed; inset: 0 0 auto; z-index: 91;
     display: flex; align-items: center; gap: 16px;
     min-height: calc(52px + env(safe-area-inset-top)); box-sizing: border-box;
     padding: env(safe-area-inset-top) 16px 0;
