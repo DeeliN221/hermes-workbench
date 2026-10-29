@@ -24,6 +24,7 @@ import { useWorkbenchLocale } from './workbench-locale';
 import { uiText as runtimeText } from './ui-locale';
 import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
+import { MODEL_ALIASES_CHANGE_EVENT } from './model-aliases';
 import { createRecentHome } from './recent-home';
 import { installHomeChatNavigation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
@@ -10803,6 +10804,16 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           );
         }, [B, M]),
         r(() => {
+          const update = () => {
+            if (B) return;
+            YL(i.fetchJSON, M)
+              .then((U) => setModelChoices({ profile: M, items: U }))
+              .catch(() => {});
+          };
+          window.addEventListener(MODEL_ALIASES_CHANGE_EVENT, update);
+          return () => window.removeEventListener(MODEL_ALIASES_CHANGE_EVENT, update);
+        }, [B, M, i.fetchJSON]),
+        r(() => {
           const L = `${M}\0${k}\0${B}`;
           const $t = k && !B ? `${M}\0${k}` : "";
           const Pt = $t ? codexSnapshotCache.get($t) : null;
@@ -11639,19 +11650,28 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               tt ? "✓" : "",
             );
           }),
-        renderSessionColorReset = (L, U, ee) =>
-          W(
+        renderSessionColorCustom = (L, U, ee) => {
+          const custom = Boolean(U) && !SESSION_COLORS.includes(U.toLowerCase());
+          return W(
             e,
-            "button",
+            "label",
             {
-              type: "button",
+              key: "custom",
+              className: `codex-session-color-swatch is-custom${custom ? " is-selected" : ""}`,
               role: "menuitem",
-              onClick: () => {
-                (ee(), changeSessionColor(L, ""));
-              },
+              "aria-label": runtimeText("自定义颜色", "Custom color"),
+              title: runtimeText("自定义颜色", "Custom color"),
             },
-            runtimeText("恢复默认", "Restore default"),
-          ),
+            W(e, "input", {
+              type: "color",
+              value: sessionColor(M, L, U),
+              "aria-label": runtimeText("自定义颜色", "Custom color"),
+              onChange: (ne) => {
+                (ee(), changeSessionColor(L, ne.target.value));
+              },
+            }),
+          );
+        },
         LM = t(
           (L) => {
             (Ce(""),
@@ -12104,8 +12124,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                               "aria-label": runtimeText("会话颜色", "Session color"),
                             },
                             ...renderSessionColorChoices(L.id, L.color, () => Ce("")),
+                            renderSessionColorCustom(L.id, L.color, () => Ce("")),
                           ),
-                          renderSessionColorReset(L.id, L.color, () => Ce("")),
                         ),
                       )
                     : null,
@@ -12542,7 +12562,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                                 : (zd(L.id), ye("main"));
                             },
                           },
-                          W(e, "span", null, L.label),
+                          W(e, "span", { title: L.id }, L.label),
                           (me === "model" ? Bt : Fi) === L.id
                             ? st(e, "check")
                             : null,
@@ -13078,9 +13098,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                             ...renderSessionColorChoices(k, ei?.color || "", () =>
                               setPaneColorMenu(!1),
                             ),
-                          ),
-                          renderSessionColorReset(k, ei?.color || "", () =>
-                            setPaneColorMenu(!1),
+                            renderSessionColorCustom(k, ei?.color || "", () =>
+                              setPaneColorMenu(!1),
+                            ),
                           ),
                         )
                       : null,

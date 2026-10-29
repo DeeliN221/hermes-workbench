@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { renderModelVisibilityPanel, renderWorkbenchVersions } from '../dashboard/src/workbench-version-settings';
+import { readModelAliases } from '../dashboard/src/model-aliases';
 
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); localStorage.clear(); });
 function panel() {
@@ -90,6 +91,41 @@ it('renders grouped model visibility cards, updates counts, and disables Show al
   showAll.click();
   expect(showAll.disabled).toBe(true);
   expect(target.querySelector('input[value="deepseek/deepseek-flash"]')?.closest('.workbench-model-option')?.getAttribute('data-visible')).toBe('true');
+});
+
+it('saves a chat display alias per model and rejects duplicate aliases', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.includes('/codex/models')) {
+      return new Response(JSON.stringify({
+        data: [
+          { model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true },
+          { model: 'deepseek/deepseek-flash', displayName: 'DeepSeek Flash', isDefault: false },
+        ],
+      }));
+    }
+    return new Response(JSON.stringify({ model: 'gpt-6.1-sol' }));
+  }));
+  const target = document.createElement('section');
+  document.body.append(target);
+  await renderModelVisibilityPanel(target, 'writer');
+  const deepseekAlias = target.querySelector<HTMLInputElement>('[data-model-alias="deepseek/deepseek-flash"]')!;
+  deepseekAlias.value = '  ds   flash  ';
+  deepseekAlias.dispatchEvent(new Event('change'));
+  expect(deepseekAlias.value).toBe('ds flash');
+  expect([...readModelAliases('writer')]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
+  expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('ds flash');
+
+  const gptAlias = target.querySelector<HTMLInputElement>('[data-model-alias="gpt-6.1-sol"]')!;
+  gptAlias.value = 'DS FLASH';
+  gptAlias.dispatchEvent(new Event('change'));
+  expect(gptAlias.dataset.invalid).toBe('true');
+  expect(target.querySelector('.workbench-model-alias-error')?.textContent).toContain('deepseek/deepseek-flash');
+  expect([...readModelAliases('writer')]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
+
+  deepseekAlias.value = '';
+  deepseekAlias.dispatchEvent(new Event('change'));
+  expect([...readModelAliases('writer')]).toEqual([]);
+  expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('已恢复原名');
 });
 
 it('shows rollback and re-enables controls without claiming success', async () => {

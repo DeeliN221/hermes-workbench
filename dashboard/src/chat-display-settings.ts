@@ -7,6 +7,7 @@ import {
 import { currentProfile } from './profile-scope';
 import { uiText as sourceText } from './ui-locale';
 import { accessoryPanelOpen, withAccessoryPanel } from './workbench-accessory';
+import { renderUserMessageBallSetting } from './user-message-ball';
 import './chat-display-settings.css';
 
 const LINK_ATTR = 'data-workbench-chat-display-link';
@@ -128,6 +129,7 @@ export function renderChatDisplayPanel(panel: HTMLElement): void {
   }
 
   panel.append(header, group, status);
+  renderUserMessageBallSetting(panel);
 }
 
 export function createChatDisplaySettings(sdk: any) {

@@ -15,9 +15,11 @@ import "./project-navigation.css";
 import "./cron-mobile.css";
 import { installWorkbenchVersionSettings } from './workbench-version-settings';
 import { installChatDisplaySettings } from './chat-display-settings';
+import { installUserMessageBall } from './user-message-ball';
 
 installWorkbenchVersionSettings();
 installChatDisplaySettings();
+installUserMessageBall();
 
 import './minecraft-sidebar.css';
 import './minecraft-theme.css';

@@ -3,6 +3,7 @@ import type { FetchJSON } from './workbench-api';
 import { record, rows, text, optionalNumber, type AuthedFetch } from './api-values';
 import { loadChatSetup } from './chat-setup';
 import { applyProfileChatDefaults } from './profile-model';
+import { applyModelAliases } from './model-aliases';
 import { visibleModels } from './model-visibility';
 import { runtimeErrorText } from './chat-runtime-errors';
 import { uiText } from './ui-locale';
@@ -166,7 +167,7 @@ export async function loadCodexModelCatalog(read: FetchJSON, profile: string) {
 
 export async function loadCodexModels(read: FetchJSON, profile: string) {
   const { choices, config } = await readCodexModelChoices(read, profile);
-  return applyProfileChatDefaults(visibleModels(profile, choices), config);
+  return applyProfileChatDefaults(applyModelAliases(profile, visibleModels(profile, choices)), config);
 }
 export async function markCodexSessionRead(read: FetchJSON, profile: string, session: string, readSeq: number) {
   if (readSeq) await read(`${API}/session/read?${sessionQuery(profile, session)}`, json('POST', { profile, readSeq }));

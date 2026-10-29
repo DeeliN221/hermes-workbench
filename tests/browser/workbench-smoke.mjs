@@ -149,6 +149,20 @@ try {
   });
   assert.ok(headerLayout.pickerLeft < headerLayout.titleLeft, 'The color picker must sit left of the title');
   assert.ok(Math.abs(headerLayout.pickerTop - headerLayout.titleTop) < 16, 'The title and color picker must share one row');
+  assert.ok(headerLayout.height <= 52, `The one-line chat header must stay compact; got ${headerLayout.height}px`);
+  await panePage.locator('.codex-pane-color-trigger').click();
+  const colorMenu = panePage.locator('.codex-pane-color-menu');
+  await colorMenu.waitFor({ state: 'visible', timeout: 5000 });
+  const colorGrid = colorMenu.locator('.codex-session-color-grid');
+  assert.equal(await colorGrid.locator('.codex-session-color-swatch').count(), 8, 'The color picker must keep eight cells');
+  assert.equal(await colorGrid.locator('button.codex-session-color-swatch').count(), 7, 'Seven cells are rainbow presets');
+  assert.equal(await colorGrid.locator('input[type="color"]').count(), 1, 'The last cell must open a custom color input');
+  assert.equal(await colorMenu.getByText('Restore default').count(), 0, 'The reset action must be removed');
+  const colorColumns = await colorGrid.evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length);
+  assert.equal(colorColumns, 4, 'The color picker must keep two rows of four cells');
+  await colorGrid.locator('input[type="color"]').fill('#123456');
+  await panePage.waitForFunction(() => document.querySelector('.codex-pane-color-dot')?.getAttribute('style')?.includes('18, 52, 86'));
+  if (await colorMenu.isVisible()) await panePage.locator('.codex-pane-color-trigger').click();
   await panePage.evaluate(() => {
     window.__copiedSessionId = '';
     Object.defineProperty(navigator, 'clipboard', {
@@ -223,7 +237,71 @@ try {
   assert.equal(await settingsReturnPage.evaluate(() => document.querySelector('.dashboard-persistent-workbench')?.getAttribute('data-chat-visible')), 'true');
   assert.deepEqual(settingsReturnErrors, [], `Browser errors returning from floating settings:\n${settingsReturnErrors.join('\n')}`);
   await settingsReturnPage.close();
+  const messageNavigatorPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const messageNavigatorErrors = [];
+  messageNavigatorPage.on('pageerror', error => messageNavigatorErrors.push(error.stack || error.message));
+  await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  await messageNavigatorPage.evaluate(() => {
+    const list = document.querySelector('.codex-message-list');
+    const template = list?.querySelector('.codex-message.is-user');
+    if (!list || !template) throw new Error('Missing user message fixture');
+    for (let index = 0; index < 6; index++) {
+      const clone = template.cloneNode(true);
+      clone.setAttribute('data-message-id', `preview-user-${index}`);
+      const body = clone.querySelector('.codex-message-body');
+      if (body) body.textContent = `Follow-up user message ${index + 1}: verify the navigator jump target.`;
+      list.append(clone);
+    }
+    const spacer = document.createElement('div');
+    spacer.style.height = '1200px';
+    list.append(spacer);
+  });
+  await messageNavigatorPage.waitForFunction(() => document.querySelectorAll('.codex-message.is-user[data-message-id]').length === 7);
+  const messageBall = messageNavigatorPage.locator('[data-workbench-user-message-ball]');
+  await messageBall.waitFor({ state: 'visible', timeout: 5000 });
+  assert.match(await messageBall.getAttribute('aria-label'), /7/);
+  await messageBall.click();
+  const messagePanel = messageNavigatorPage.locator('[data-workbench-user-message-panel]');
+  await messagePanel.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await messagePanel.locator('[data-user-message-item]').count(), 7, 'The navigator must list every user message');
+  const beforeJump = await messageNavigatorPage.locator('.codex-message-list').evaluate(node => node.scrollTop);
+  await messagePanel.locator('[data-user-message-item]').nth(4).click();
+  const jumped = await messageNavigatorPage.evaluate(() => ({
+    target: document.querySelector('[data-message-id="preview-user-3"]')?.classList.contains('is-user-message-jump-target'),
+    panelVisible: !document.querySelector('[data-workbench-user-message-panel]')?.hasAttribute('hidden'),
+  }));
+  assert.equal(jumped.target, true, 'Choosing a user message must mark its jump target');
+  assert.equal(jumped.panelVisible, false, 'Choosing a user message must close the navigator panel');
+  await messageNavigatorPage.waitForFunction(() => document.querySelector('.codex-message-list')?.scrollTop > 0);
+  const afterJump = await messageNavigatorPage.locator('.codex-message-list').evaluate(node => node.scrollTop);
+  assert.ok(afterJump > beforeJump, 'Choosing a user message must scroll the conversation');
 
+  await messageNavigatorPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
+  const navigatorToggle = messageNavigatorPage.locator('[data-testid="user-message-ball-toggle"]');
+  assert.equal(await navigatorToggle.getAttribute('aria-checked'), 'true');
+  await navigatorToggle.click();
+  assert.equal(await navigatorToggle.getAttribute('aria-checked'), 'false');
+  assert.equal(await messageNavigatorPage.evaluate(() => localStorage.getItem('workbench.user-message-ball.v1')), 'false');
+  await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  assert.equal(await messageNavigatorPage.locator('[data-workbench-user-message-ball]').isVisible(), false, 'The setting must hide the navigator');
+  await messageNavigatorPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
+  await messageNavigatorPage.locator('[data-testid="user-message-ball-toggle"]').click();
+  await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  await messageNavigatorPage.locator('[data-workbench-user-message-ball]').waitFor({ state: 'visible', timeout: 5000 });
+
+  await messageNavigatorPage.setViewportSize({ width: 390, height: 844 });
+  await messageNavigatorPage.reload({ waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  const mobileHeaderHeight = await messageNavigatorPage.locator('.codex-center-header').evaluate(node => node.getBoundingClientRect().height);
+  assert.ok(mobileHeaderHeight <= 56, `The mobile chat header must stay compact; got ${mobileHeaderHeight}px`);
+  await messageNavigatorPage.locator('[data-workbench-user-message-ball]').waitFor({ state: 'visible', timeout: 5000 });
+  assert.deepEqual(messageNavigatorErrors, [], `Browser errors in the user message navigator:\n${messageNavigatorErrors.join('\n')}`);
+  await messageNavigatorPage.close();
   const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileErrors = [];
   mobilePage.on('pageerror', error => mobileErrors.push(error.stack || error.message));
@@ -407,6 +485,44 @@ try {
   assert.match(await detailPage.locator('.codex-detail-more').innerText(), /Show 5 more lines/);
   assert.deepEqual(detailErrors, [], `Browser errors in the message detail picker:\n${detailErrors.join('\n')}`);
   await detailPage.close();
+
+  const aliasPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const aliasErrors = [];
+  aliasPage.on('pageerror', error => aliasErrors.push(error.stack || error.message));
+  await aliasPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await aliasPage.locator('.codex-option-toggle').waitFor({ state: 'visible', timeout: 5000 });
+  await aliasPage.evaluate(() => document.getElementById('preview-banner')?.remove());
+  // Navigate inside the SPA so the already-mounted chat stays alive while the alias is edited.
+  await aliasPage.evaluate(() => {
+    const next = new URL('/config?workbench=models&profile=default', location.origin);
+    history.pushState(null, '', next);
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  const deepseekAlias = aliasPage.locator('[data-model-alias="deepseek/deepseek-flash"]');
+  await deepseekAlias.waitFor({ state: 'visible', timeout: 5000 });
+  await deepseekAlias.fill(' ds-flash ');
+  await deepseekAlias.press('Enter');
+  await aliasPage.waitForFunction(() => localStorage.getItem('workbench.model-aliases.v1:default')?.includes('ds-flash'));
+  assert.equal(await deepseekAlias.inputValue(), 'ds-flash', 'Alias input must trim before saving');
+
+  await aliasPage.evaluate(() => history.back());
+  await aliasPage.waitForFunction(() => location.pathname === '/chat' && Boolean(document.querySelector('.codex-option-toggle')));
+  await aliasPage.locator('.codex-option-toggle').waitFor({ state: 'visible', timeout: 5000 });
+  await aliasPage.locator('.codex-option-toggle').click();
+  await aliasPage.locator('.codex-setting-row').first().click();
+  const aliasChoice = aliasPage.locator('.codex-setting-choice', { hasText: 'ds-flash' });
+  await aliasChoice.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await aliasChoice.locator('span').first().getAttribute('title'), 'deepseek/deepseek-flash', 'The selector must keep the original model id available on hover');
+  await aliasChoice.click();
+  await aliasPage.waitForFunction(() => document.querySelector('.codex-model-summary')?.textContent?.includes('ds-flash'));
+  assert.match(await aliasPage.locator('.codex-model-summary').innerText(), /ds-flash/);
+
+  await aliasPage.goto(host.origin + '/config?workbench=models&profile=default', { waitUntil: 'domcontentloaded' });
+  const restoredAlias = aliasPage.locator('[data-model-alias="deepseek/deepseek-flash"]');
+  await restoredAlias.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await restoredAlias.inputValue(), 'ds-flash', 'The alias must survive navigation and settings re-renders');
+  assert.deepEqual(aliasErrors, [], 'Browser errors in the alias flow:\n' + aliasErrors.join('\n'));
+  await aliasPage.close();
 
   const mobileSettingsPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileSettingsErrors = [];
