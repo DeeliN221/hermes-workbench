@@ -67,10 +67,11 @@ it('freezes earlier segments at steering boundaries while only the newest timer 
   const groups = processBlocks(input).filter(b => b.kind === 'process');
   expect(groups[0].timing).toMatchObject({ running: false, startedAt: 1000, duration: 3000 });
   expect(groups[1].timing).toMatchObject({ running: true, startedAt: 4000, duration: undefined });
-  const finished = input.map(m => m.turnId ? { ...m, turnStatus: 'completed', turnDurationMs: 8000, turnCompletedAt: 9000, weeklyRemainingPercent: 72 } : m);
+  const quota = { kind: 'google' as const, label: 'Claude', subscription: true, fiveHourRemaining: 0, weeklyRemaining: 47.2 };
+  const finished = input.map(m => m.turnId ? { ...m, turnStatus: 'completed', turnDurationMs: 8000, turnCompletedAt: 9000, weeklyRemainingPercent: 72, quota } : m);
   const complete = processBlocks(finished).filter(b => b.kind === 'process');
   expect(complete[0].timing).toMatchObject({ duration: 3000, completedAt: undefined, weeklyRemainingPercent: undefined });
-  expect(complete[1].timing).toMatchObject({ running: false, duration: 5000, completedAt: 9000, weeklyRemainingPercent: 72 });
+  expect(complete[1].timing).toMatchObject({ running: false, duration: 5000, completedAt: 9000, weeklyRemainingPercent: 72, quota });
 });
 
 

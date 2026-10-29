@@ -1,4 +1,6 @@
-export type ProcessTiming = { running: boolean; startedAt?: number; duration?: number; completedAt?: number; weeklyRemainingPercent?: number };
+import type { ResponseQuota } from './response-quota';
+
+export type ProcessTiming = { running: boolean; startedAt?: number; duration?: number; completedAt?: number; weeklyRemainingPercent?: number; quota?: ResponseQuota };
 export interface ProcessMessage {
   role?: string;
   phase?: string;
@@ -8,6 +10,7 @@ export interface ProcessMessage {
   turnCompletedAt?: number;
   turnDurationMs?: number;
   weeklyRemainingPercent?: number;
+  quota?: ResponseQuota;
   turnStatus?: string;
   status?: string;
 }
@@ -75,6 +78,7 @@ export function processBlocks<T extends ProcessMessage & { id: string; turnId?: 
       startedAt, duration, completedAt,
       running: !block.closed && completedAt === undefined && block.messages.some(m => m.turnStatus === 'running' || m.status === 'running'),
       weeklyRemainingPercent: block.closed ? undefined : block.messages.find(m => m.weeklyRemainingPercent !== undefined)?.weeklyRemainingPercent,
+      quota: block.closed ? undefined : block.messages.find(m => m.quota !== undefined)?.quota,
     };
   }
   return blocks;

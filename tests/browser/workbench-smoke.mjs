@@ -26,6 +26,17 @@ try {
     await page.close();
   }
 
+  const quotaPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const quotaErrors = [];
+  quotaPage.on('pageerror', error => quotaErrors.push(error.stack || error.message));
+  await quotaPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  const quota = quotaPage.locator('.codex-weekly-quota').first();
+  await quota.waitFor({ state: 'attached', timeout: 5000 });
+  const quotaText = (await quota.textContent() || '').trim();
+  assert.equal(quotaText, '0%');
+  assert.deepEqual(quotaErrors, [], `Browser errors in the response allowance:\n${quotaErrors.join('\n')}`);
+  await quotaPage.close();
+
   const diagramPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const diagramErrors = [];
   diagramPage.on('pageerror', error => diagramErrors.push(error.stack || error.message));

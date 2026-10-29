@@ -5,10 +5,12 @@ const event = (method: string, params: object) => ({ method, params });
 describe('typed Codex transcript boundary', () => {
   it('retains timing, successful command exit codes and attachment labels in native snapshots', () => {
     const messages = messagesFromTurns([{ id: 'turn', status: 'completed', startedAt: start / 1000, durationMs: 2500, weeklyRemainingPercent: 64,
+      quota: { kind: 'google', label: 'Claude', subscription: true, fiveHourRemaining: 0, weeklyRemaining: 47.2 },
       items: [{ id: 'u', type: 'userMessage', content: [{ type: 'text', text: 'Review' }, { type: 'localImage', path: '/workspace/demo/image.png' }], observedAt: start },
         { id: 'tool', type: 'commandExecution', status: 'running', exitCode: 0, aggregatedOutput: 'OK' }],
     }], 'session');
-    expect(messages[0]).toMatchObject({ role: 'user', content: 'Review\nAttachment: image.png', observedAt: start, turnCompletedAt: start + 2500, weeklyRemainingPercent: 64 });
+    expect(messages[0]).toMatchObject({ role: 'user', content: 'Review\nAttachment: image.png', observedAt: start, turnCompletedAt: start + 2500, weeklyRemainingPercent: 64,
+      quota: { kind: 'google', label: 'Claude', fiveHourRemaining: 0, weeklyRemaining: 47.2 } });
     expect(messages[1]).toMatchObject({ role: 'tool', status: 'completed', content: 'OK', error: false });
   });
   it('does not append replayed deltas to a running snapshot, or reopen completed items', () => {
@@ -25,8 +27,10 @@ describe('typed Codex transcript boundary', () => {
     expect(started).toHaveLength(1);
     expect(started[0]).toMatchObject({ id: 'request', itemId: 'native', observedAt: start });
     const another = normalizeMessage({ id: 'another', role: 'tool', turnId: 'other', content: 'Work', weeklyRemainingPercent: 80 }, 'fallback')!;
-    const metric = applyChatEvent([...started, another], event('workbench/turnMetrics', { turnId: 't', completedAt: start + 5000, weeklyRemainingPercent: 64 }));
-    expect(metric[0]).toMatchObject({ turnCompletedAt: start + 5000, weeklyRemainingPercent: 64 });
+    const metric = applyChatEvent([...started, another], event('workbench/turnMetrics', { turnId: 't', completedAt: start + 5000, weeklyRemainingPercent: 64,
+      quota: { kind: 'google', label: 'Claude', subscription: true, fiveHourRemaining: 0, weeklyRemaining: 47.2 } }));
+    expect(metric[0]).toMatchObject({ turnCompletedAt: start + 5000, weeklyRemainingPercent: 64,
+      quota: { kind: 'google', label: 'Claude', fiveHourRemaining: 0, weeklyRemaining: 47.2 } });
     expect(metric[1]).toEqual(another);
   });
   it('keeps local image previews on the optimistic request through native merges', () => {

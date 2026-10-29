@@ -167,7 +167,8 @@ function hermesSessions(profile) {
 /** Build representative turns for both the chat reader and its preview card. */
 function codexTurns() {
   return [{
-    id: 'preview-turn', status: 'completed',
+    id: 'preview-turn', status: 'completed', startedAt: Math.floor(Date.now() / 1000) - 60, durationMs: 1000,
+    quota: { kind: 'google', label: 'Claude', subscription: true, fiveHourRemaining: 0, weeklyRemaining: 47.2 },
     items: [
       { id: 'preview-user', type: 'userMessage', content: [{ type: 'text', text: 'Please verify that the local preview opens correctly.' }] },
       {

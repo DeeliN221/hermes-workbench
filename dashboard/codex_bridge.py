@@ -13,6 +13,7 @@ workers cannot share the in-memory Codex subscription registry.
 
 from __future__ import annotations
 
+import provider_quotas
 import response_metrics
 
 import asyncio
@@ -1233,6 +1234,29 @@ class BridgeStore:
                 "SELECT * FROM codex_requests WHERE user_id=? AND profile=? AND session_id=? AND turn_id=? ORDER BY updated_at DESC LIMIT 1",
                 (user, profile, session_id, turn_id),
             ).fetchone())
+
+    def turn_model(self, user: str, profile: str, session_id: str, turn_id: str) -> str:
+        """Return the model selected when the turn was started.
+
+        Steering requests do not repeat the model, so scan the turn's requests
+        oldest-first and keep the first explicit model. That preserves the
+        selection even when a later steer is the most recent request row.
+        """
+
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT payload FROM codex_requests WHERE user_id=? AND profile=? AND session_id=? AND turn_id=? ORDER BY updated_at",
+                (user, profile, session_id, turn_id),
+            ).fetchall()
+        for row in rows:
+            try:
+                payload = json.loads(row["payload"] or "{}")
+            except (TypeError, ValueError):
+                continue
+            model = payload.get("model") if isinstance(payload, dict) else None
+            if isinstance(model, str) and model.strip():
+                return model.strip()
+        return ""
 
     def set_title_if_empty(self, user: str, profile: str, session_id: str, title: str) -> None:
         """Set a first-message title without overwriting a user-selected title."""
@@ -2724,16 +2748,31 @@ class CodexBridge:
 
 
     async def _capture_response_metrics(self, identity, epoch, thread_id, turn_id, completed_at):
-        remaining = None
+        quota = None
+        model = ""
         try:
-            connection = self._connections.get(identity[:2])
-            if connection and not connection.closed and connection.epoch == epoch:
-                result = await asyncio.wait_for(connection.request('account/rateLimits/read', {}), 5)
-                remaining = response_metrics.weekly_remaining(result)
-            await asyncio.to_thread(response_metrics.save_quota, self.store, identity, turn_id, remaining)
+            model = await asyncio.to_thread(self.store.turn_model, *identity, turn_id)
+            provider = provider_quotas.model_provider(model) if model else 'openai'
+            if provider == 'google':
+                try:
+                    quota = await asyncio.to_thread(provider_quotas.fetch_google_quota, model)
+                except Exception:
+                    quota = {'kind': 'google', 'label': provider_quotas.family_label(provider_quotas.google_family(model)), 'subscription': True}
+            elif provider == 'openai':
+                try:
+                    connection = self._connections.get(identity[:2])
+                    if connection and not connection.closed and connection.epoch == epoch:
+                        result = await asyncio.wait_for(connection.request('account/rateLimits/read', {}), 5)
+                        quota = provider_quotas.openai_quota(result)
+                except Exception:
+                    quota = None
+                if quota is None:
+                    quota = {'kind': 'openai', 'label': 'Codex', 'subscription': True}
+            await asyncio.to_thread(response_metrics.save_quota, self.store, identity, turn_id, quota, model)
+            remaining = quota.get('weeklyRemaining') if quota else None
             await self._notification(*identity[:2], epoch, {
                 'method': 'workbench/turnMetrics',
-                'params': {'threadId': thread_id, 'turnId': turn_id, 'completedAt': completed_at, 'weeklyRemainingPercent': remaining},
+                'params': {'threadId': thread_id, 'turnId': turn_id, 'completedAt': completed_at, 'weeklyRemainingPercent': remaining, 'quota': quota},
             })
         except Exception:
             logging.getLogger(__name__).warning('Response quota snapshot unavailable; preserving unknown quota')
