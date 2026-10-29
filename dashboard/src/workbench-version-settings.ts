@@ -2,6 +2,13 @@ import { uiText as sourceText } from './ui-locale';
 import { currentProfile } from './profile-scope';
 import { loadCodexModelCatalog, type ChatModelChoice } from './codex-api';
 import { readHiddenModels, writeHiddenModels } from './model-visibility';
+import {
+  aliasConflict,
+  MODEL_ALIAS_MAX_LENGTH,
+  normalizeModelAlias,
+  readModelAliases,
+  writeModelAliases,
+} from './model-aliases';
 import type { FetchJSON } from './workbench-api';
 const LINK_ATTR = 'data-workbench-version-link';
 const MODEL_LINK_ATTR = 'data-workbench-model-link';
@@ -115,6 +122,7 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
     }
     const known = new Set(models.map(model => model.id));
     let hidden = readHiddenModels(profile);
+    let aliases = readModelAliases(profile);
     const stale = [...hidden].filter(id => !known.has(id));
     if (stale.length) hidden = writeHiddenModels(profile, [...hidden].filter(id => known.has(id)));
     const visibleCount = () => models.filter(model => !hidden.has(model.id)).length;
@@ -149,8 +157,10 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
         const options = document.createElement('div');
         options.className = 'workbench-model-options';
         for (const model of rows) {
-          const option = document.createElement('label');
+          const option = document.createElement('div');
           option.className = 'workbench-model-option';
+          const toggle = document.createElement('label');
+          toggle.className = 'workbench-model-toggle';
           const checkbox = document.createElement('input');
           checkbox.type = 'checkbox';
           checkbox.checked = !hidden.has(model.id);
@@ -178,7 +188,63 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
           const id = document.createElement('small');
           id.textContent = model.id;
           copy.append(titleRow, id);
-          option.append(checkbox, copy);
+          toggle.append(checkbox, copy);
+
+          const aliasField = document.createElement('label');
+          aliasField.className = 'workbench-model-alias';
+          const aliasLabel = document.createElement('span');
+          aliasLabel.className = 'workbench-model-alias-label';
+          aliasLabel.textContent = sourceText('聊天显示名', 'Chat display name');
+          const aliasInput = document.createElement('input');
+          aliasInput.type = 'text';
+          aliasInput.className = 'workbench-model-alias-input';
+          aliasInput.dataset.modelAlias = model.id;
+          aliasInput.value = aliases.get(model.id) || '';
+          aliasInput.placeholder = model.label;
+          aliasInput.maxLength = MODEL_ALIAS_MAX_LENGTH;
+          aliasInput.spellcheck = false;
+          aliasInput.autocomplete = 'off';
+          aliasInput.setAttribute('aria-label', `${sourceText('聊天显示名', 'Chat display name')}: ${model.label}`);
+          aliasInput.title = sourceText('留空则使用模型原名', 'Leave empty to use the original model name');
+          const aliasError = document.createElement('span');
+          aliasError.className = 'workbench-model-alias-error';
+          aliasError.setAttribute('role', 'alert');
+          aliasError.hidden = true;
+          aliasField.append(aliasLabel, aliasInput, aliasError);
+          option.append(toggle, aliasField);
+
+          aliasInput.addEventListener('input', () => {
+            delete aliasInput.dataset.invalid;
+            aliasError.hidden = true;
+            aliasError.textContent = '';
+          });
+          aliasInput.addEventListener('keydown', event => {
+            if (event.key === 'Escape') {
+              aliasInput.value = aliases.get(model.id) || '';
+              aliasInput.blur();
+            } else if (event.key === 'Enter') {
+              event.preventDefault();
+              aliasInput.blur();
+            }
+          });
+          aliasInput.addEventListener('change', () => {
+            const candidate = normalizeModelAlias(aliasInput.value);
+            aliasInput.value = candidate;
+            const conflict = aliasConflict(aliases, model.id, candidate);
+            if (conflict) {
+              aliasInput.dataset.invalid = 'true';
+              aliasError.hidden = false;
+              aliasError.textContent = sourceText(`该名称已被 ${conflict} 使用`, `Already used by ${conflict}`);
+              status.textContent = sourceText('别名与另一个模型重复，未保存。', 'That alias is already used by another model; not saved.');
+              return;
+            }
+            if (candidate) aliases.set(model.id, candidate);
+            else aliases.delete(model.id);
+            aliases = writeModelAliases(profile, aliases);
+            status.textContent = candidate
+              ? sourceText(`已保存别名：${candidate}`, `Alias saved: ${candidate}`)
+              : sourceText(`已恢复原名：${model.label}`, `Using the original name: ${model.label}`);
+          });
           checkbox.addEventListener('change', () => {
             if (!checkbox.checked && visibleCount() <= 1) {
               checkbox.checked = true;
@@ -218,8 +284,8 @@ export async function renderModelVisibilityPanel(panel: HTMLElement, explicitPro
   panel.setAttribute(PANEL_ATTR, 'true');
   panel.dataset.workbenchSettingsRoute = 'models';
   panel.innerHTML = sourceText(
-    '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong>。这里只改变 Workbench 聊天框的模型菜单，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
-    '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. This only changes the Workbench chat model menu; it does not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong>。可隐藏聊天框里的模型，并为每个模型设置简短别名；设置只保存在当前浏览器，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. Hide models from the chat menu and give each one a short alias. Both are stored in this browser and do not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
   );
   const profile = panel.querySelector<HTMLElement>('[data-model-profile]');
   if (profile) profile.textContent = profileName;
