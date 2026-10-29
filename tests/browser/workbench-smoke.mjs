@@ -53,6 +53,32 @@ try {
   assert.match(diagramInfo.text, /Pele/);
   assert.ok(diagramInfo.width > 0, 'Pele must render a visible SVG');
   assert.equal(await diagramPage.locator('.hti-rich-mermaid-error').count(), 0, 'Pele must render without an error note');
+
+  // Verify Mermaid lightbox
+  const mermaidZoom = diagramPage.locator('.hti-rich-mermaid:not(.hti-rich-plantuml) .hti-rich-diagram-zoom').first();
+  await mermaidZoom.waitFor({ state: 'visible', timeout: 5000 });
+  await mermaidZoom.click();
+  const lightbox = diagramPage.locator('#hti-diagram-lightbox');
+  await lightbox.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await lightbox.locator('.hti-diagram-lightbox-title').textContent(), 'Mermaid');
+  assert.equal(await lightbox.locator('.hti-diagram-lightbox-scale').textContent(), '100%');
+  await lightbox.locator('button[data-action="zoom-in"]').click();
+  assert.equal(await lightbox.locator('.hti-diagram-lightbox-scale').textContent(), '125%');
+  await diagramPage.keyboard.press('Escape');
+  await lightbox.waitFor({ state: 'detached', timeout: 5000 });
+
+  // Verify PlantUML lightbox
+  const plantumlSection = diagramPage.locator('.hti-rich-plantuml').first();
+  await plantumlSection.waitFor({ state: 'visible', timeout: 15000 });
+  const plantumlImg = plantumlSection.locator('.hti-rich-mermaid-svg img').first();
+  await plantumlImg.waitFor({ state: 'visible', timeout: 15000 });
+  const plantumlZoom = plantumlSection.locator('.hti-rich-diagram-zoom').first();
+  await plantumlZoom.waitFor({ state: 'visible', timeout: 5000 });
+  await plantumlZoom.click();
+  await lightbox.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await lightbox.locator('.hti-diagram-lightbox-title').textContent(), 'PlantUML');
+  await lightbox.locator('button[data-action="close"]').click();
+  await lightbox.waitFor({ state: 'detached', timeout: 5000 });
   assert.deepEqual(diagramErrors, [], `Browser errors while rendering Mermaid with Pele:\n${diagramErrors.join('\n')}`);
   await diagramPage.close();
 

@@ -4399,9 +4399,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const o = document.createElement("pre"),
       a = document.createElement("code");
     ((a.textContent = i), o.append(a), n.append(s, o));
+    const d = document.createElement("button");
+    ((d.type = "button"),
+      (d.className = "hti-rich-diagram-zoom"),
+      (d.textContent = runtimeText("放大", "Zoom")),
+      d.setAttribute("title", runtimeText("全屏放大查看", "Open zoomable diagram")),
+      d.setAttribute("aria-label", runtimeText("全屏放大查看", "Open zoomable diagram")));
     const l = document.createElement("div");
     ((l.className = "hti-rich-mermaid-controls"),
-      l.append(n, Bb(i)),
+      l.append(n, Bb(i), d),
       t.append(r, l));
     const c = document.createElement("div");
     return (
@@ -4437,6 +4443,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     });
     r() &&
       ((n.innerHTML = s.svg),
+      n.setAttribute("title", runtimeText("点击全屏放大查看", "Click to zoom and pan")),
       e.classList.remove("hti-rich-mermaid-error"),
       e.querySelector(".hti-rich-mermaid-error-note")?.remove());
   }
