@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyProfileModel, applyProfileChatDefaults, closestEffort, filterCodexModels, modelKey } from '../dashboard/src/profile-model';
+import { applyProfileModel, applyProfileChatDefaults, closestEffort, modelKey } from '../dashboard/src/profile-model';
 
 const models = ['gpt-6.1-sol', 'gpt-6-astra', 'gpt-6-luna'].map((id, index) => ({ id, label: id, isDefault: index === 0 }));
 
@@ -25,16 +25,6 @@ describe('profile default model', () => {
     expect(modelKey('deepseek/deepseek-v4-flash')).toBe('deepseek-flash');
   });
 });
-
-describe('Codex model catalog', () => {
-  it('shows only DeepSeek Flash and GPT models', () => {
-    const rows = ['gpt-6.1-sol', 'openai/gpt-5.6-luna', 'deepseek/deepseek-flash', 'deepseek/deepseek-v4-pro', 'claude-opus', 'gemini-pro']
-      .map(id => ({ id, label: id, isDefault: false }));
-    expect(filterCodexModels(rows).map(model => model.id))
-      .toEqual(['gpt-6.1-sol', 'openai/gpt-5.6-luna', 'deepseek/deepseek-flash']);
-  });
-});
-
 
 describe('profile chat defaults', () => {
   const catalog = models.map(model => ({ ...model, efforts: ['low', 'medium', 'high'], defaultEffort: 'medium', supportsFast: true, fastServiceTier: 'priority' }));

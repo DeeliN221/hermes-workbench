@@ -1,10 +1,20 @@
 import { uiText as sourceText } from './ui-locale';
+import { currentProfile } from './profile-scope';
+import { loadCodexModelCatalog, type ChatModelChoice } from './codex-api';
+import { readHiddenModels, writeHiddenModels } from './model-visibility';
+import type { FetchJSON } from './workbench-api';
 const LINK_ATTR = 'data-workbench-version-link';
+const MODEL_LINK_ATTR = 'data-workbench-model-link';
 const PANEL_ATTR = 'data-workbench-version-panel';
 
-function versionRoute(): boolean {
+type SettingsRoute = 'versions' | 'models';
+
+function settingsRoute(): SettingsRoute | null {
   const url = new URL(window.location.href);
-  return url.pathname === '/config' && url.searchParams.get('workbench') === 'versions';
+  if (url.pathname !== '/config') return null;
+  const route = url.searchParams.get('workbench');
+  if (route === 'versions' || route === 'settings') return 'versions';
+  return route === 'models' ? 'models' : null;
 }
 
 function navigate(url: string): void {
@@ -53,19 +63,17 @@ async function renderCodexRuntime(panel: HTMLElement): Promise<void> {
   }
 }
 
-function addSettingsLink(): void {
-  const nav = document.querySelector<HTMLElement>('.dashboard-settings-nav');
-  if (!nav) return;
-  const existing = nav.querySelector(`[${LINK_ATTR}]`);
+function addSettingsLink(nav: HTMLElement, attr: string, href: string, label: string): void {
+  const existing = nav.querySelector<HTMLAnchorElement>(`[${attr}]`);
   if (existing) {
-    const label = sourceText("版本切换", "Version switching");
     if (existing.textContent !== label) existing.textContent = label;
+    if (existing.getAttribute('href') !== href) existing.setAttribute('href', href);
     return;
   }
   const link = document.createElement('a');
-  link.setAttribute(LINK_ATTR, 'true');
-  link.href = '/config?workbench=versions';
-  link.textContent = sourceText("版本切换", "Version switching");
+  link.setAttribute(attr, 'true');
+  link.href = href;
+  link.textContent = label;
   link.addEventListener('click', event => {
     event.preventDefault();
     navigate(link.href);
@@ -73,11 +81,104 @@ function addSettingsLink(): void {
   nav.append(link);
 }
 
+function addSettingsLinks(): void {
+  const nav = document.querySelector<HTMLElement>('.dashboard-settings-nav');
+  if (!nav) return;
+  const profile = encodeURIComponent(currentProfile());
+  addSettingsLink(nav, MODEL_LINK_ATTR, `/config?workbench=models&profile=${profile}`, sourceText("模型显示", "Model visibility"));
+  addSettingsLink(nav, LINK_ATTR, `/config?workbench=versions&profile=${profile}`, sourceText("版本切换", "Version switching"));
+}
+
+async function renderModelVisibility(panel: HTMLElement): Promise<void> {
+  const profile = currentProfile();
+  const list = panel.querySelector<HTMLElement>('[data-model-visibility-list]');
+  const status = panel.querySelector<HTMLElement>('[data-model-visibility-status]');
+  const showAll = panel.querySelector<HTMLButtonElement>('[data-model-show-all]');
+  if (!list || !status || !showAll) return;
+  const read: FetchJSON = async (url, init) => {
+    const response = await fetch(url, { credentials: 'same-origin', ...init });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return response.json();
+  };
+  try {
+    const models = await loadCodexModelCatalog(read, profile);
+    if (!models.length) {
+      list.textContent = sourceText("当前没有可用模型。", "No models are currently available.");
+      status.textContent = sourceText("没有可显示的模型", "No models to show");
+      return;
+    }
+    const known = new Set(models.map(model => model.id));
+    let hidden = readHiddenModels(profile);
+    const stale = [...hidden].filter(id => !known.has(id));
+    if (stale.length) hidden = writeHiddenModels(profile, [...hidden].filter(id => known.has(id)));
+    const visibleCount = () => models.filter(model => !hidden.has(model.id)).length;
+    const render = () => {
+      const groups = new Map<string, ChatModelChoice[]>();
+      for (const model of models) {
+        const slash = model.id.lastIndexOf('/');
+        const provider = slash > 0 ? model.id.slice(0, slash) : 'Codex';
+        const group = groups.get(provider) || [];
+        group.push(model);
+        groups.set(provider, group);
+      }
+      list.replaceChildren(...[...groups].map(([provider, rows]) => {
+        const section = document.createElement('section');
+        section.className = 'workbench-model-group';
+        const heading = document.createElement('h3');
+        heading.textContent = provider;
+        const options = document.createElement('div');
+        options.className = 'workbench-model-options';
+        for (const model of rows) {
+          const option = document.createElement('label');
+          option.className = 'workbench-model-option';
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = !hidden.has(model.id);
+          checkbox.value = model.id;
+          const copy = document.createElement('span');
+          copy.className = 'workbench-model-copy';
+          const name = document.createElement('strong');
+          name.textContent = model.label;
+          const id = document.createElement('small');
+          id.textContent = model.id;
+          copy.append(name, id);
+          option.append(checkbox, copy);
+          checkbox.addEventListener('change', () => {
+            if (!checkbox.checked && visibleCount() <= 1) {
+              checkbox.checked = true;
+              status.textContent = sourceText("至少保留一个可见模型。", "Keep at least one model visible.");
+              return;
+            }
+            if (checkbox.checked) hidden.delete(model.id);
+            else hidden.add(model.id);
+            hidden = writeHiddenModels(profile, hidden);
+            status.textContent = sourceText(`已保存：聊天框显示 ${visibleCount()}/${models.length} 个模型`, `Saved: ${visibleCount()}/${models.length} models visible in chat`);
+          });
+          options.append(option);
+        }
+        section.append(heading, options);
+        return section;
+      }));
+      status.textContent = sourceText(`聊天框显示 ${visibleCount()}/${models.length} 个模型`, `${visibleCount()}/${models.length} models visible in chat`);
+    };
+    showAll.onclick = () => {
+      hidden = writeHiddenModels(profile, []);
+      render();
+      status.textContent = sourceText("已恢复显示全部模型。", "All models are visible again.");
+    };
+    render();
+  } catch (error) {
+    list.textContent = sourceText(`模型列表读取失败：${String(error)}`, `Could not load models: ${String(error)}`);
+    status.textContent = sourceText("读取失败", "Load failed");
+  }
+}
+
 async function renderPanel(): Promise<void> {
   const main = document.querySelector<HTMLElement>('.dashboard-owned-page') || document.querySelector<HTMLElement>('main');
   if (!main) return;
   let panel = main.querySelector<HTMLElement>(`[${PANEL_ATTR}]`);
-  if (!versionRoute()) {
+  const route = settingsRoute();
+  if (!route) {
     main.querySelectorAll<HTMLElement>('[data-workbench-settings-preserved]').forEach(node => {
       node.style.display = '';
       node.removeAttribute('data-workbench-settings-preserved');
@@ -85,7 +186,8 @@ async function renderPanel(): Promise<void> {
     panel?.remove();
     return;
   }
-  if (panel) return;
+  if (panel?.dataset.workbenchSettingsRoute === route) return;
+  panel?.remove();
   const preserved = Array.from(main.children).filter(node => !(node as HTMLElement).hasAttribute(PANEL_ATTR));
   preserved.forEach(node => {
     const element = node as HTMLElement;
@@ -94,10 +196,18 @@ async function renderPanel(): Promise<void> {
   });
   panel = document.createElement('section');
   panel.setAttribute(PANEL_ATTR, 'true');
-  panel.innerHTML = sourceText("<h2>Codex App Server</h2><p class=\"workbench-version-muted\">每天自动检查稳定版更新。更新会重启 App Server，正在运行的 Codex 任务可能中断。</p><div class=\"workbench-version-row\"><strong data-codex-runtime-status role=\"status\">正在检查 Codex 版本…</strong><button type=\"button\" data-codex-runtime-update hidden>立即更新并重启</button></div><h2>Workbench 版本切换</h2><p class=\"workbench-version-muted\" data-workbench-version-description>正在读取更新方式…</p><div class=\"workbench-version-list\" role=\"list\">正在读取版本…</div>", "<h2>Codex App Server</h2><p class=\"workbench-version-muted\">Checks stable releases daily. Updating restarts App Server and may interrupt active Codex tasks.</p><div class=\"workbench-version-row\"><strong data-codex-runtime-status role=\"status\">Checking Codex version\u2026</strong><button type=\"button\" data-codex-runtime-update hidden>Update and restart now</button></div><h2>Workbench version switching</h2><p class=\"workbench-version-muted\" data-workbench-version-description>Loading update mode\u2026</p><div class=\"workbench-version-list\" role=\"list\">Loading releases\u2026</div>");
+  panel.dataset.workbenchSettingsRoute = route;
   main.append(panel);
-  void renderCodexRuntime(panel);
-  await renderWorkbenchVersions(panel);
+  if (route === 'models') {
+    panel.innerHTML = sourceText("<h2>聊天模型显示</h2><p class=\"workbench-version-muted\">当前档案 <strong data-model-profile>default</strong>。这里只改变 Workbench 聊天框的模型菜单，不会修改 Codex 配置或后端模型目录。</p><div class=\"workbench-model-toolbar\"><button type=\"button\" data-model-show-all>全部显示</button><span data-model-visibility-status role=\"status\">正在读取模型…</span></div><div class=\"workbench-model-list\" data-model-visibility-list>正在读取模型…</div>", "<h2>Chat model visibility</h2><p class=\"workbench-version-muted\">Profile <strong data-model-profile>default</strong>. This only changes the Workbench chat model menu; it does not change Codex configuration or the backend catalog.</p><div class=\"workbench-model-toolbar\"><button type=\"button\" data-model-show-all>Show all</button><span data-model-visibility-status role=\"status\">Loading models…</span></div><div class=\"workbench-model-list\" data-model-visibility-list>Loading models…</div>");
+    const profile = panel.querySelector<HTMLElement>('[data-model-profile]');
+    if (profile) profile.textContent = currentProfile();
+    await renderModelVisibility(panel);
+  } else {
+    panel.innerHTML = sourceText("<h2>Codex App Server</h2><p class=\"workbench-version-muted\">每天自动检查稳定版更新。更新会重启 App Server，正在运行的 Codex 任务可能中断。</p><div class=\"workbench-version-row\"><strong data-codex-runtime-status role=\"status\">正在检查 Codex 版本…</strong><button type=\"button\" data-codex-runtime-update hidden>立即更新并重启</button></div><h2>Workbench 版本切换</h2><p class=\"workbench-version-muted\" data-workbench-version-description>正在读取更新方式…</p><div class=\"workbench-version-list\" role=\"list\">正在读取版本…</div>", "<h2>Codex App Server</h2><p class=\"workbench-version-muted\">Checks stable releases daily. Updating restarts App Server and may interrupt active Codex tasks.</p><div class=\"workbench-version-row\"><strong data-codex-runtime-status role=\"status\">Checking Codex version\u2026</strong><button type=\"button\" data-codex-runtime-update hidden>Update and restart now</button></div><h2>Workbench version switching</h2><p class=\"workbench-version-muted\" data-workbench-version-description>Loading update mode\u2026</p><div class=\"workbench-version-list\" role=\"list\">Loading releases\u2026</div>");
+    void renderCodexRuntime(panel);
+    await renderWorkbenchVersions(panel);
+  }
 
 }
 
@@ -263,7 +373,7 @@ export async function renderWorkbenchVersions(panel: HTMLElement, reload = () =>
 export function installWorkbenchVersionSettings(): void {
   if ((window as any).__HERMES_WORKBENCH_VERSION_SETTINGS__) return;
   (window as any).__HERMES_WORKBENCH_VERSION_SETTINGS__ = true;
-  const schedule = () => window.requestAnimationFrame(() => { addSettingsLink(); void renderPanel(); });
+  const schedule = () => window.requestAnimationFrame(() => { addSettingsLinks(); void renderPanel(); });
   new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ["lang"] });
   window.addEventListener('popstate', schedule);
   schedule();
