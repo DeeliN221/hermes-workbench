@@ -51,6 +51,7 @@ installChatFileLinks('/opt/data/workspace', openChatFilePreview);
 import { createChatComposerInput } from './chat-composer-input';
 import { processBlocks } from './chat-process-messages';
 import { visibleChatText } from './chat-line-output';
+import { clipChatText, lastChatLine, readChatDetailMode } from './chat-detail';
 import { resolveSessionTitle } from './session-title';
 import { SESSION_COLORS, SESSION_COLOR_LABELS, primeSessionColors, saveSessionColor, sessionColor, subscribeSessionColors } from './session-colors';
 import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
@@ -9682,13 +9683,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function y0(i) {
     return typeof i == "number" && Number.isFinite(i) && i >= 0 ? i : void 0;
   }
-  function C5({ React: i, message: e }) {
+  function C5({ React: i, message: e, detail = "standard" }) {
     if (e.subagent) return W(i, SubagentProgressCard, { React: i, message: e });
     const [t, r] = i.useState(""),
-      [outputExpanded, setOutputExpanded] = i.useState(false),
+      [outputExpanded, setOutputExpanded] = i.useState(detail === "detailed"),
+      [showFullOutput, setShowFullOutput] = i.useState(false),
       n = e.error === !0 || e.status === "failed",
       s = v0(e) || Zn(e.input),
       o = ws({ ...e, content: k5(e) }).trim(),
+      clippedOutput = clipChatText(o, detail),
       a = y0(e.durationMs),
       l = [
         a !== void 0
@@ -9698,6 +9701,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ]
         .filter(Boolean)
         .join(" · ");
+    i.useEffect(() => {
+      setShowFullOutput(false);
+      setOutputExpanded(detail === "detailed");
+    }, [detail]);
     return W(
       i,
       "div",
@@ -9764,53 +9771,100 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               { "aria-label": runtimeText("展开或收起输出", "Expand or collapse output"), title: runtimeText("展开或收起输出", "Expand or collapse output") },
               st(i, "right"),
             ),
-            outputExpanded ? W(i, "pre", { "data-testid": "codex-tool-output-text" }, o) : null,
+            outputExpanded
+              ? W(i, "div", { className: "codex-tool-output-body" },
+                  W(i, "pre", { "data-testid": "codex-tool-output-text" }, n || showFullOutput ? o : clippedOutput.text),
+                  clippedOutput.hiddenLines > 0 && !n
+                    ? W(i, "button", {
+                        type: "button",
+                        className: "codex-detail-more",
+                        "aria-expanded": showFullOutput,
+                        onClick: () => setShowFullOutput(value => !value),
+                      }, showFullOutput
+                        ? runtimeText("收起", "Show less")
+                        : runtimeText(`显示其余 ${clippedOutput.hiddenLines} 行`, `Show ${clippedOutput.hiddenLines} more lines`))
+                    : null)
+              : null,
           )
         : null,
     );
   }
-  function LazyToolRun({ React: i, messages, active, superseded }) {
-    const [expanded, setExpanded] = i.useState(active && !superseded);
-    i.useEffect(() => { if (superseded) setExpanded(false); }, [superseded]);
+  /** Render the selected tail of one process message with a local full-text override. */
+  function ChatProcessText({ React: i, text, detail, streaming }) {
+    const clipped = clipChatText(text, detail);
+    const [showAll, setShowAll] = i.useState(false);
+    i.useEffect(() => setShowAll(false), [detail]);
+    return W(
+      i,
+      "div",
+      { className: `codex-process-text codex-detail-text is-${detail}` },
+      W(i, Ki, { React: i, content: showAll ? text : clipped.text, streaming }),
+      clipped.hiddenLines > 0
+        ? W(
+            i,
+            "button",
+            {
+              type: "button",
+              className: "codex-detail-more",
+              "aria-expanded": showAll,
+              onClick: () => setShowAll(value => !value),
+            },
+            showAll
+              ? runtimeText("收起", "Show less")
+              : runtimeText(`显示其余 ${clipped.hiddenLines} 行`, `Show ${clipped.hiddenLines} more lines`),
+          )
+        : null,
+    );
+  }
+
+  function LazyToolRun({ React: i, messages, active, superseded, detail = "standard" }) {
+    const detailed = detail === "detailed";
+    const [expanded, setExpanded] = i.useState(detailed || (detail !== "compact" && active && !superseded));
+    i.useEffect(() => {
+      if (detailed) setExpanded(true);
+      else if (detail === "compact") setExpanded(false);
+      else setExpanded(active && !superseded);
+    }, [active, superseded, detail, detailed]);
     return W(i, "details", {
       className: "codex-tool-list", "data-testid": "turn-tool-list",
+      "data-detail": detail,
       open: expanded,
       onToggle: event => setExpanded(event.currentTarget.open),
     }, W(i, "summary", null, messages.some(message => message.subagent)
       ? runtimeText("子代理任务", "Subagent task")
       : messages.length === 1 ? runtimeText("一次工具调用", "One tool call") : runtimeText(`${messages.length}次工具调用`, `${messages.length} tool calls`)),
     expanded ? W(i, "div", { className: "codex-tool-rows" },
-      ...messages.map(message => W(i, C5, { key: message.id, React: i, message }))) : null);
+      ...messages.map(message => W(i, C5, { key: message.id, React: i, message, detail }))) : null);
   }
-  function Q5({ React: i, messages: e, hasFollowingBody = false, timing }) {
-    const r = timing?.running ?? false,
-      [expanded, setExpanded] = i.useState(r && !hasFollowingBody);
+  function Q5({ React: i, messages: e, hasFollowingBody = false, timing, detail = "standard" }) {
+    const detailed = detail === "detailed",
+      r = timing?.running ?? false,
+      [expanded, setExpanded] = i.useState(detailed || (detail !== "compact" && r && !hasFollowingBody));
     i.useEffect(() => {
-      if (hasFollowingBody) setExpanded(false);
-      else if (r) setExpanded(true);
-    }, [r, hasFollowingBody]);
+      if (detailed) setExpanded(true);
+      else if (detail === "compact") setExpanded(false);
+      else setExpanded(r && !hasFollowingBody);
+    }, [r, hasFollowingBody, detail, detailed]);
+    const preview = detail === "compact"
+      ? lastChatLine([...e].reverse().map(message => message.role === "tool" ? k5(message) : ws(message)).find(value => value.trim()) || "")
+      : "";
     const u = [];
     for (let h = 0; expanded && h < e.length; ) {
       const d = e[h];
       if (d.role !== "tool") {
-        (u.push(
-          W(
-            i,
-            "div",
-            { key: d.id, className: "codex-process-text" },
-            W(i, Ki, {
-              React: i,
-              content: ws(d),
-              streaming: d.status === "running",
-            }),
-          ),
-        ),
+        (u.push(W(i, ChatProcessText, {
+          key: d.id,
+          React: i,
+          text: ws(d),
+          detail,
+          streaming: d.status === "running",
+        })),
           (h += 1));
         continue;
       }
       const f = [];
       for (; h < e.length && e[h].role === "tool"; ) f.push(e[h++]);
-      u.push(W(i, LazyToolRun, { key: d.id, React: i, messages: f, active: r, superseded: h < e.length || hasFollowingBody }));
+      u.push(W(i, LazyToolRun, { key: d.id, React: i, messages: f, active: r, superseded: h < e.length || hasFollowingBody, detail }));
     }
 
     return W(
@@ -9818,6 +9872,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       "details",
       {
         className: "codex-tool-group",
+        "data-detail": detail,
         open: expanded,
         onToggle: event => setExpanded(event.currentTarget.open),
         "data-testid": "turn-tool-list-group",
@@ -9829,14 +9884,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         { className: "codex-tool-heading" },
         st(i, "right"),
         W(i, ProcessSummary, { React: i, timing: timing || { running: false } }),
+        preview ? W(i, "span", { className: "codex-tool-preview", "data-testid": "codex-tool-preview" }, preview) : null,
       ),
       W(i, "div", { className: "codex-process-content" }, ...u),
     );
   }
-  function P5(i, e, Process = Q5, Message = T5) {
+  function P5(i, e, Process = Q5, Message = T5, detail = "standard") {
     return processBlocks(e).map(block => block.kind === "message"
-      ? W(i, Message, { key: block.message.id, React: i, message: block.message })
-      : W(i, Process, { key: block.key, React: i, messages: block.messages, hasFollowingBody: block.hasFollowingBody, timing: block.timing }));
+      ? W(i, Message, { key: block.message.id, React: i, message: block.message, detail })
+      : W(i, Process, { key: block.key, React: i, messages: block.messages, hasFollowingBody: block.hasFollowingBody, timing: block.timing, detail }));
   }
 
   function w0(i) {
@@ -9851,7 +9907,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           ? { className: "is-unread", label: runtimeText("有未读回复", "Unread reply") }
           : null;
   }
-  function T5({ React: i, message: e }) {
+  function T5({ React: i, message: e, detail = "standard" }) {
     if (e.role === "tool") {
       const t =
           e.result == null
@@ -9876,9 +9932,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           i,
           "article",
           { className: "codex-message is-reasoning" },
-          W(i, Ki, {
+          W(i, ChatProcessText, {
             React: i,
-            content: ws(e),
+            text: ws(e),
+            detail,
             streaming: e.status === "running",
           }),
         )
@@ -9943,11 +10000,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ChatComposerInput = createChatComposerInput(i),
       CodexUserInput = createCodexUserInput(i),
       MemoMessage = e.memo(T5),
-      MemoProcess = e.memo(Q5, (before, after) => before.showDuration === after.showDuration
+      MemoProcess = e.memo(Q5, (before, after) => before.detail === after.detail
+        && before.showDuration === after.showDuration
         && before.hasFollowingBody === after.hasFollowingBody
         && before.messages.length === after.messages.length
         && before.messages.every((message, index) => message === after.messages[index])),
-      Transcript = e.memo(({ messages }) => W(e, e.Fragment, null, ...P5(e, messages, MemoProcess, MemoMessage))),
+      Transcript = e.memo(({ messages, detail }) => W(e, e.Fragment, null, ...P5(e, messages, MemoProcess, MemoMessage, detail))),
       u = LL(i, {
         imageLoading: runtimeText("图片加载中…", "Loading image…"),
         imageError: runtimeText("图片加载失败", "Could not load image"),
@@ -10181,6 +10239,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [Bt, bM] = o(""),
         [modelChoices, setModelChoices] = o({ profile: M, items: [] }),
         ai = modelChoices.profile === M ? modelChoices.items : [],
+        [chatDetail, setChatDetail] = o(() => readChatDetailMode()),
         [Fi, zd] = o("medium"),
         [_n, Xd] = o(!1),
         [vn, U0] = o([]),
@@ -10248,6 +10307,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           );
         }, [p]),
         r(() => subscribeSessionColors(() => bumpSessionColors(value => value + 1)), []),
+        r(() => {
+          const updateDetail = () => setChatDetail(readChatDetailMode());
+          window.addEventListener("storage", updateDetail);
+          window.addEventListener("hermes-workbench:chat-detail-change", updateDetail);
+          return () => {
+            window.removeEventListener("storage", updateDetail);
+            window.removeEventListener("hermes-workbench:chat-detail-change", updateDetail);
+          };
+        }, []),
         r(() => {
           if (!paneColorMenu) return;
           const L = (ne) => {
@@ -12885,7 +12953,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                       { className: "codex-empty" },
                       runtimeText("开始一段新的对话", "Start a new conversation"),
                     )
-                  : W(e, Transcript, { messages: It }),
+                  : W(e, Transcript, { messages: It, detail: chatDetail }),
             B ? null : rD,
           ),
           (yn?.kind === "user-input" || asyncQuestions) ? W(e, "button", {

@@ -124,6 +124,7 @@ try {
   panePage.on('pageerror', error => paneErrors.push(error.stack || error.message));
   await panePage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await panePage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  await panePage.waitForFunction(() => document.querySelectorAll('.project-folder-row').length === 6);
   assert.equal(await panePage.locator('.codex-session-id').count(), 0, 'The session id must not occupy a second header line');
   assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip');
   const projectList = await panePage.locator('.project-list').evaluate(node => ({
@@ -183,6 +184,7 @@ try {
   compactProjectsPage.on('pageerror', error => compactProjectErrors.push(error.stack || error.message));
   await compactProjectsPage.goto(host.origin + '/chat?session=codex-preview&profile=writer', { waitUntil: 'domcontentloaded' });
   await compactProjectsPage.locator('.project-list').waitFor({ state: 'attached', timeout: 5000 });
+  await compactProjectsPage.waitForFunction(() => document.querySelectorAll('.project-folder-row').length === 2);
   const compactProjectList = await compactProjectsPage.locator('.project-list').evaluate(node => ({
     count: node.querySelectorAll('.project-folder-row').length,
     clientHeight: node.clientHeight,
@@ -300,7 +302,59 @@ try {
   assert.deepEqual(errors, [], `Browser errors on the floating panel:\n${errors.join('\n')}`);
   await page.close();
 
-  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, and the centered floating panel rendered without page errors.');
+  const detailPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const detailErrors = [];
+  detailPage.on('pageerror', error => detailErrors.push(error.stack || error.message));
+  await detailPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
+  await detailPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await detailPage.locator('[data-workbench-chat-display-link]').innerText(), 'Chat display');
+  const detailOptions = detailPage.locator('[data-testid="chat-display-options"] [data-detail-mode]');
+  assert.deepEqual(await detailOptions.evaluateAll(nodes => nodes.map(node => ({
+    mode: node.getAttribute('data-detail-mode'),
+    title: node.querySelector('strong')?.textContent,
+    description: node.querySelector('span')?.textContent,
+  }))), [
+    { mode: 'compact', title: 'Compact', description: 'Fold completed work and keep only the latest line for quick scanning.' },
+    { mode: 'standard', title: 'Standard', description: 'Keep work folded after completion; expanded details show the latest ten lines.' },
+    { mode: 'detailed', title: 'Detailed', description: 'Expand process details and tool output with the complete content.' },
+  ]);
+  assert.equal(await detailPage.locator('[data-detail-mode="standard"]').getAttribute('aria-checked'), 'true');
+  await detailPage.locator('[data-detail-mode="compact"]').click();
+  assert.match(await detailPage.locator('[role="status"]').innerText(), /Compact saved/);
+
+  await detailPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  const detailGroup = detailPage.locator('.codex-tool-group').first();
+  await detailGroup.waitFor({ state: 'attached', timeout: 5000 });
+  await detailPage.waitForFunction(() => !document.querySelector('.codex-tool-group')?.hasAttribute('open'));
+  await detailPage.locator('[data-testid="codex-tool-preview"]').waitFor({ state: 'visible', timeout: 3000 });
+  assert.equal(await detailGroup.getAttribute('open'), null, 'Compact keeps work details folded');
+  assert.match(await detailPage.locator('[data-testid="codex-tool-preview"]').innerText(), /preview output line 12/);
+
+  await detailPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
+  await detailPage.locator('[data-detail-mode="detailed"]').waitFor({ state: 'visible', timeout: 5000 });
+  await detailPage.locator('[data-detail-mode="detailed"]').click();
+  await detailPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await detailPage.locator('.codex-tool-group').first().waitFor({ state: 'attached', timeout: 5000 });
+  await detailPage.waitForFunction(() => document.querySelector('.codex-tool-group')?.hasAttribute('open'));
+  assert.match(await detailPage.locator('.codex-process-text').first().innerText(), /Reasoning check 1/);
+  assert.equal(await detailPage.locator('.codex-detail-more').count(), 0, 'Detailed must not truncate process text');
+
+  await detailPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
+  await detailPage.locator('[data-detail-mode="standard"]').waitFor({ state: 'visible', timeout: 5000 });
+  await detailPage.locator('[data-detail-mode="standard"]').click();
+  await detailPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await detailPage.locator('.codex-tool-group').first().waitFor({ state: 'attached', timeout: 5000 });
+  await detailPage.waitForFunction(() => !document.querySelector('.codex-tool-group')?.hasAttribute('open'));
+  await detailPage.locator('.codex-tool-group').first().locator('summary').first().click();
+  await detailPage.locator('.codex-detail-more').waitFor({ state: 'visible', timeout: 3000 });
+  const standardText = await detailPage.locator('.codex-process-text').first().innerText();
+  assert.match(standardText, /Reasoning check 6/);
+  assert.doesNotMatch(standardText, /Reasoning check 5/);
+  assert.match(await detailPage.locator('.codex-detail-more').innerText(), /Show 5 more lines/);
+  assert.deepEqual(detailErrors, [], `Browser errors in the message detail picker:\n${detailErrors.join('\n')}`);
+  await detailPage.close();
+
+  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, the centered floating panel, and the three chat detail levels rendered without page errors.');
 } finally {
   await browser.close();
   await host.close();

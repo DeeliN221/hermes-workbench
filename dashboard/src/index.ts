@@ -14,8 +14,10 @@ installKanbanDeleteBoardScope();
 import "./project-navigation.css";
 import "./cron-mobile.css";
 import { installWorkbenchVersionSettings } from './workbench-version-settings';
+import { installChatDisplaySettings } from './chat-display-settings';
 
 installWorkbenchVersionSettings();
+installChatDisplaySettings();
 
 import './minecraft-sidebar.css';
 import './minecraft-theme.css';
