@@ -124,7 +124,7 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
     }
     const known = new Set(models.map(model => model.id));
     let hidden = readHiddenModels(profile);
-    let aliases = readModelAliases(profile);
+    let aliases = readModelAliases();
     const stale = [...hidden].filter(id => !known.has(id));
     if (stale.length) hidden = writeHiddenModels(profile, [...hidden].filter(id => known.has(id)));
     const visibleCount = () => models.filter(model => !hidden.has(model.id)).length;
@@ -207,7 +207,7 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
           aliasInput.spellcheck = false;
           aliasInput.autocomplete = 'off';
           aliasInput.setAttribute('aria-label', `${sourceText('聊天显示名', 'Chat display name')}: ${model.label}`);
-          aliasInput.title = sourceText('留空则使用模型原名', 'Leave empty to use the original model name');
+          aliasInput.title = sourceText('对所有档案生效；留空则使用模型原名', 'Applies to every profile; leave empty to use the original model name');
           const aliasError = document.createElement('span');
           aliasError.className = 'workbench-model-alias-error';
           aliasError.setAttribute('role', 'alert');
@@ -242,9 +242,9 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
             }
             if (candidate) aliases.set(model.id, candidate);
             else aliases.delete(model.id);
-            aliases = writeModelAliases(profile, aliases);
+            aliases = writeModelAliases(aliases);
             status.textContent = candidate
-              ? sourceText(`已保存别名：${candidate}`, `Alias saved: ${candidate}`)
+              ? sourceText(`已保存别名（所有档案）：${candidate}`, `Alias saved for all profiles: ${candidate}`)
               : sourceText(`已恢复原名：${model.label}`, `Using the original name: ${model.label}`);
           });
           checkbox.addEventListener('change', () => {
@@ -286,8 +286,8 @@ export async function renderModelVisibilityPanel(panel: HTMLElement, explicitPro
   panel.setAttribute(PANEL_ATTR, 'true');
   panel.dataset.workbenchSettingsRoute = 'models';
   panel.innerHTML = sourceText(
-    '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong>。可隐藏聊天框里的模型，并为每个模型设置简短别名；设置只保存在当前浏览器，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
-    '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. Hide models from the chat menu and give each one a short alias. Both are stored in this browser and do not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">勾选控制当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong> 的聊天框显示哪些模型；聊天显示名对所有档案同步生效。设置只保存在当前浏览器，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Checkboxes choose which models appear in the chat menu for profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. Chat display names apply to every profile. Both are stored in this browser and do not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
   );
   const profile = panel.querySelector<HTMLElement>('[data-model-profile]');
   if (profile) profile.textContent = profileName;

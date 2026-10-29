@@ -7,7 +7,9 @@
     padding: calc(64px + env(safe-area-inset-top)) 16px 20px; overflow: auto; border: 0;
   }
   :root[data-mobile-settings="list"] .dashboard-settings-nav h1 { display: none !important; }
-  :root[data-mobile-settings="list"] .dashboard-settings-nav > a { display: flex; align-items: center; min-height: 44px; white-space: normal !important; }
+  :root[data-mobile-settings="list"] .dashboard-settings-nav a { display: flex; align-items: center; min-height: 44px; white-space: normal !important; }
+  :root[data-mobile-settings="list"] .dashboard-settings-nav .workbench-settings-group.is-collapsible { margin-top: 4px; }
+  :root[data-mobile-settings="list"] .dashboard-settings-nav .workbench-settings-more-toggle { min-height: 44px; }
   :root[data-mobile-settings="list"] :is(#app-sidebar + div, .dashboard-owned-page) { display: none !important; }
   :root[data-mobile-settings="detail"] :is(.dashboard-settings-nav, .dashboard-action-rail, .dashboard-global-nav, .dashboard-nav-backdrop) { display: none !important; }
   :root[data-mobile-settings="detail"] #app-sidebar + .workbench-mobile-settings-panel,

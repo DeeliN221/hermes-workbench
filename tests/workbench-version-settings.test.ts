@@ -93,7 +93,7 @@ it('renders grouped model visibility cards, updates counts, and disables Show al
   expect(target.querySelector('input[value="deepseek/deepseek-flash"]')?.closest('.workbench-model-option')?.getAttribute('data-visible')).toBe('true');
 });
 
-it('saves a chat display alias per model and rejects duplicate aliases', async () => {
+it('saves a shared chat display alias per model and rejects duplicate aliases', async () => {
   vi.stubGlobal('fetch', vi.fn(async (url: string) => {
     if (url.includes('/codex/models')) {
       return new Response(JSON.stringify({
@@ -112,7 +112,7 @@ it('saves a chat display alias per model and rejects duplicate aliases', async (
   deepseekAlias.value = '  ds   flash  ';
   deepseekAlias.dispatchEvent(new Event('change'));
   expect(deepseekAlias.value).toBe('ds flash');
-  expect([...readModelAliases('writer')]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
+  expect([...readModelAliases()]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
   expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('ds flash');
 
   const gptAlias = target.querySelector<HTMLInputElement>('[data-model-alias="gpt-6.1-sol"]')!;
@@ -120,11 +120,11 @@ it('saves a chat display alias per model and rejects duplicate aliases', async (
   gptAlias.dispatchEvent(new Event('change'));
   expect(gptAlias.dataset.invalid).toBe('true');
   expect(target.querySelector('.workbench-model-alias-error')?.textContent).toContain('deepseek/deepseek-flash');
-  expect([...readModelAliases('writer')]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
+  expect([...readModelAliases()]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
 
   deepseekAlias.value = '';
   deepseekAlias.dispatchEvent(new Event('change'));
-  expect([...readModelAliases('writer')]).toEqual([]);
+  expect([...readModelAliases()]).toEqual([]);
   expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('已恢复原名');
 });
 
