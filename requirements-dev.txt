@@ -121,5 +121,5 @@ uvicorn==0.54.0
     # via
     #   -r requirements-dev.in
     #   mcp
-websockets==17.2
+websockets==17.3
     # via -r requirements-dev.in
