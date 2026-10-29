@@ -76,6 +76,11 @@ const fixture = `<!doctype html>
   });
 </script></body></html>`;
 
+const configFixture = fixture.replace(
+  '<body><div id="root"></div>',
+  `<body><style>#root{display:none!important}#host-config{min-height:100vh;background:#fbfaf6;color:#203345}#host-config .dashboard-settings-nav{left:0!important;top:0!important;bottom:0!important;width:220px!important;background:#f4f1e8!important;color:#203345!important;z-index:1!important;border-right:1px solid #d9d3c4!important}#host-config .dashboard-settings-nav a{color:#203345!important}#host-config .dashboard-settings-nav a[aria-current="page"]{background:#e4efe6!important}#host-config .dashboard-owned-page{margin-left:220px!important;min-height:100vh;background:#fbfaf6!important}@media(max-width:600px){#host-config .dashboard-settings-nav{position:static!important;inset:auto!important;width:auto!important;height:auto!important;flex-direction:row!important;overflow-x:auto!important;padding:8px 10px!important;border-right:0!important;border-bottom:1px solid #d9d3c4!important}#host-config .workbench-settings-heading{display:none!important}#host-config .dashboard-owned-page{margin-left:0!important}#host-config .dashboard-settings-nav a{padding:6px 8px!important;white-space:nowrap}}</style><div id="host-config"><nav class="dashboard-settings-nav" aria-label="Settings categories"><div class="workbench-settings-heading"><h1>Settings</h1></div><a href="/config" aria-current="page">General</a><a href="/config?workbench=shortcuts">Keyboard shortcuts</a><a href="/profiles">Profiles</a><a href="/models">Models</a></nav><main class="dashboard-owned-page"><h1>General settings</h1><p>Local host settings shell.</p></main></div><div id="root"></div>`,
+);
+
 /** Return preview sessions for one profile with stable IDs and recent timestamps. */
 function codexSessions(profile) {
   const now = Math.floor(Date.now() / 1000);
@@ -104,6 +109,15 @@ function codexTurns() {
     id: 'preview-turn', status: 'completed',
     items: [
       { id: 'preview-user', type: 'userMessage', content: [{ type: 'text', text: 'Please verify that the local preview opens correctly.' }] },
+      {
+        id: 'preview-reasoning', type: 'reasoning', status: 'completed',
+        summary: [Array.from({ length: 15 }, (_, index) => `Reasoning check ${index + 1}: inspect the local fixture boundary.`).join('\n')],
+      },
+      {
+        id: 'preview-command', type: 'commandExecution', status: 'completed', exitCode: 0, durationMs: 1200,
+        command: 'printf "preview output\\n"',
+        aggregatedOutput: Array.from({ length: 12 }, (_, index) => `preview output line ${index + 1}`).join('\n'),
+      },
       { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.\n\n```mermaid\nflowchart LR\n  Chat --> Pele\n  Pele --> SVG\n```' }] },
     ],
   }];
@@ -195,6 +209,11 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       const body = JSON.stringify(apiPayload(url, request.method || 'GET'));
       response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
       response.end(body);
+      return;
+    }
+    if (url.pathname === '/config') {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(configFixture);
       return;
     }
     if (['/', '/sessions', '/chat', '/workbench', '/profiles', '/cron'].includes(url.pathname)) {
