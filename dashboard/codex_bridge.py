@@ -44,6 +44,7 @@ _IDENTIFIER = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:@/-]{0,199}$")
 _SESSION_COLOR = re.compile(r"^#[0-9A-Fa-f]{6}$")
 _DEFAULT_TIMEOUT = 30.0
 _MAX_PAGE = 200
+_MAX_TITLE_LENGTH = 200
 _MAX_HISTORY_PAGES = 1000
 _COMPLETION_LEASE = 120.0
 _NOTIFICATION_QUEUE_MAX = 256
@@ -503,6 +504,17 @@ class JsonRpcConnection:
             await self.transport.send({"id": request_id, "result": result})
 
 
+def _session_title_fields(value: dict[str, Any]) -> dict[str, Any]:
+    """Expose the stored title, its origin, and the legacy id display fallback."""
+
+    stored = str(value.get("title") or "")
+    source = str(value.get("title_source") or "")
+    value["titleSource"] = source or None
+    value["customTitle"] = stored if source == "user" else None
+    value["title"] = stored or value["session_id"]
+    return value
+
+
 class BridgeStore:
     """SQLite persistence for identity-scoped mappings, requests, events, and reads."""
 
@@ -591,6 +603,7 @@ class BridgeStore:
             session_columns = {str(row[1]) for row in self.connection.execute("PRAGMA table_info(codex_sessions)").fetchall()}
             if "title" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN title TEXT NOT NULL DEFAULT ''")
+                session_columns.add("title")
             if "session_scope" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN session_scope TEXT NOT NULL DEFAULT 'personal'")
             if "execution_node_id" not in session_columns:
@@ -614,6 +627,11 @@ class BridgeStore:
                     except ValueError:
                         pass
                     self.connection.execute("UPDATE codex_sessions SET created_at=? WHERE user_id=? AND profile=? AND session_id=?", (min(candidates), *identity))
+            if "title_source" not in session_columns:
+                # Titles written before this marker existed came from the first
+                # message; only an explicit rename may mark a title 'user'.
+                self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN title_source TEXT NOT NULL DEFAULT ''")
+                self.connection.execute("UPDATE codex_sessions SET title_source='auto' WHERE title<>'' AND title<>session_id")
             # Recover names without opening every conversation or querying upstream.
             for row in self.connection.execute("SELECT user_id,profile,session_id FROM codex_sessions WHERE title='' OR title=session_id").fetchall():
                 identity = (row["user_id"], row["profile"], row["session_id"])
@@ -693,7 +711,8 @@ class BridgeStore:
             value["workspace"] = value["workspace_id"]
             value["workspacePath"] = value["workspace_path"]
             value["updatedAt"] = value["updated_at"]
-            value["title"] = value.get("title") or value["session_id"]
+            value["createdAt"] = value.get("created_at") or 0.0
+            _session_title_fields(value)
             completed = self._last_completed_seq(user, profile, session_id)
             read = self.connection.execute("SELECT last_completed_seq FROM codex_reads WHERE user_id=? AND profile=? AND session_id=?", (user, profile, session_id)).fetchone()
             value["lastCompletedSeq"] = int(completed or 0)
@@ -714,18 +733,27 @@ class BridgeStore:
         """Create or update one identity-scoped Codex session mapping."""
 
         now = time.time()
+        incoming_title = "" if value.get("title") == value["session_id"] else str(value.get("title") or "").strip()
+        incoming_source = str(value.get("title_source") or value.get("titleSource") or "")
+        if not incoming_title:
+            incoming_title, incoming_source = "", ""
+        elif incoming_source != "user":
+            incoming_source = "auto"
         with self.lock:
             try:
                 self.connection.execute(
                     """INSERT INTO codex_sessions
-                (user_id,profile,session_id,thread_id,workspace_id,workspace_path,session_scope,execution_node_id,status,title,updated_at,created_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,profile,session_id) DO UPDATE SET
+                (user_id,profile,session_id,thread_id,workspace_id,workspace_path,session_scope,execution_node_id,status,title,title_source,updated_at,created_at)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(user_id,profile,session_id) DO UPDATE SET
                 thread_id=excluded.thread_id,workspace_id=excluded.workspace_id,
                 workspace_path=excluded.workspace_path,session_scope=excluded.session_scope,
                 execution_node_id=excluded.execution_node_id,status=excluded.status,
-                title=CASE WHEN excluded.title <> '' THEN excluded.title ELSE codex_sessions.title END,
+                title=CASE WHEN codex_sessions.title_source='user' THEN codex_sessions.title
+                    WHEN excluded.title <> '' THEN excluded.title ELSE codex_sessions.title END,
+                title_source=CASE WHEN codex_sessions.title_source='user' THEN 'user'
+                    WHEN excluded.title <> '' THEN excluded.title_source ELSE codex_sessions.title_source END,
                 updated_at=excluded.updated_at""",
-                (user, profile, value["session_id"], value["thread_id"], value["workspace_id"], value["workspace_path"], normalize_session_scope(value.get("session_scope")), str(value.get("execution_node_id") or "")[:200], value.get("status", "idle"), "" if value.get("title") == value["session_id"] else value.get("title", ""), now, now),
+                (user, profile, value["session_id"], value["thread_id"], value["workspace_id"], value["workspace_path"], normalize_session_scope(value.get("session_scope")), str(value.get("execution_node_id") or "")[:200], value.get("status", "idle"), incoming_title, incoming_source, now, now),
                 )
                 self.connection.execute(
                     "INSERT OR IGNORE INTO codex_session_organization(user_id,profile,session_id) VALUES(?,?,?)",
@@ -766,7 +794,7 @@ class BridgeStore:
                 read = connection.execute("SELECT last_completed_seq FROM codex_reads WHERE user_id=? AND profile=? AND session_id=?", (user, profile, value["session_id"])).fetchone()
                 value["readSeq"] = int(read[0]) if read else 0
                 value["unread"] = value["lastCompletedSeq"] > value["readSeq"]
-                value["title"] = value.get("title") or value["session_id"]
+                _session_title_fields(value)
                 value["id"] = value["session_id"]
                 value["workspace"] = value["workspace_id"]
                 value["workspacePath"] = value["workspace_path"]
@@ -844,7 +872,7 @@ class BridgeStore:
         value["workspacePath"] = value["workspace_path"]
         value["updatedAt"] = value["updated_at"]
         value["createdAt"] = value["created_at"]
-        value["title"] = value.get("title") or value["session_id"]
+        _session_title_fields(value)
         value["groupName"] = value.pop("group_name", "") or ""
         return value
 
@@ -1267,8 +1295,40 @@ class BridgeStore:
         if not title:
             return
         with self.lock:
-            self.connection.execute("UPDATE codex_sessions SET title=? WHERE user_id=? AND profile=? AND session_id=? AND (title='' OR title=session_id)", (title, user, profile, session_id))
+            self.connection.execute(
+                "UPDATE codex_sessions SET title=?, title_source='auto' "
+                "WHERE user_id=? AND profile=? AND session_id=? "
+                "AND COALESCE(title_source, '')<>'user' AND (title='' OR title=session_id)",
+                (title, user, profile, session_id),
+            )
             self.connection.commit()
+
+    def set_title(self, user: str, profile: str, session_id: str, title: str | None) -> dict[str, Any]:
+        """Persist a user-supplied title, or clear it to restore the derived default."""
+
+        normalized = " ".join(str(title or "").split())
+        if len(normalized) > _MAX_TITLE_LENGTH:
+            raise HTTPException(status_code=400, detail=f"Session title must contain at most {_MAX_TITLE_LENGTH} characters")
+        with self.lock:
+            existing = self.connection.execute(
+                "SELECT 1 FROM codex_sessions WHERE user_id=? AND profile=? AND session_id=?",
+                (user, profile, session_id),
+            ).fetchone()
+            if existing is None:
+                raise HTTPException(status_code=404, detail="Session not found")
+            try:
+                self.connection.execute(
+                    "UPDATE codex_sessions SET title=?, title_source=? WHERE user_id=? AND profile=? AND session_id=?",
+                    (normalized, "user" if normalized else "", user, profile, session_id),
+                )
+                self.connection.commit()
+            except Exception:
+                self.connection.rollback()
+                raise
+        result = self.session(user, profile, session_id)
+        if result is None:
+            raise RuntimeError("renamed session was not persisted")
+        return result
 
     def save_request(self, user: str, profile: str, session_id: str, client_id: str, **values: Any) -> dict[str, Any]:
         """Insert or update a client request without changing its identity."""
@@ -1835,6 +1895,13 @@ class CodexBridge:
         lock = self._session_locks.setdefault((user, profile, session_id), asyncio.Lock())
         async with lock:
             return await asyncio.to_thread(self.store.update_organization, user, profile, session_id, values)
+
+    async def rename_title(self, user: str, profile: str, session_id: str, title: str | None) -> dict[str, Any]:
+        """Serialize a user title change so a new turn cannot race the rename."""
+
+        lock = self._session_locks.setdefault((user, profile, session_id), asyncio.Lock())
+        async with lock:
+            return await asyncio.to_thread(self.store.set_title, user, profile, session_id, title)
 
     async def _connection(self, user: str, profile: str) -> JsonRpcConnection:
         """Return one shared app-server connection for an identity and profile."""
@@ -3032,6 +3099,12 @@ class OrganizationBody(BaseModel):
     color: str | None = None
 
 
+class SessionTitleBody(BaseModel):
+    """User-supplied session title; an empty value restores the derived default."""
+
+    title: str | None = None
+
+
 class SessionTransferBody(BaseModel):
     """Input for moving one inactive conversation between profile scopes."""
 
@@ -3120,6 +3193,13 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
         """Create a Codex thread and its Workbench mapping."""
 
         return {"session": await service.create_session(_user(request), _safe(body.profile, "profile"), body.model_dump(exclude_none=True))}
+
+    @router.patch("/sessions/{session_id}/title")
+    async def rename_session(session_id: str, body: SessionTitleBody, request: Request, profile: str = "default") -> dict[str, Any]:
+        """Rename one session title without crossing user or profile scope."""
+
+        session = await service.rename_title(_user(request), _safe(profile, "profile"), _safe(session_id, "session"), body.title)
+        return {"session_id": session["session_id"], "title": session.get("customTitle"), "session": session}
 
     @router.get("/models")
     async def models(request: Request, profile: str = "default") -> dict[str, Any]:

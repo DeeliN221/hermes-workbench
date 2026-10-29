@@ -8,7 +8,9 @@ from pathlib import Path
 from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'dashboard'))
-from codex_bridge import BridgeStore, CodexBridge
+from codex_bridge import BridgeStore, CodexBridge, create_router
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
 
 
 class SessionMetadataContract(unittest.TestCase):
@@ -128,3 +130,186 @@ class ConcurrentListContract(unittest.TestCase):
                 self.assertEqual(store.list_sessions('qa', 'default', 1, 0)[0]['id'], 'newer')
             finally:
                 store.close()
+
+
+class SessionTitleContract(unittest.TestCase):
+    """A user rename persists, survives new turns, and never crosses profiles."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.path = Path(self.temp.name) / 'db'
+        self.store = BridgeStore(self.path)
+        self.create('session')
+
+    def tearDown(self):
+        self.store.close()
+        self.temp.cleanup()
+
+    def create(self, sid, title=''):
+        return self.store.upsert_session('qa', 'default', {
+            'session_id': sid, 'thread_id': 'thread-' + sid, 'title': title,
+            'workspace_id': 'default', 'workspace_path': self.temp.name,
+        })
+
+    def test_rename_persists_and_survives_new_messages_and_restarts(self):
+        renamed = self.store.set_title('qa', 'default', 'session', '  重构计划  ')
+        self.assertEqual(renamed['title'], '重构计划')
+        self.assertEqual(renamed['customTitle'], '重构计划')
+        self.assertEqual(renamed['titleSource'], 'user')
+        # A later message derives a title only when the user did not set one.
+        self.store.set_title_if_empty('qa', 'default', 'session', '新的第一条消息')
+        self.store.upsert_session('qa', 'default', {**renamed, 'status': 'running'})
+        self.store.close()
+        self.store = BridgeStore(self.path)
+        session = self.store.session('qa', 'default', 'session')
+        self.assertEqual(session['title'], '重构计划')
+        self.assertEqual(session['customTitle'], '重构计划')
+        self.assertEqual(session['titleSource'], 'user')
+
+    def test_empty_title_restores_the_derived_default(self):
+        self.store.set_title('qa', 'default', 'session', '自定义标题')
+        cleared = self.store.set_title('qa', 'default', 'session', '   ')
+        self.assertIsNone(cleared['customTitle'])
+        self.assertIsNone(cleared['titleSource'])
+        self.assertEqual(cleared['title'], 'session')
+        stored = self.store.connection.execute('select title,title_source from codex_sessions').fetchone()
+        self.assertEqual((stored['title'], stored['title_source']), ('', ''))
+        self.store.set_title_if_empty('qa', 'default', 'session', '第一条消息')
+        session = self.store.session('qa', 'default', 'session')
+        self.assertEqual(session['title'], '第一条消息')
+        self.assertEqual(session['titleSource'], 'auto')
+
+    def test_rename_rejects_missing_sessions_and_overlong_titles(self):
+        with self.assertRaises(HTTPException) as missing:
+            self.store.set_title('qa', 'default', 'absent', '标题')
+        self.assertEqual(missing.exception.status_code, 404)
+        with self.assertRaises(HTTPException) as other_profile:
+            self.store.set_title('qa', 'other', 'session', '标题')
+        self.assertEqual(other_profile.exception.status_code, 404)
+        self.store.set_title('qa', 'default', 'session', 'a' * 200)
+        self.assertEqual(self.store.session('qa', 'default', 'session')['titleSource'], 'user')
+        with self.assertRaises(HTTPException) as too_long:
+            self.store.set_title('qa', 'default', 'session', 'a' * 201)
+        self.assertEqual(too_long.exception.status_code, 400)
+        self.assertEqual(self.store.session('qa', 'default', 'session')['title'], 'a' * 200)
+
+    def test_session_payloads_expose_created_at_in_the_updated_at_unit(self):
+        fresh = self.create('timed')
+        self.assertEqual(fresh['createdAt'], fresh['created_at'])
+        self.assertEqual(fresh['updatedAt'], fresh['updated_at'])
+        self.assertLessEqual(fresh['createdAt'], fresh['updatedAt'])
+        listed = {item['session_id']: item for item in self.store.list_sessions('qa', 'default', 100, 0)}
+        self.assertEqual(listed['timed']['createdAt'], fresh['createdAt'])
+        self.assertEqual(listed['timed']['updatedAt'], fresh['updatedAt'])
+
+    def test_legacy_titles_gain_an_auto_source_and_keep_later_user_renames(self):
+        self.create('legacy', '旧标题')
+        self.store.close()
+        with sqlite3.connect(self.path) as connection:
+            connection.execute('alter table codex_sessions drop column title_source')
+        self.store = BridgeStore(self.path)
+        self.assertEqual(self.store.session('qa', 'default', 'legacy')['titleSource'], 'auto')
+        self.store.set_title_if_empty('qa', 'default', 'legacy', '新的第一条消息')
+        self.assertEqual(self.store.session('qa', 'default', 'legacy')['title'], '旧标题')
+        self.store.set_title('qa', 'default', 'legacy', '用户标题')
+        self.store.close()
+        self.store = BridgeStore(self.path)
+        session = self.store.session('qa', 'default', 'legacy')
+        self.assertEqual(session['title'], '用户标题')
+        self.assertEqual(session['titleSource'], 'user')
+
+
+class SessionTitleHTTPContract(unittest.TestCase):
+    """The PATCH route renames, clears, and rejects invalid requests."""
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.bridge = CodexBridge(db_path=root / 'db', workspace_root=root, workspace_map={})
+        self.bridge.store.upsert_session('qa', 'writer', {
+            'session_id': 'session', 'thread_id': 'thread', 'workspace_id': 'main',
+            'workspace_path': str(root), 'status': 'idle',
+        })
+        app = FastAPI()
+        app.include_router(create_router(self.bridge), prefix='/codex')
+        self.client = TestClient(app)
+
+    def tearDown(self):
+        self.client.close()
+        self.bridge.store.close()
+        self.temp.cleanup()
+
+    def rename(self, title, profile='writer', session='session'):
+        return self.client.patch(
+            f'/codex/sessions/{session}/title?profile={profile}',
+            headers={'remote-user': 'qa'}, json={'title': title},
+        )
+
+    def test_rename_updates_the_list_payload_and_clears_back_to_default(self):
+        response = self.rename('  重命名会话  ')
+        self.assertEqual(response.status_code, 200)
+        body = response.json()
+        self.assertEqual(body['session_id'], 'session')
+        self.assertEqual(body['title'], '重命名会话')
+        self.assertEqual(body['session']['customTitle'], '重命名会话')
+        self.assertEqual(body['session']['titleSource'], 'user')
+        self.assertGreater(body['session']['createdAt'], 0)
+
+        listed = self.client.get('/codex/sessions?profile=writer', headers={'remote-user': 'qa'}).json()['items'][0]
+        self.assertEqual(listed['title'], '重命名会话')
+        self.assertEqual(listed['createdAt'], body['session']['createdAt'])
+        self.assertIn('updatedAt', listed)
+
+        cleared = self.rename('   ')
+        self.assertEqual(cleared.status_code, 200)
+        self.assertIsNone(cleared.json()['title'])
+        self.assertIsNone(cleared.json()['session']['customTitle'])
+        listed = self.client.get('/codex/sessions?profile=writer', headers={'remote-user': 'qa'}).json()['items'][0]
+        self.assertEqual(listed['title'], 'session')
+
+    def test_rename_rejects_unknown_sessions_other_profiles_and_invalid_titles(self):
+        self.assertEqual(self.rename('x', session='absent').status_code, 404)
+        self.assertEqual(self.rename('x', profile='default').status_code, 404)
+        self.assertEqual(self.rename('a' * 201).status_code, 400)
+        self.assertEqual(self.rename(42).status_code, 422)
+        self.assertEqual(self.rename(None).status_code, 200)
+
+
+class SessionTitleSubmitContract(unittest.IsolatedAsyncioTestCase):
+    """Submitting a turn must never replace a title the user chose."""
+
+    async def asyncSetUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        root = Path(self.temp.name)
+        self.bridge = CodexBridge(db_path=root / 'db', workspace_root=root, workspace_map={})
+        for sid in ('named', 'blank'):
+            self.bridge.store.upsert_session('qa', 'default', {
+                'session_id': sid, 'thread_id': 'thread-' + sid, 'workspace_id': 'main',
+                'workspace_path': str(root), 'status': 'idle',
+            })
+        owner = self
+
+        class Peer:
+            async def request(self, method, params):
+                owner.assertIn(method, {'turn/start', 'turn/steer'})
+                return {'turn': {'id': 'turn', 'status': 'completed'}}
+
+        async def connection(*args):
+            return Peer()
+        self.bridge._connection = connection
+
+    async def asyncTearDown(self):
+        self.bridge.store.close()
+        self.temp.cleanup()
+
+    async def test_new_turns_fill_only_unnamed_sessions(self):
+        self.bridge.store.set_title('qa', 'default', 'named', '用户标题')
+        await self.bridge.submit('qa', 'default', 'named', {'clientRequestId': 'c1', 'text': '新的消息'})
+        named = self.bridge.store.session('qa', 'default', 'named')
+        self.assertEqual(named['title'], '用户标题')
+        self.assertEqual(named['titleSource'], 'user')
+        await self.bridge.submit('qa', 'default', 'blank', {'clientRequestId': 'c2', 'text': '第一条消息'})
+        blank = self.bridge.store.session('qa', 'default', 'blank')
+        self.assertEqual(blank['title'], '第一条消息')
+        self.assertEqual(blank['titleSource'], 'auto')
+
