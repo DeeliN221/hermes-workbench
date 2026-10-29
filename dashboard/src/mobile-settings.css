@@ -4,9 +4,9 @@
     inset: 0 0 0 var(--dashboard-action-width, 48px) !important;
     width: auto !important; height: auto !important;
     flex-direction: column !important; align-items: stretch !important;
-    padding: 20px 16px; overflow: auto; border: 0;
+    padding: calc(64px + env(safe-area-inset-top)) 16px 20px; overflow: auto; border: 0;
   }
-  :root[data-mobile-settings="list"] .dashboard-settings-nav h1 { display: block !important; }
+  :root[data-mobile-settings="list"] .dashboard-settings-nav h1 { display: none !important; }
   :root[data-mobile-settings="list"] .dashboard-settings-nav > a { display: flex; align-items: center; min-height: 44px; white-space: normal !important; }
   :root[data-mobile-settings="list"] :is(#app-sidebar + div, .dashboard-owned-page) { display: none !important; }
   :root[data-mobile-settings="detail"] :is(.dashboard-settings-nav, .dashboard-action-rail, .dashboard-global-nav, .dashboard-nav-backdrop) { display: none !important; }
@@ -22,6 +22,7 @@
   }
   :root[data-mobile-settings="detail"] .workbench-mobile-settings-panel main { min-width: 0; max-width: 100%; padding: 0; }
   :root[data-mobile-settings="detail"] .workbench-mobile-settings-panel :is(input, select, textarea) { max-width: 100%; min-width: 0; }
+  :root[data-mobile-settings="list"] .workbench-mobile-settings-header,
   :root[data-mobile-settings="detail"] .workbench-mobile-settings-header {
     position: fixed; inset: 0 0 auto; z-index: 91;
     display: flex; align-items: center; gap: 16px;
@@ -30,6 +31,13 @@
     background: var(--mc-surface, #f3f0e7); color: var(--mc-ink, #30352c);
     border-bottom: 1px solid var(--mc-line-soft, #7776);
   }
+  :root[data-mobile-settings="list"] .workbench-mobile-settings-header { left: var(--dashboard-action-width, 48px); }
   .workbench-mobile-settings-header button { min-height: 44px; flex-shrink: 0; padding: 8px 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+  .workbench-mobile-settings-header button[hidden] { display: none; }
+  .workbench-mobile-settings-header .workbench-mobile-settings-chat {
+    margin-left: auto; min-height: 34px; padding: 6px 12px;
+    border: 1px solid var(--mc-line-soft, #7776); border-radius: 999px;
+    background: var(--mc-surface, #f3f0e7); font-size: 13px; white-space: nowrap;
+  }
   .workbench-mobile-settings-header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
