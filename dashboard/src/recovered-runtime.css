@@ -10395,9 +10395,9 @@ html.dark .hti-rich-text {
   gap: 8px; padding: 10px;
 }
 .workbench-model-option {
-  display: flex; align-items: flex-start; gap: 12px; min-height: 54px; padding: 10px 12px;
+  display: grid; gap: 10px; min-height: 54px; padding: 10px 12px;
   box-sizing: border-box; border: 1px solid var(--dashboard-line-soft, transparent);
-  border-radius: 8px; background: var(--dashboard-page-surface, transparent); cursor: pointer;
+  border-radius: 8px; background: var(--dashboard-page-surface, transparent); cursor: default;
   transition: border-color .12s ease, background-color .12s ease, opacity .12s ease;
 }
 .workbench-model-option[data-visible="true"] {
@@ -10412,7 +10412,10 @@ html.dark .hti-rich-text {
 .workbench-model-option:focus-within {
   border-color: var(--dashboard-accent);
 }
-.workbench-model-option input {
+.workbench-model-toggle {
+  display: flex; align-items: flex-start; gap: 12px; min-width: 0; cursor: pointer;
+}
+.workbench-model-toggle > input[type="checkbox"] {
   flex: 0 0 auto; width: 18px; height: 18px; margin: 2px 0 0;
   accent-color: var(--dashboard-accent); cursor: pointer;
 }
@@ -10433,9 +10436,40 @@ html.dark .hti-rich-text {
   color: var(--dashboard-muted); font-family: var(--theme-font-mono, ui-monospace, monospace);
   font-size: 12px; line-height: 1.4; overflow-wrap: anywhere;
 }
+.workbench-model-alias {
+  display: grid; grid-template-columns: minmax(74px, auto) minmax(0, 1fr);
+  align-items: center; gap: 4px 8px; min-width: 0;
+}
+.workbench-model-alias-label {
+  color: var(--dashboard-muted); font-size: 11.5px; font-weight: 600; line-height: 1.3;
+  white-space: nowrap;
+}
+.workbench-model-alias-input {
+  width: 100%; min-width: 0; height: 32px; box-sizing: border-box;
+  border: 1px solid var(--dashboard-line-soft, var(--dashboard-line)); border-radius: 6px;
+  padding: 0 9px; color: var(--dashboard-ink); background: var(--dashboard-page-surface, var(--mc-surface, #fff));
+  font: 12.5px/1.4 var(--theme-font-mono, ui-monospace, monospace);
+}
+.workbench-model-alias-input::placeholder {
+  color: var(--dashboard-muted); opacity: .7;
+}
+.workbench-model-alias-input:focus {
+  border-color: var(--dashboard-accent);
+  outline: 2px solid color-mix(in srgb, var(--dashboard-accent) 26%, transparent);
+  outline-offset: 0;
+}
+.workbench-model-alias-input[data-invalid="true"] {
+  border-color: var(--mc-danger, var(--dashboard-accent));
+  background: var(--mc-danger-soft, var(--dashboard-page-surface));
+}
+.workbench-model-alias-error {
+  grid-column: 1 / -1; color: var(--mc-danger, var(--dashboard-accent)); font-size: 11px; line-height: 1.4;
+  overflow-wrap: anywhere;
+}
 @media (max-width: 600px) {
   .workbench-model-options { grid-template-columns: minmax(0, 1fr); gap: 6px; padding: 8px; }
   .workbench-model-toolbar { padding: 10px 12px; }
+  .workbench-model-alias { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* Grouped scheduled-task navigation; all controls remain in the scrolling pane. */

@@ -24,6 +24,7 @@ import { useWorkbenchLocale } from './workbench-locale';
 import { uiText as runtimeText } from './ui-locale';
 import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
+import { MODEL_ALIASES_CHANGE_EVENT } from './model-aliases';
 import { createRecentHome } from './recent-home';
 import { installHomeChatNavigation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
@@ -10803,6 +10804,16 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           );
         }, [B, M]),
         r(() => {
+          const update = () => {
+            if (B) return;
+            YL(i.fetchJSON, M)
+              .then((U) => setModelChoices({ profile: M, items: U }))
+              .catch(() => {});
+          };
+          window.addEventListener(MODEL_ALIASES_CHANGE_EVENT, update);
+          return () => window.removeEventListener(MODEL_ALIASES_CHANGE_EVENT, update);
+        }, [B, M, i.fetchJSON]),
+        r(() => {
           const L = `${M}\0${k}\0${B}`;
           const $t = k && !B ? `${M}\0${k}` : "";
           const Pt = $t ? codexSnapshotCache.get($t) : null;
@@ -12542,7 +12553,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                                 : (zd(L.id), ye("main"));
                             },
                           },
-                          W(e, "span", null, L.label),
+                          W(e, "span", { title: L.id }, L.label),
                           (me === "model" ? Bt : Fi) === L.id
                             ? st(e, "check")
                             : null,

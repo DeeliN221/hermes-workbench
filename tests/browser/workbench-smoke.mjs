@@ -379,6 +379,44 @@ try {
   assert.deepEqual(detailErrors, [], `Browser errors in the message detail picker:\n${detailErrors.join('\n')}`);
   await detailPage.close();
 
+  const aliasPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const aliasErrors = [];
+  aliasPage.on('pageerror', error => aliasErrors.push(error.stack || error.message));
+  await aliasPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await aliasPage.locator('.codex-option-toggle').waitFor({ state: 'visible', timeout: 5000 });
+  await aliasPage.evaluate(() => document.getElementById('preview-banner')?.remove());
+  // Navigate inside the SPA so the already-mounted chat stays alive while the alias is edited.
+  await aliasPage.evaluate(() => {
+    const next = new URL('/config?workbench=models&profile=default', location.origin);
+    history.pushState(null, '', next);
+    dispatchEvent(new PopStateEvent('popstate'));
+  });
+  const deepseekAlias = aliasPage.locator('[data-model-alias="deepseek/deepseek-flash"]');
+  await deepseekAlias.waitFor({ state: 'visible', timeout: 5000 });
+  await deepseekAlias.fill(' ds-flash ');
+  await deepseekAlias.press('Enter');
+  await aliasPage.waitForFunction(() => localStorage.getItem('workbench.model-aliases.v1:default')?.includes('ds-flash'));
+  assert.equal(await deepseekAlias.inputValue(), 'ds-flash', 'Alias input must trim before saving');
+
+  await aliasPage.evaluate(() => history.back());
+  await aliasPage.waitForFunction(() => location.pathname === '/chat' && Boolean(document.querySelector('.codex-option-toggle')));
+  await aliasPage.locator('.codex-option-toggle').waitFor({ state: 'visible', timeout: 5000 });
+  await aliasPage.locator('.codex-option-toggle').click();
+  await aliasPage.locator('.codex-setting-row').first().click();
+  const aliasChoice = aliasPage.locator('.codex-setting-choice', { hasText: 'ds-flash' });
+  await aliasChoice.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await aliasChoice.locator('span').first().getAttribute('title'), 'deepseek/deepseek-flash', 'The selector must keep the original model id available on hover');
+  await aliasChoice.click();
+  await aliasPage.waitForFunction(() => document.querySelector('.codex-model-summary')?.textContent?.includes('ds-flash'));
+  assert.match(await aliasPage.locator('.codex-model-summary').innerText(), /ds-flash/);
+
+  await aliasPage.goto(host.origin + '/config?workbench=models&profile=default', { waitUntil: 'domcontentloaded' });
+  const restoredAlias = aliasPage.locator('[data-model-alias="deepseek/deepseek-flash"]');
+  await restoredAlias.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await restoredAlias.inputValue(), 'ds-flash', 'The alias must survive navigation and settings re-renders');
+  assert.deepEqual(aliasErrors, [], 'Browser errors in the alias flow:\n' + aliasErrors.join('\n'));
+  await aliasPage.close();
+
   const mobileSettingsPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileSettingsErrors = [];
   mobileSettingsPage.on('pageerror', error => mobileSettingsErrors.push(error.stack || error.message));
