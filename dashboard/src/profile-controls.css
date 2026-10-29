@@ -46,9 +46,9 @@
 .workbench-profiles a { color: var(--dashboard-accent); }
 .workbench-profiles :is(button, input, textarea, select, a):focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: 3px; }
 @media (max-width: 800px) {
-  :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { left: 0; top: 44px; right: 0; width: auto; height: 54px; bottom: auto; flex-direction: row; align-items: center; gap: 6px; padding: 6px 12px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--dashboard-line-soft); }
-  :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav h1 { display: none; }
-  :root[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav > a { flex: 0 0 auto; white-space: nowrap; }
+  :root:not([data-mobile-settings])[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav { left: 0; top: 44px; right: 0; width: auto; height: 54px; bottom: auto; flex-direction: row; align-items: center; gap: 6px; padding: 6px 12px; overflow-x: auto; overflow-y: hidden; border-bottom: 1px solid var(--dashboard-line-soft); }
+  :root:not([data-mobile-settings])[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav h1 { display: none; }
+  :root:not([data-mobile-settings])[data-workbench-page="custom"][data-workbench-view="/profiles"] .dashboard-settings-nav > a { flex: 0 0 auto; white-space: nowrap; }
   .dashboard-profile-page { left: 0; top: 100px; }
 }
 

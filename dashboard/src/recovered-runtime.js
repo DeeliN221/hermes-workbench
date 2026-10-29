@@ -14,6 +14,8 @@ import { listSkills as iM, readSkillDescription as rM, listSkillEntries as B0, r
 import { ProcessSummary } from './process-summary';
 import { displayCommand } from './command-display';
 import { createShortcutSettings, useSendShortcut, shouldSendMessage, sendShortcutHint } from './send-shortcut';
+import { createChatDisplaySettings } from './chat-display-settings';
+import { createModelVisibilitySettings, createVersionSettings } from './workbench-version-settings';
 import { createCodexUserInput, pendingAsyncQuestions, formatQuestionAnswers } from './codex-user-input';
 import { collectAttachmentDrop, folderBatchFromFileList, isAttachmentDrag } from './workbench-attachment-drop';
 import './codex-user-input.css';
@@ -2394,6 +2396,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     Yp = () => [
       ["/config", runtimeText("常规", "General")],
       ["/config?workbench=shortcuts", runtimeText("快捷键", "Keyboard shortcuts")],
+      ["/config?workbench=display", runtimeText("聊天显示", "Chat display"), "data-workbench-chat-display-link"],
+      ["/config?workbench=models", runtimeText("模型显示", "Model visibility"), "data-workbench-model-link"],
       ["/profiles", runtimeText("配置档案", "Profiles")],
       ["/models", runtimeText("模型", "Models")],
       ["/env", runtimeText("凭据", "Credentials")],
@@ -2405,6 +2409,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ["/system", runtimeText("系统", "System")],
       ["/logs", runtimeText("日志", "Logs")],
       ["/docs", runtimeText("帮助", "Help")],
+      ["/config?workbench=versions", runtimeText("版本切换", "Version switching"), "data-workbench-version-link"],
     ];
   function Ws(i) {
     const e = new URL(i, "http://localhost");
@@ -2575,6 +2580,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       WorkbenchDialog = createWorkbenchDialog(i),
       LanguageControl = createLanguageControl(i),
       ShortcutSettings = createShortcutSettings(i),
+      ChatDisplaySettings = createChatDisplaySettings(i),
+      ModelVisibilitySettings = createModelVisibilitySettings(i),
+      VersionSettings = createVersionSettings(i),
       RecentHome = createRecentHome(i, Kp),
       l = t.createElement;
     return function () {
@@ -2599,7 +2607,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       const isHome = u.path === "/" || u.path === "/home" || u.path === "/sessions",
         isProfiles = u.path === "/profiles" && !u.profileManager,
         isShortcuts = u.path === "/config" && u.settingsTab === "shortcuts",
-        M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isShortcuts,
+        isChatDisplay = u.path === "/config" && u.settingsTab === "display",
+        isModelVisibility = u.path === "/config" && u.settingsTab === "models",
+        isVersionSettings = u.path === "/config" && (u.settingsTab === "versions" || u.settingsTab === "settings"),
+        isConfigSubpage = isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
+        M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
         H = Cx(u.path),
         F = yx(u.profile, da),
         j = u.path === "/chat" && !u.terminal,
@@ -3042,13 +3054,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               { className: "dashboard-settings-nav", "aria-label": runtimeText("设置分类", "Settings categories") },
               l("div", { className: "workbench-settings-heading" },
                 l("h1", null, runtimeText("设置", "Settings")), l(LanguageControl)),
-              Yp().map(([z, G]) =>
+              Yp().map(([z, G, linkAttr]) =>
                 l(
                   "a",
                   {
                     key: z,
-                    href: Cn(z, u.profile),
-                    "aria-current": (z === "/config?workbench=shortcuts" ? isShortcuts : z === "/config" ? u.path === z && !u.settingsTab : u.path === z || z === "/profiles" && u.path.startsWith("/profiles/")) ? "page" : void 0,
+                    href: Cn(u.panel ? withAccessoryPanel(z) : z, u.profile),
+                    ...(linkAttr ? { [linkAttr]: "true" } : {}),
+                    "aria-current": (z === "/config?workbench=shortcuts" ? isShortcuts : z === "/config?workbench=display" ? isChatDisplay : z === "/config?workbench=models" ? isModelVisibility : z === "/config?workbench=versions" ? isVersionSettings : z === "/config" ? u.path === z && !u.settingsTab : u.path === z || z === "/profiles" && u.path.startsWith("/profiles/")) ? "page" : void 0,
                     onClick: (ae) => Q(ae, z),
                   },
                   G,
@@ -3083,11 +3096,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               "main",
               {
                 ref: D,
-                className: `dashboard-owned-page${isProfiles ? " dashboard-profile-page" : isShortcuts ? " dashboard-shortcuts-page" : ""}`,
+                className: `dashboard-owned-page${isProfiles ? " dashboard-profile-page" : isConfigSubpage ? " dashboard-shortcuts-page" : ""}`,
                 tabIndex: -1,
-                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
+                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isShortcuts ? l(ShortcutSettings) : isHome ? l(RecentHome, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(RecentHome, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )

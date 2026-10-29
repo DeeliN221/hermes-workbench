@@ -342,6 +342,31 @@ try {
   await detailPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
   await detailPage.locator('[data-detail-mode="standard"]').waitFor({ state: 'visible', timeout: 5000 });
   await detailPage.locator('[data-detail-mode="standard"]').click();
+  // Switching between custom settings tabs must keep the host ConfigPage hidden and preserve floating panel state.
+  await detailPage.locator('[data-workbench-model-link]').click();
+  await detailPage.locator('[data-testid="model-visibility-settings"] .workbench-model-group').first().waitFor({ state: 'visible', timeout: 5000 });
+  const desktopLayerCheck = await detailPage.evaluate(() => {
+    const hostForm = document.querySelector('[data-testid="host-config-form"]');
+    const hostBanner = document.querySelector('.host-banner');
+    const modelPanel = document.querySelector('[data-testid="model-visibility-settings"]');
+    const rect = modelPanel?.getBoundingClientRect();
+    const topHit = rect ? document.elementFromPoint(rect.left + 80, rect.top + 60) : null;
+    return {
+      pageMode: document.documentElement.dataset.workbenchPage,
+      hostInert: Boolean(document.querySelector('#app-sidebar + div')?.inert),
+      hostBannerVisible: hostBanner ? getComputedStyle(hostBanner).visibility !== 'hidden' : false,
+      hostFormVisible: hostForm ? getComputedStyle(hostForm).visibility !== 'hidden' : false,
+      activeLink: document.querySelector('[data-workbench-model-link]')?.getAttribute('aria-current'),
+      hitInsideModelPanel: Boolean(topHit && modelPanel?.contains(topHit)),
+    };
+  });
+  assert.equal(desktopLayerCheck.pageMode, 'custom', 'Model visibility must mount as a custom Workbench settings page');
+  assert.equal(desktopLayerCheck.hostInert, true, 'Underlying host configuration must stay inert');
+  assert.equal(desktopLayerCheck.hostBannerVisible, false, 'Host configuration header must not leak above Model visibility');
+  assert.equal(desktopLayerCheck.hostFormVisible, false, 'Host configuration form must not bleed through Model visibility');
+  assert.equal(desktopLayerCheck.activeLink, 'page', 'Model visibility nav item must mark aria-current=page');
+  assert.equal(desktopLayerCheck.hitInsideModelPanel, true, 'Pointer hit testing must reach Model visibility rather than host ConfigPage');
+
   await detailPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await detailPage.locator('.codex-tool-group').first().waitFor({ state: 'attached', timeout: 5000 });
   await detailPage.waitForFunction(() => !document.querySelector('.codex-tool-group')?.hasAttribute('open'));
@@ -354,7 +379,54 @@ try {
   assert.deepEqual(detailErrors, [], `Browser errors in the message detail picker:\n${detailErrors.join('\n')}`);
   await detailPage.close();
 
-  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, the centered floating panel, and the three chat detail levels rendered without page errors.');
+  const mobileSettingsPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
+  const mobileSettingsErrors = [];
+  mobileSettingsPage.on('pageerror', error => mobileSettingsErrors.push(error.stack || error.message));
+  await mobileSettingsPage.goto(host.origin + '/config?workbench=display&profile=writer', { waitUntil: 'domcontentloaded' });
+  await mobileSettingsPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
+  await mobileSettingsPage.locator('.workbench-mobile-settings-header button').click();
+  await mobileSettingsPage.locator('[data-workbench-model-link]').click();
+  await mobileSettingsPage.locator('[data-testid="model-visibility-settings"] .workbench-model-group').first().waitFor({ state: 'visible', timeout: 5000 });
+  const mobileSettingsCheck = await mobileSettingsPage.evaluate(() => {
+    const panel = document.querySelector('[data-testid="model-visibility-settings"]');
+    const rect = panel?.getBoundingClientRect();
+    const hit = rect ? document.elementFromPoint(rect.left + 80, rect.top + 80) : null;
+    const hostForm = document.querySelector('[data-testid="host-config-form"]');
+    return {
+      profile: document.querySelector('[data-model-profile]')?.textContent,
+      hitInsidePanel: Boolean(hit && panel?.contains(hit)),
+      hostFormVisible: hostForm ? getComputedStyle(hostForm).visibility !== 'hidden' : false,
+    };
+  });
+  assert.equal(mobileSettingsCheck.profile, 'writer', 'Switching settings tabs must preserve the active profile');
+  assert.equal(mobileSettingsCheck.hitInsidePanel, true, 'Mobile Model visibility must own pointer hit-testing without host overlap');
+  assert.equal(mobileSettingsCheck.hostFormVisible, false, 'Mobile host configuration form must remain hidden behind Model visibility');
+  // Returning from /profiles to the mobile settings list must keep the Settings heading visible.
+  await mobileSettingsPage.locator('.workbench-mobile-settings-header button').click();
+  await mobileSettingsPage.locator('.dashboard-settings-nav a[href^="/profiles"]').click();
+  await mobileSettingsPage.locator('.workbench-profiles').waitFor({ state: 'visible', timeout: 5000 });
+  await mobileSettingsPage.locator('.workbench-mobile-settings-header button').click();
+  assert.equal(await mobileSettingsPage.locator('.dashboard-settings-nav h1').isVisible(), true, 'Settings heading must stay visible in mobile list mode after visiting Profiles');
+  // Portaled z-[100] host dialogs (such as /models ModelPickerDialog) must appear above mobile settings detail view.
+  await mobileSettingsPage.goto(host.origin + '/models?profile=writer', { waitUntil: 'domcontentloaded' });
+  await mobileSettingsPage.locator('.workbench-mobile-settings-header').waitFor({ state: 'visible', timeout: 5000 });
+  const modalHit = await mobileSettingsPage.evaluate(() => {
+    const portal = document.createElement('div');
+    portal.className = 'fixed inset-0 z-[100]';
+    portal.id = 'smoke-model-picker-portal';
+    portal.style.background = 'rgba(0, 0, 0, 0.5)';
+    document.body.append(portal);
+    const hitCenter = document.elementFromPoint(195, 420)?.id;
+    const hitHeaderArea = document.elementFromPoint(195, 24)?.id;
+    portal.remove();
+    return { hitCenter, hitHeaderArea };
+  });
+  assert.equal(modalHit.hitCenter, 'smoke-model-picker-portal', 'Portaled z-[100] model picker must sit above mobile settings detail panel');
+  assert.equal(modalHit.hitHeaderArea, 'smoke-model-picker-portal', 'Portaled z-[100] model picker must sit above mobile settings header');
+  assert.deepEqual(mobileSettingsErrors, [], `Browser errors in mobile settings layering check:\n${mobileSettingsErrors.join('\n')}`);
+  await mobileSettingsPage.close();
+
+  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, the centered floating panel, settings subpage layering, and the three chat detail levels rendered without page errors.');
 } finally {
   await browser.close();
   await host.close();

@@ -78,7 +78,24 @@ const fixture = `<!doctype html>
 
 const configFixture = fixture.replace(
   '<body><div id="root"></div>',
-  `<body><style>#root{display:none!important}#host-config{min-height:100vh;background:#fbfaf6;color:#203345}#host-config .dashboard-settings-nav{left:0!important;top:0!important;bottom:0!important;width:220px!important;background:#f4f1e8!important;color:#203345!important;z-index:1!important;border-right:1px solid #d9d3c4!important}#host-config .dashboard-settings-nav a{color:#203345!important}#host-config .dashboard-settings-nav a[aria-current="page"]{background:#e4efe6!important}#host-config .dashboard-owned-page{margin-left:220px!important;min-height:100vh;background:#fbfaf6!important}@media(max-width:600px){#host-config .dashboard-settings-nav{position:static!important;inset:auto!important;width:auto!important;height:auto!important;flex-direction:row!important;overflow-x:auto!important;padding:8px 10px!important;border-right:0!important;border-bottom:1px solid #d9d3c4!important}#host-config .workbench-settings-heading{display:none!important}#host-config .dashboard-owned-page{margin-left:0!important}#host-config .dashboard-settings-nav a{padding:6px 8px!important;white-space:nowrap}}</style><div id="host-config"><nav class="dashboard-settings-nav" aria-label="Settings categories"><div class="workbench-settings-heading"><h1>Settings</h1></div><a href="/config" aria-current="page">General</a><a href="/config?workbench=shortcuts">Keyboard shortcuts</a><a href="/profiles">Profiles</a><a href="/models">Models</a></nav><main class="dashboard-owned-page"><h1>General settings</h1><p>Local host settings shell.</p></main></div><div id="root"></div>`,
+  `<body><style>
+    .host-shell{display:flex;min-height:100dvh;width:100%;font:14px/1.5 system-ui,sans-serif}
+    .host-page{display:flex;flex:1 1 auto;min-width:0;min-height:0;flex-direction:column;overflow:hidden}
+    .host-banner{z-index:1;display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:12px;padding:12px 16px;border-bottom:1px solid color-mix(in srgb,currentColor 18%,transparent)}
+    .host-banner h1{margin:0;font-size:15px;font-weight:700}
+    .host-banner input{height:32px;min-width:180px;padding:0 10px;border:1px solid color-mix(in srgb,currentColor 24%,transparent);border-radius:6px;background:transparent;color:inherit}
+    .host-main{display:flex;flex:1 1 auto;min-width:0;min-height:0;flex-direction:column;overflow-y:auto;overflow-x:hidden}
+    .host-route-column{position:relative;z-index:2;display:flex;flex:1 1 0%;min-width:0;min-height:0;flex-direction:column;padding:12px 16px}
+    .host-config-path{padding:8px 12px;margin-bottom:12px;border-radius:6px;background:color-mix(in srgb,currentColor 8%,transparent);font:12px/1.4 ui-monospace,monospace}
+    .host-config-toolbar{display:flex;align-items:center;justify-content:flex-end;gap:8px;margin-bottom:12px}
+    .host-config-toolbar button{height:32px;padding:0 12px;border:1px solid color-mix(in srgb,currentColor 28%,transparent);border-radius:4px;background:transparent;color:inherit;font:inherit}
+    .host-config-toolbar button.is-save{background:var(--mc-ink,#222);color:var(--mc-surface,#fff);border-color:transparent;font-weight:600}
+    .host-config-tabs{display:flex;gap:12px;padding:8px 10px;margin-bottom:12px;border:1px solid color-mix(in srgb,currentColor 18%,transparent);border-radius:6px;font-size:12px}
+    .host-config-card{border:1px solid color-mix(in srgb,currentColor 22%,transparent);border-radius:8px;padding:14px;display:grid;gap:12px}
+    .host-config-card label{display:grid;gap:6px;font-size:13px}
+    .host-config-card input{height:36px;padding:0 10px;border:1px solid color-mix(in srgb,currentColor 24%,transparent);border-radius:6px;background:transparent;color:inherit;font:12px ui-monospace,monospace}
+    .fixed{position:fixed}.inset-0{inset:0}[class~="z-[100]"]{z-index:100}[class~="z-[200]"]{z-index:200}.z-2{z-index:2}
+  </style><div class="host-shell"><aside id="app-sidebar"></aside><div class="host-page"><header class="host-banner" role="banner"><h1>Configuration</h1><input type="search" placeholder="Search..." aria-label="Search configuration"></header><main class="host-main"><div class="host-route-column z-2" data-testid="host-config-form"><div class="host-config-path">/workspace/profiles/default/config.yaml</div><div class="host-config-toolbar"><button type="button">&lt;/&gt; YAML</button><button type="button" class="is-save">Save</button></div><div class="host-config-tabs"><span>General 27</span><span>Terminal 34</span><span>Display 9</span></div><div class="host-config-card"><strong>General · 27 fields</strong><label><span>Default model (e.g. anthropic/claude-sonnet-4-6)</span><input type="text" value="gpt-6.1-sol" readonly></label><label><span>MODEL CONTEXT LENGTH</span><input type="text" value="0" readonly></label><label><span>FALLBACK PROVIDERS</span><input type="text" value="comma-separated values" readonly></label></div></div></main></div></div><div id="root"></div>`,
 );
 
 /** Return preview sessions for one profile with stable IDs and recent timestamps. */
@@ -162,10 +179,26 @@ function apiPayload(url, method) {
     })) };
   }
   if (pathname === '/api/plugins/workbench/codex/workspaces') return { items: [{ id: 'preview-workspace', name: 'hermes-workbench', path: '/home/preview/hermes-workbench' }] };
-  if (pathname === '/api/plugins/workbench/codex/models') return { data: [{
-    model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, defaultReasoningEffort: 'medium',
-    supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }],
-  }] };
+  if (pathname === '/api/plugins/workbench/codex/models') return { data: [
+    { model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, supportsFast: true, fastServiceTier: 'priority',
+      defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
+    { model: 'gpt-6-astra', displayName: 'GPT-6 Astra', isDefault: false, supportsFast: true, fastServiceTier: 'priority',
+      defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
+    { model: 'gpt-6-luna', displayName: 'GPT-6 Luna', isDefault: false, supportsFast: false,
+      defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] },
+    { model: 'deepseek/deepseek-flash', displayName: 'DeepSeek Flash', isDefault: false, supportsFast: true,
+      defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] },
+  ] };
+  if (pathname === '/api/plugins/workbench/codex-runtime/status') return {
+    installed_version: '0.24.0', latest_version: '0.24.0', update_available: false, busy: false,
+  };
+  if (pathname === '/api/plugins/workbench/versions') return {
+    active: '20261029-1', update_mode: 'release',
+    versions: [
+      { version: '20261029-1', ready: true, source: 'github', published_at: '2026-10-29T00:00:00Z', notes: 'Current stable release.' },
+      { version: '20261028-1', ready: true, source: 'github', published_at: '2026-10-28T00:00:00Z', notes: 'Previous stable release.' },
+    ],
+  };
   if (pathname === '/api/plugins/workbench/codex/attachments/folder' && method === 'POST') return { attachment: {
     id: 'folder-preview', name: 'project', size: 19, fileCount: 2, mimeType: 'inode/directory', kind: 'folder',
   } };
@@ -220,7 +253,7 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       response.end(body);
       return;
     }
-    if (url.pathname === '/config') {
+    if (url.pathname === '/config' || url.pathname === '/models') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(configFixture);
       return;

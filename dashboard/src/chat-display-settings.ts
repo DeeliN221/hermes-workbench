@@ -4,6 +4,7 @@ import {
   writeChatDetailMode,
   type ChatDetailMode,
 } from './chat-detail';
+import { currentProfile } from './profile-scope';
 import { uiText as sourceText } from './ui-locale';
 import './chat-display-settings.css';
 
@@ -11,6 +12,11 @@ const LINK_ATTR = 'data-workbench-chat-display-link';
 const PANEL_ATTR = 'data-workbench-chat-display-panel';
 const PRESERVED_ATTR = 'data-workbench-chat-display-preserved';
 const CHANGE_EVENT = 'hermes-workbench:chat-detail-change';
+
+function shellManagesSettings(): boolean {
+  return document.documentElement.dataset.workbenchShell === 'true'
+    || Boolean((window as any).__HERMES_PLUGINS__);
+}
 
 const MODE_COPY: Record<ChatDetailMode, { label: () => string; description: () => string }> = {
   compact: {
@@ -40,15 +46,18 @@ function navigate(url: string): void {
 function addSettingsLink(): void {
   const nav = document.querySelector<HTMLElement>('.dashboard-settings-nav');
   if (!nav) return;
-  const existing = nav.querySelector(`[${LINK_ATTR}]`);
+  const profile = encodeURIComponent(currentProfile());
+  const href = `/config?workbench=display&profile=${profile}`;
+  const existing = nav.querySelector<HTMLAnchorElement>(`[${LINK_ATTR}]`);
   const label = sourceText('聊天显示', 'Chat display');
   if (existing) {
     if (existing.textContent !== label) existing.textContent = label;
+    if (existing.getAttribute('href') !== href) existing.setAttribute('href', href);
     return;
   }
   const link = document.createElement('a');
   link.setAttribute(LINK_ATTR, 'true');
-  link.href = '/config?workbench=display';
+  link.href = href;
   link.textContent = label;
   link.addEventListener('click', event => {
     event.preventDefault();
@@ -60,9 +69,12 @@ function addSettingsLink(): void {
 /** Render the three work-detail choices inside an existing settings panel. */
 export function renderChatDisplayPanel(panel: HTMLElement): void {
   panel.replaceChildren();
+  panel.setAttribute(PANEL_ATTR, 'true');
   const current = readChatDetailMode();
 
-  const heading = document.createElement('h2');
+  const header = document.createElement('header');
+  header.className = 'workbench-settings-subpage-header';
+  const heading = document.createElement('h1');
   heading.textContent = sourceText('聊天显示', 'Chat display');
   const description = document.createElement('p');
   description.className = 'workbench-chat-display-muted';
@@ -70,6 +82,7 @@ export function renderChatDisplayPanel(panel: HTMLElement): void {
     '选择聊天中推理、过程和工具输出的详细程度。助手回复始终完整显示。',
     'Choose how much reasoning, process, and tool detail appears in chat. Assistant replies always stay fully visible.',
   );
+  header.append(heading, description);
   const group = document.createElement('div');
   group.className = 'workbench-chat-display-options';
   group.setAttribute('role', 'radiogroup');
@@ -108,16 +121,53 @@ export function renderChatDisplayPanel(panel: HTMLElement): void {
     group.append(button);
   }
 
-  panel.append(heading, description, group, status);
+  panel.append(header, group, status);
+}
+
+export function createChatDisplaySettings(sdk: any) {
+  const h = sdk.React.createElement;
+  const { useEffect, useRef } = sdk.hooks;
+  return function ChatDisplaySettings() {
+    const ref = useRef(null as HTMLElement | null);
+    useEffect(() => {
+      const node = ref.current;
+      if (!node) return;
+      const render = () => renderChatDisplayPanel(node);
+      render();
+      const observer = new MutationObserver(render);
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+      return () => observer.disconnect();
+    }, []);
+    return h('section', {
+      ref,
+      className: 'workbench-settings-subpage',
+      'data-testid': 'chat-display-settings',
+    });
+  };
+}
+
+function cleanupFallbackPanel(): void {
+  document.querySelectorAll<HTMLElement>(`[${PRESERVED_ATTR}]`).forEach(node => {
+    node.style.display = '';
+    node.removeAttribute(PRESERVED_ATTR);
+  });
+  document.querySelectorAll<HTMLElement>(`main:not(.dashboard-owned-page) > [${PANEL_ATTR}]`).forEach(node => node.remove());
 }
 
 async function renderPanel(): Promise<void> {
+  if (shellManagesSettings()) {
+    cleanupFallbackPanel();
+    return;
+  }
   const main = document.querySelector<HTMLElement>('.dashboard-owned-page') || document.querySelector<HTMLElement>('main');
   if (!main) return;
   let panel = main.querySelector<HTMLElement>(`[${PANEL_ATTR}]`);
   if (!displayRoute()) {
+    const tab = new URL(window.location.href).searchParams.get('workbench');
+    const otherCustomActive = new URL(window.location.href).pathname === '/config'
+      && (tab === 'models' || tab === 'versions' || tab === 'settings');
     main.querySelectorAll<HTMLElement>(`[${PRESERVED_ATTR}]`).forEach(node => {
-      node.style.display = '';
+      if (!otherCustomActive) node.style.display = '';
       node.removeAttribute(PRESERVED_ATTR);
     });
     panel?.remove();
@@ -141,8 +191,15 @@ async function renderPanel(): Promise<void> {
 export function installChatDisplaySettings(): void {
   if ((window as any).__HERMES_WORKBENCH_CHAT_DISPLAY_SETTINGS__) return;
   (window as any).__HERMES_WORKBENCH_CHAT_DISPLAY_SETTINGS__ = true;
-  const schedule = () => window.requestAnimationFrame(() => { addSettingsLink(); void renderPanel(); });
-  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['lang'] });
+  const schedule = () => window.requestAnimationFrame(() => {
+    if (shellManagesSettings()) {
+      cleanupFallbackPanel();
+      return;
+    }
+    addSettingsLink();
+    void renderPanel();
+  });
+  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true, attributes: true, attributeFilter: ['lang', 'data-workbench-shell'] });
   window.addEventListener('popstate', schedule);
   schedule();
 }

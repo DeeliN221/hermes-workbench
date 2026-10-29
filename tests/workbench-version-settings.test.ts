@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-import { renderWorkbenchVersions } from '../dashboard/src/workbench-version-settings';
+import { renderModelVisibilityPanel, renderWorkbenchVersions } from '../dashboard/src/workbench-version-settings';
 
-afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); });
+afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); localStorage.clear(); });
 function panel() {
   document.body.innerHTML = '<section><div class="workbench-version-list"></div></section>';
   return document.querySelector('section')!;
@@ -62,6 +62,34 @@ it('waits through backend restart and reloads only after full activation', async
     await vi.advanceTimersByTimeAsync(1300);
     expect(reload).toHaveBeenCalledOnce();
   } finally { vi.useRealTimers(); }
+});
+
+it('renders grouped model visibility cards, updates counts, and disables Show all when none are hidden', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+    if (url.includes('/codex/models')) {
+      return new Response(JSON.stringify({
+        data: [
+          { model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, supportsFast: true },
+          { model: 'deepseek/deepseek-flash', displayName: 'DeepSeek Flash', isDefault: false, supportsFast: false },
+        ],
+      }));
+    }
+    return new Response(JSON.stringify({ model: 'gpt-6.1-sol' }));
+  }));
+  const target = document.createElement('section');
+  document.body.append(target);
+  await renderModelVisibilityPanel(target, 'writer');
+  expect(target.querySelector('[data-model-profile]')?.textContent).toBe('writer');
+  const showAll = target.querySelector<HTMLButtonElement>('[data-model-show-all]')!;
+  expect(showAll.disabled).toBe(true);
+  const secondCheckbox = target.querySelector<HTMLInputElement>('input[value="deepseek/deepseek-flash"]')!;
+  secondCheckbox.checked = false;
+  secondCheckbox.dispatchEvent(new Event('change'));
+  expect(secondCheckbox.closest('.workbench-model-option')?.getAttribute('data-visible')).toBe('false');
+  expect(showAll.disabled).toBe(false);
+  showAll.click();
+  expect(showAll.disabled).toBe(true);
+  expect(target.querySelector('input[value="deepseek/deepseek-flash"]')?.closest('.workbench-model-option')?.getAttribute('data-visible')).toBe('true');
 });
 
 it('shows rollback and re-enables controls without claiming success', async () => {
