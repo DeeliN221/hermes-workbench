@@ -3,12 +3,32 @@ import './user-message-ball.css';
 
 const STORAGE_KEY = 'workbench.user-message-ball.v1';
 const CHANGE_EVENT = 'hermes-workbench:user-message-ball-change';
-const FAB_ATTR = 'data-workbench-user-message-ball';
+const LAYER_ATTR = 'data-workbench-user-message-layer';
+const BALL_ATTR = 'data-workbench-user-message-ball';
 const PANEL_ATTR = 'data-workbench-user-message-panel';
+const HOST_CLASS = 'is-user-message-navigator-host';
 const JUMP_CLASS = 'is-user-message-jump-target';
 const MESSAGE_SELECTOR = '.codex-message.is-user[data-message-id]';
+const PANE_SELECTOR = '.codex-pane-slot';
+const CENTER_SELECTOR = '.codex-center';
+const LIST_SELECTOR = '.codex-message-list';
+const COMPOSER_SELECTOR = '.codex-composer-wrap';
 
 type MessageEntry = { id: string; text: string };
+
+type Navigator = {
+  center: HTMLElement;
+  layer: HTMLElement;
+  ball: HTMLButtonElement;
+  panel: HTMLElement;
+  body: HTMLElement;
+  entries: MessageEntry[];
+  signature: string;
+  open: boolean;
+  list: HTMLElement | null;
+  composer: HTMLElement | null;
+  resize: ResizeObserver | null;
+};
 
 export function readUserMessageBallEnabled(): boolean {
   try {
@@ -25,15 +45,6 @@ export function writeUserMessageBallEnabled(enabled: boolean): void {
     /* Private browsing can reject storage; the control still updates this page. */
   }
   window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: enabled }));
-}
-
-function activePane(): HTMLElement | null {
-  const panes = Array.from(document.querySelectorAll<HTMLElement>('.codex-pane-slot'));
-  return panes.find(pane => pane.classList.contains('is-active')) || panes[0] || null;
-}
-
-function activeList(): HTMLElement | null {
-  return activePane()?.querySelector<HTMLElement>('.codex-message-list') || null;
 }
 
 function chatVisible(): boolean {
@@ -67,7 +78,8 @@ function scrollToMessage(id: string, list: HTMLElement): void {
   const listRect = list.getBoundingClientRect();
   const nodeRect = node.getBoundingClientRect();
   const top = Math.max(0, list.scrollTop + nodeRect.top - listRect.top - (list.clientHeight - nodeRect.height) / 2);
-  const behavior = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+  const media = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+  const behavior = media?.matches ? 'auto' : 'smooth';
   if (typeof list.scrollTo === 'function') list.scrollTo({ top, behavior });
   else list.scrollTop = top;
   node.classList.remove(JUMP_CLASS);
@@ -103,160 +115,242 @@ export function renderUserMessageBallSetting(container: HTMLElement): void {
   container.append(section);
 }
 
-/** Mount one navigator beside the active chat pane; it follows pane and message changes. */
+const navigators = new Map<HTMLElement, Navigator>();
+let openNavigator: Navigator | null = null;
+let installCleanup: (() => void) | null = null;
+
+function signatureOf(entries: MessageEntry[]): string {
+  return entries.map(entry => `${entry.id}\u0000${entry.text}`).join('\u0001');
+}
+
+function renderList(navigator: Navigator): void {
+  const { entries, body } = navigator;
+  body.innerHTML = entries.map((_, index) => `<button type="button" class="workbench-user-message-panel-item" data-user-message-item="${index}"><span class="workbench-user-message-panel-index">${index + 1}</span><span class="workbench-user-message-panel-text"></span></button>`).join('');
+  body.querySelectorAll<HTMLElement>('.workbench-user-message-panel-text').forEach((node, index) => {
+    node.textContent = entries[index].text;
+  });
+  navigator.signature = signatureOf(entries);
+}
+
+function setOpen(navigator: Navigator, next: boolean): void {
+  const open = next && navigator.entries.length > 0;
+  if (open && openNavigator && openNavigator !== navigator) setOpen(openNavigator, false);
+  if (open && navigator.signature !== signatureOf(navigator.entries)) renderList(navigator);
+  navigator.open = open;
+  navigator.panel.hidden = !open;
+  navigator.ball.setAttribute('aria-expanded', String(open));
+  openNavigator = open ? navigator : (openNavigator === navigator ? null : openNavigator);
+}
+
+function closeAll(): void {
+  if (openNavigator) setOpen(openNavigator, false);
+}
+
+function createNavigator(center: HTMLElement): Navigator {
+  const layer = document.createElement('div');
+  layer.className = 'workbench-user-message-layer';
+  layer.setAttribute(LAYER_ATTR, 'true');
+
+  const ball = document.createElement('button');
+  ball.type = 'button';
+  ball.className = 'workbench-user-message-ball';
+  ball.setAttribute(BALL_ATTR, 'true');
+  ball.setAttribute('aria-haspopup', 'dialog');
+  ball.setAttribute('aria-expanded', 'false');
+  ball.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H9l-5 4zM8 9h8M8 13h5"></path></svg>';
+  ball.hidden = true;
+
+  const panel = document.createElement('section');
+  panel.className = 'workbench-user-message-panel';
+  panel.setAttribute(PANEL_ATTR, 'true');
+  panel.setAttribute('role', 'dialog');
+  panel.setAttribute('aria-label', sourceText('用户消息', 'User messages'));
+  panel.hidden = true;
+  panel.innerHTML = '<header><div class="workbench-user-message-panel-heading"><strong></strong></div><button type="button" class="workbench-user-message-panel-close"></button></header><div class="workbench-user-message-panel-list"></div>';
+
+  const title = panel.querySelector('strong')!;
+  title.textContent = sourceText('用户消息', 'User messages');
+  const close = panel.querySelector<HTMLButtonElement>('.workbench-user-message-panel-close')!;
+  close.setAttribute('aria-label', sourceText('关闭', 'Close'));
+  close.textContent = '×';
+  const body = panel.querySelector<HTMLElement>('.workbench-user-message-panel-list')!;
+
+  const navigator: Navigator = {
+    center,
+    layer,
+    ball,
+    panel,
+    body,
+    entries: [],
+    signature: '',
+    open: false,
+    list: null,
+    composer: null,
+    resize: typeof ResizeObserver === 'function' ? new ResizeObserver(() => measureComposer(navigator)) : null,
+  };
+
+  ball.addEventListener('click', () => setOpen(navigator, !navigator.open));
+  close.addEventListener('click', () => setOpen(navigator, false));
+  body.addEventListener('click', event => {
+    const item = (event.target as Element | null)?.closest<HTMLElement>('[data-user-message-item]');
+    if (!item) return;
+    const entry = navigator.entries[Number(item.dataset.userMessageItem)];
+    if (entry && navigator.list) scrollToMessage(entry.id, navigator.list);
+    setOpen(navigator, false);
+  });
+
+  layer.append(ball, panel);
+  center.classList.add(HOST_CLASS);
+  center.append(layer);
+  return navigator;
+}
+
+/** Keep the navigator above the composer by publishing its height to CSS. */
+function measureComposer(navigator: Navigator): void {
+  const height = navigator.composer?.getBoundingClientRect().height ?? 0;
+  const next = `${Math.max(0, Math.round(height))}px`;
+  if (navigator.layer.style.getPropertyValue('--umb-clear') !== next) {
+    navigator.layer.style.setProperty('--umb-clear', next);
+  }
+}
+
+function observePane(navigator: Navigator, list: HTMLElement | null, composer: HTMLElement | null): void {
+  if (list !== navigator.list) navigator.list = list;
+  if (composer === navigator.composer) return;
+  navigator.resize?.disconnect();
+  navigator.composer = composer;
+  if (composer && navigator.resize) navigator.resize.observe(composer);
+  measureComposer(navigator);
+}
+
+function refresh(navigator: Navigator, enabled: boolean): void {
+  const list = navigator.center.querySelector<HTMLElement>(LIST_SELECTOR);
+  const composer = navigator.center.querySelector<HTMLElement>(COMPOSER_SELECTOR);
+  observePane(navigator, list, composer);
+
+  if (!enabled || !chatVisible() || !list) {
+    navigator.entries = [];
+    navigator.ball.hidden = true;
+    setOpen(navigator, false);
+    return;
+  }
+
+  const entries = messageEntries(list);
+  navigator.entries = entries;
+  if (!entries.length) {
+    navigator.ball.hidden = true;
+    setOpen(navigator, false);
+    return;
+  }
+
+  navigator.ball.hidden = false;
+  if (navigator.ball.dataset.count !== String(entries.length)) {
+    navigator.ball.dataset.count = String(entries.length);
+  }
+  const label = sourceText(`用户消息（${entries.length}）`, `User messages (${entries.length})`);
+  if (navigator.ball.getAttribute('aria-label') !== label) navigator.ball.setAttribute('aria-label', label);
+  if (navigator.open && navigator.signature !== signatureOf(entries)) renderList(navigator);
+}
+
+function destroyNavigator(navigator: Navigator): void {
+  if (openNavigator === navigator) openNavigator = null;
+  navigator.resize?.disconnect();
+  navigator.layer.remove();
+  navigator.center.classList.remove(HOST_CLASS);
+}
+
+/** Mount one navigator per chat pane; each one only reads and scrolls its own pane. */
 export function installUserMessageBall(): void {
-  if ((window as any).__HERMES_WORKBENCH_USER_MESSAGE_BALL__) return;
+  if (installCleanup || (window as any).__HERMES_WORKBENCH_USER_MESSAGE_BALL__) return;
   (window as any).__HERMES_WORKBENCH_USER_MESSAGE_BALL__ = true;
 
+  let frame = 0;
+  let observer: MutationObserver | null = null;
+  let disposed = false;
+
+  const sync = () => {
+    const enabled = readUserMessageBallEnabled();
+    const seen = new Set<HTMLElement>();
+    for (const pane of Array.from(document.querySelectorAll<HTMLElement>(PANE_SELECTOR))) {
+      const center = pane.querySelector<HTMLElement>(CENTER_SELECTOR);
+      if (!center) continue;
+      seen.add(center);
+      let navigator = navigators.get(center);
+      if (!navigator) {
+        navigator = createNavigator(center);
+        navigators.set(center, navigator);
+      }
+      refresh(navigator, enabled);
+    }
+    for (const [center, navigator] of Array.from(navigators)) {
+      if (!seen.has(center) || !center.isConnected) {
+        destroyNavigator(navigator);
+        navigators.delete(center);
+      }
+    }
+  };
+
+  const schedule = () => {
+    if (frame || disposed) return;
+    frame = window.requestAnimationFrame(() => {
+      frame = 0;
+      sync();
+    });
+  };
+
+  const onKeydown = (event: KeyboardEvent) => {
+    if (event.key !== 'Escape' || !openNavigator) return;
+    const target = openNavigator;
+    event.preventDefault();
+    setOpen(target, false);
+    target.ball.focus({ preventScroll: true });
+  };
+
+  const onDocumentClick = (event: MouseEvent) => {
+    if (!openNavigator) return;
+    const target = event.target;
+    if (!(target instanceof Node)) return;
+    if (openNavigator.layer.contains(target)) return;
+    closeAll();
+  };
+
   const start = () => {
-    const fab = document.createElement('button');
-    fab.type = 'button';
-    fab.className = 'workbench-user-message-ball';
-    fab.setAttribute(FAB_ATTR, 'true');
-    fab.setAttribute('aria-haspopup', 'dialog');
-    fab.setAttribute('aria-expanded', 'false');
-    fab.innerHTML = '<svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4h16v12H9l-5 4zM8 9h8M8 13h5"></path></svg>';
-    fab.hidden = true;
-
-    const panel = document.createElement('section');
-    panel.className = 'workbench-user-message-panel';
-    panel.setAttribute(PANEL_ATTR, 'true');
-    panel.setAttribute('role', 'dialog');
-    panel.setAttribute('aria-label', sourceText('用户消息', 'User messages'));
-    panel.hidden = true;
-
-    panel.innerHTML = '<header><div class="workbench-user-message-panel-heading"><strong></strong></div><button type="button" class="workbench-user-message-panel-close"></button></header><div class="workbench-user-message-panel-list"></div>';
-    const title = panel.querySelector('strong')!;
-    title.textContent = sourceText('用户消息', 'User messages');
-    const close = panel.querySelector<HTMLButtonElement>('.workbench-user-message-panel-close')!;
-    close.setAttribute('aria-label', sourceText('关闭', 'Close'));
-    close.textContent = '×';
-    const body = panel.querySelector<HTMLElement>('.workbench-user-message-panel-list')!;
-    document.body.append(fab, panel);
-
-    let open = false;
-    let signature = '';
-    let entries: MessageEntry[] = [];
-    let observedList: HTMLElement | null = null;
-    const resize = new ResizeObserver(() => schedule());
-
-    const observeList = (list: HTMLElement | null) => {
-      if (list === observedList) return;
-      resize.disconnect();
-      observedList = list;
-      if (list) resize.observe(list);
-    };
-
-    const renderList = () => {
-      body.innerHTML = entries.map((_, index) => `<button type="button" class="workbench-user-message-panel-item" data-user-message-item="${index}"><span class="workbench-user-message-panel-index">${index + 1}</span><span class="workbench-user-message-panel-text"></span></button>`).join('');
-      body.querySelectorAll<HTMLElement>('.workbench-user-message-panel-text').forEach((node, index) => {
-        node.textContent = entries[index].text;
-      });
-    };
-
-    const setOpen = (next: boolean) => {
-      open = next && entries.length > 0;
-      panel.hidden = !open;
-      fab.setAttribute('aria-expanded', String(open));
-      if (open) {
-        renderList();
-        position();
-      }
-    };
-
-    const position = () => {
-      const list = activeList();
-      if (!list) return;
-      const rect = list.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const gap = 14;
-      const size = 44;
-      const top = Math.min(window.innerHeight - size - gap, Math.max(gap, rect.bottom - size - gap));
-      const right = Math.max(gap, window.innerWidth - rect.right + gap);
-      const width = Math.max(180, Math.min(360, rect.width - gap * 2));
-      fab.style.top = `${Math.round(top)}px`;
-      fab.style.right = `${Math.round(right)}px`;
-      panel.style.width = `${Math.round(width)}px`;
-      panel.style.right = `${Math.round(right)}px`;
-      panel.style.bottom = `${Math.round(window.innerHeight - top + 10)}px`;
-      panel.style.maxHeight = `${Math.round(Math.max(160, top - 20))}px`;
-    };
-
-    const update = () => {
-      const list = activeList();
-      observeList(list);
-      if (!readUserMessageBallEnabled() || !chatVisible() || !list) {
-        entries = [];
-        fab.hidden = true;
-        setOpen(false);
-        return;
-      }
-      entries = messageEntries(list);
-      if (!entries.length) {
-        fab.hidden = true;
-        setOpen(false);
-        return;
-      }
-      fab.hidden = false;
-      fab.dataset.count = String(entries.length);
-      const label = sourceText(`用户消息（${entries.length}）`, `User messages (${entries.length})`);
-      fab.setAttribute('aria-label', label);
-      position();
-      const nextSignature = entries.map(entry => `${entry.id}\u0000${entry.text}`).join('\u0001');
-      if (open && nextSignature !== signature) {
-        signature = nextSignature;
-        renderList();
-        position();
-      }
-    };
-
-    fab.addEventListener('click', () => {
-      setOpen(!open);
-    });
-    close.addEventListener('click', () => setOpen(false));
-    body.addEventListener('click', event => {
-      const item = (event.target as Element | null)?.closest<HTMLElement>('[data-user-message-item]');
-      if (!item) return;
-      const entry = entries[Number(item.dataset.userMessageItem)];
-      const list = activeList();
-      if (entry && list) scrollToMessage(entry.id, list);
-      setOpen(false);
-    });
-    document.addEventListener('click', event => {
-      const target = event.target;
-      if (!open || !(target instanceof Node)) return;
-      if (panel.contains(target) || fab.contains(target)) return;
-      setOpen(false);
-    });
-    document.addEventListener('keydown', event => {
-      if (event.key === 'Escape' && open) {
-        event.preventDefault();
-        setOpen(false);
-        fab.focus({ preventScroll: true });
-      }
-    });
-
-    let frame = 0;
-    const schedule = () => {
-      if (frame) return;
-      frame = window.requestAnimationFrame(() => {
-        frame = 0;
-        update();
-      });
-    };
-    const observer = new MutationObserver(schedule);
+    if (disposed) return;
+    observer = new MutationObserver(schedule);
     observer.observe(document.documentElement, {
       childList: true,
       subtree: true,
       attributes: true,
       attributeFilter: ['class', 'data-message-id', 'data-pane-count', 'data-active-pane-id', 'data-chat-visible'],
     });
+    document.addEventListener('click', onDocumentClick);
+    document.addEventListener('keydown', onKeydown);
     window.addEventListener('resize', schedule);
-    window.addEventListener('scroll', schedule, true);
     window.addEventListener(CHANGE_EVENT, schedule);
-    schedule();
+    sync();
   };
 
+  const stop = () => {
+    disposed = true;
+    observer?.disconnect();
+    document.removeEventListener('click', onDocumentClick);
+    document.removeEventListener('keydown', onKeydown);
+    window.removeEventListener('resize', schedule);
+    window.removeEventListener(CHANGE_EVENT, schedule);
+    if (frame) window.cancelAnimationFrame(frame);
+    for (const navigator of navigators.values()) destroyNavigator(navigator);
+    navigators.clear();
+    openNavigator = null;
+    installCleanup = null;
+    delete (window as any).__HERMES_WORKBENCH_USER_MESSAGE_BALL__;
+  };
+
+  installCleanup = stop;
   if (document.body) start();
   else document.addEventListener('DOMContentLoaded', start, { once: true });
+}
+
+/** Detach every mounted navigator; used by tests and full teardown. */
+export function disposeUserMessageBall(): void {
+  installCleanup?.();
 }
