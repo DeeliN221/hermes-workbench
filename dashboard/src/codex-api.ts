@@ -16,6 +16,10 @@ export interface CodexSession {
   favorite: boolean; groupId: string | null; deleted: boolean; updatedAt: string; updatedAtEpoch: number; createdAt: number;
   status: 'running' | 'waiting' | 'failed' | 'completed' | 'idle'; unread: boolean; lastCompletedSeq: number; readSeq: number;
   color: string;
+  /** The user-supplied title, or null when the session still shows its derived default. */
+  customTitle?: string | null;
+  /** 'user' = titled by hand, 'auto' = first-message title, null = neither yet. */
+  titleSource?: 'user' | 'auto' | null;
 }
 export interface CodexGroup { id: string; name: string; workspaceId: string; workspacePath: string }
 const GOAL_STATES = ['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited', 'complete'] as const;
@@ -51,6 +55,8 @@ export function normalizeSession(value: unknown): CodexSession | null {
   const path = text(row.workspacePath ?? row.workspace_path ?? row.path ?? row.cwd);
   const completed = Number(row.lastCompletedSeq ?? row.last_completed_seq ?? row.completedSeq ?? 0), read = Number(row.readSeq ?? row.read_seq ?? 0);
   const group = row.groupId ?? row.group_id, color = text(row.color ?? row.sessionColor ?? row.session_color);
+  const titleSource = text(row.titleSource ?? row.title_source).toLowerCase();
+  const customTitle = text(row.customTitle ?? row.custom_title) || null;
   const updatedRaw = row.updatedAt ?? row.updated_at ?? row.timestamp;
   const updatedAtEpoch = typeof updatedRaw === 'number' || typeof updatedRaw === 'string' && /^\d+(?:\.\d+)?$/.test(updatedRaw)
     ? Number(updatedRaw) * (Number(updatedRaw) < 1e12 ? 1000 : 1) : 0;
@@ -64,7 +70,8 @@ export function normalizeSession(value: unknown): CodexSession | null {
     status: sessionStatus(row.status ?? row.state ?? (row.running ? 'running' : 'idle')),
     unread: row.unread === true || row.hasUnread === true || completed > read,
     lastCompletedSeq: Number.isFinite(completed) ? completed : 0, readSeq: Number.isFinite(read) ? read : 0,
-    color: /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : '' };
+    color: /^#[0-9a-fA-F]{6}$/.test(color) ? color.toLowerCase() : '',
+    customTitle, titleSource: titleSource === 'user' || titleSource === 'auto' ? titleSource : null };
 }
 export async function listCodexSessions(read: FetchJSON, profile: string, options: boolean | { deleted?: boolean } = {}): Promise<CodexSession[]> {
   const deleted = typeof options === 'boolean' ? options : options.deleted === true, result: CodexSession[] = [];
@@ -111,6 +118,11 @@ export function renameCodexGroup(read: FetchJSON, profile: string, id: string, n
 export async function deleteCodexGroup(read: FetchJSON, profile: string, id: string) { await read(`${API}/groups/${encode(id)}?profile=${encode(profile)}`, { method: 'DELETE' }); }
 export async function organizeCodexSession(read: FetchJSON, profile: string, session: string, changes: { favorite?: boolean; groupId?: string | null; deleted?: boolean; title?: string; color?: string }) {
   const response = await read(`${API}/session/organization?${sessionQuery(profile, session)}`, json('PATCH', changes));
+  return normalizeSession(record(response).session ?? response);
+}
+/** Persist a user title, or clear it (null) so the first message names the session again. */
+export async function renameCodexSession(read: FetchJSON, profile: string, session: string, title: string | null) {
+  const response = record(await read(`${API}/sessions/${encode(session)}/title?profile=${encode(profile)}`, json('PATCH', { title })));
   return normalizeSession(record(response).session ?? response);
 }
 export function normalizeGoal(value: unknown): CodexGoal | null {

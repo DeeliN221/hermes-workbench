@@ -142,6 +142,18 @@ const configFixture = fixture.replace(
   </style><div class="host-shell"><aside id="app-sidebar"></aside><div class="host-page"><header class="host-banner" role="banner"><h1>Configuration</h1><input type="search" placeholder="Search..." aria-label="Search configuration"></header><main class="host-main"><div class="host-route-column z-2" data-testid="host-config-form"><div class="host-config-path">/workspace/profiles/default/config.yaml</div><div class="host-config-toolbar"><button type="button">&lt;/&gt; YAML</button><button type="button" class="is-save">Save</button></div><div class="host-config-tabs"><span>General 27</span><span>Terminal 34</span><span>Display 9</span></div><div class="host-config-card"><strong>General · 27 fields</strong><label><span>Default model (e.g. anthropic/claude-sonnet-4-6)</span><input type="text" value="gpt-6.1-sol" readonly></label><label><span>MODEL CONTEXT LENGTH</span><input type="text" value="0" readonly></label><label><span>FALLBACK PROVIDERS</span><input type="text" value="comma-separated values" readonly></label></div></div></main></div></div><div id="root"></div>`,
 );
 
+/** Titles renamed through the fixture API, keyed by profile and session. */
+const titleOverrides = new Map();
+
+/** Keep a fixture rename after the page reloads, like the real bridge does. */
+function withStoredTitle(profile, session) {
+  const stored = titleOverrides.get(`${profile}\u0000${session.id}`);
+  if (stored === undefined) return session;
+  // An empty stored title restores the default: the record falls back to its id
+  // and the UI derives the first-message title again.
+  return { ...session, title: stored || session.id, customTitle: stored || null, titleSource: stored ? 'user' : null };
+}
+
 /** Return preview sessions for one profile with stable IDs and recent timestamps. */
 function codexSessions(profile) {
   const now = Math.floor(Date.now() / 1000);
@@ -152,7 +164,7 @@ function codexSessions(profile) {
     { id: 'codex-regression', threadId: 'codex-regression', title: 'Home rendering regression', workspace: 'hermes-workbench',
       workspaceId: 'preview-workspace', workspacePath: '/home/preview/hermes-workbench', favorite: false, groupId: null,
       deleted: false, updatedAt: now - 240, createdAt: now - 7200, status: 'idle', lastCompletedSeq: 1, readSeq: 1, color: '#6a7fa8' },
-  ];
+  ].map((session) => withStoredTitle(profile, session));
 }
 
 /** Return Hermes history cards backed by the endpoints below. */
@@ -186,10 +198,22 @@ function codexTurns() {
 }
 
 /** Return deterministic plugin API data for the fixture routes. */
-function apiPayload(url, method) {
+function apiPayload(url, method, body = null) {
   const pathname = url.pathname;
   const profile = url.searchParams.get('profile') || 'default';
   const codex = codexSessions(profile), hermes = hermesSessions(profile);
+  const titleRoute = /^\/api\/plugins\/workbench\/codex\/sessions\/([^/]+)\/title$/.exec(pathname);
+  if (titleRoute && method === 'PATCH') {
+    const sessionId = decodeURIComponent(titleRoute[1]);
+    const session = codex.find((item) => item.id === sessionId);
+    if (!session) return { __status: 404, detail: 'Session not found' };
+    const raw = typeof body?.title === 'string' ? body.title : '';
+    const stored = raw.split(/\s+/).filter(Boolean).join(' ');
+    if (stored.length > 200) return { __status: 400, detail: 'Session title must contain at most 200 characters' };
+    titleOverrides.set(`${profile}\u0000${sessionId}`, stored);
+    const renamed = codexSessions(profile).find((item) => item.id === sessionId);
+    return { session_id: sessionId, title: stored || null, session: renamed };
+  }
   if (pathname.endsWith('/capabilities')) return {
     codexChat: true, codexUserInput: true, codexThreadReasoningConfig: true,
     newChatProviders: ['codex'], historyOnlyProviders: [], supportsExternalContinuation: false,
@@ -210,9 +234,11 @@ function apiPayload(url, method) {
   }
   if (pathname === '/api/plugins/workbench/codex/session') {
     if (method === 'POST') return { request: { status: 'accepted', turn_id: 'preview-turn' } };
-    return { cached: true, turns: codexTurns() };
+    return { cached: true, turns: codexTurns(), session: codex.find((item) => item.id === url.searchParams.get('session_id')) };
   }
-  if (pathname === '/api/plugins/workbench/codex/session/preview') return { cached: true, turns: codexTurns() };
+  if (pathname === '/api/plugins/workbench/codex/session/preview') {
+    return { cached: true, turns: codexTurns(), session: codex.find((item) => item.id === url.searchParams.get('session_id')) };
+  }
   if (pathname === '/api/plugins/workbench/codex/session/read') return { ok: true };
   if (pathname === '/api/plugins/workbench/codex/groups') {
     const count = url.searchParams.get('profile') === 'writer' ? 2 : 6;
@@ -282,6 +308,14 @@ function apiPayload(url, method) {
     entries: [], turns: [], files: [], children: [], total: 0, current: '', ok: true };
 }
 
+/** Read a small JSON request body so fixtures can persist PATCH payloads. */
+async function readRequestBody(request) {
+  const chunks = [];
+  for await (const chunk of request) chunks.push(chunk);
+  if (!chunks.length) return null;
+  try { return JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return null; }
+}
+
 /** Start a same-origin preview host or an ephemeral server for browser tests. */
 export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
   const server = createServer(async (request, response) => {
@@ -292,9 +326,11 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       return;
     }
     if (url.pathname.startsWith('/api/')) {
-      request.resume();
-      const body = JSON.stringify(apiPayload(url, request.method || 'GET'));
-      response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
+      const payload = apiPayload(url, request.method || 'GET', await readRequestBody(request));
+      const status = Number(payload?.__status) || 200;
+      if (payload && typeof payload === 'object' && '__status' in payload) delete payload.__status;
+      const body = JSON.stringify(payload);
+      response.writeHead(status, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
       response.end(body);
       return;
     }
