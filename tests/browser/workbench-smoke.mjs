@@ -209,6 +209,34 @@ try {
   assert.deepEqual(compactProjectErrors, [], `Browser errors in the short project list:\n${compactProjectErrors.join('\n')}`);
   await compactProjectsPage.close();
 
+  const settingsReturnPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const settingsReturnErrors = [];
+  settingsReturnPage.on('pageerror', error => settingsReturnErrors.push(error.stack || error.message));
+  await settingsReturnPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await settingsReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  await settingsReturnPage.locator('.project-temporary .codex-session-row').nth(1).click();
+  await settingsReturnPage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  const splitChatUrl = settingsReturnPage.url();
+  await settingsReturnPage.evaluate(() => document.querySelector('.dashboard-crafting-grid a[aria-label="Settings"]')?.click());
+  await settingsReturnPage.waitForFunction(() => location.pathname === '/config' && new URLSearchParams(location.search).get('panel') === '1');
+  await settingsReturnPage.locator('.dashboard-accessory-close').waitFor({ state: 'visible', timeout: 5000 });
+  for (const [selector, tab] of [
+    ['[data-workbench-chat-display-link]', 'display'],
+    ['[data-workbench-model-link]', 'models'],
+    ['[data-workbench-version-link]', 'versions'],
+  ]) {
+    await settingsReturnPage.locator(selector).click();
+    await settingsReturnPage.waitForFunction(expected => new URLSearchParams(location.search).get('workbench') === expected, tab);
+    assert.equal(new URL(settingsReturnPage.url()).searchParams.get('panel'), '1', `${tab} settings must keep the floating panel marker`);
+    assert.equal(await settingsReturnPage.locator('.dashboard-accessory-close').isVisible(), true, `${tab} settings must keep the close control visible`);
+  }
+  await settingsReturnPage.locator('.dashboard-accessory-close').click();
+  await settingsReturnPage.waitForFunction(() => location.pathname === '/chat');
+  assert.equal(settingsReturnPage.url(), splitChatUrl, 'Closing settings must restore the original split chat route');
+  assert.equal(await settingsReturnPage.locator('.codex-pane-slot').count(), 2, 'Closing settings must preserve both chat panes');
+  assert.equal(await settingsReturnPage.evaluate(() => document.querySelector('.dashboard-persistent-workbench')?.getAttribute('data-chat-visible')), 'true');
+  assert.deepEqual(settingsReturnErrors, [], `Browser errors returning from floating settings:\n${settingsReturnErrors.join('\n')}`);
+  await settingsReturnPage.close();
   const messageNavigatorPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const messageNavigatorErrors = [];
   messageNavigatorPage.on('pageerror', error => messageNavigatorErrors.push(error.stack || error.message));
@@ -274,7 +302,6 @@ try {
   await messageNavigatorPage.locator('[data-workbench-user-message-ball]').waitFor({ state: 'visible', timeout: 5000 });
   assert.deepEqual(messageNavigatorErrors, [], `Browser errors in the user message navigator:\n${messageNavigatorErrors.join('\n')}`);
   await messageNavigatorPage.close();
-
   const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileErrors = [];
   mobilePage.on('pageerror', error => mobileErrors.push(error.stack || error.message));
@@ -502,7 +529,7 @@ try {
   mobileSettingsPage.on('pageerror', error => mobileSettingsErrors.push(error.stack || error.message));
   await mobileSettingsPage.goto(host.origin + '/config?workbench=display&profile=writer', { waitUntil: 'domcontentloaded' });
   await mobileSettingsPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
-  await mobileSettingsPage.locator('.workbench-mobile-settings-header button').click();
+  await mobileSettingsPage.locator('.workbench-mobile-settings-back').click();
   await mobileSettingsPage.locator('[data-workbench-model-link]').click();
   await mobileSettingsPage.locator('[data-testid="model-visibility-settings"] .workbench-model-group').first().waitFor({ state: 'visible', timeout: 5000 });
   const mobileSettingsCheck = await mobileSettingsPage.evaluate(() => {
@@ -520,11 +547,14 @@ try {
   assert.equal(mobileSettingsCheck.hitInsidePanel, true, 'Mobile Model visibility must own pointer hit-testing without host overlap');
   assert.equal(mobileSettingsCheck.hostFormVisible, false, 'Mobile host configuration form must remain hidden behind Model visibility');
   // Returning from /profiles to the mobile settings list must keep the Settings heading visible.
-  await mobileSettingsPage.locator('.workbench-mobile-settings-header button').click();
+  await mobileSettingsPage.locator('.workbench-mobile-settings-back').click();
   await mobileSettingsPage.locator('.dashboard-settings-nav a[href^="/profiles"]').click();
   await mobileSettingsPage.locator('.workbench-profiles').waitFor({ state: 'visible', timeout: 5000 });
-  await mobileSettingsPage.locator('.workbench-mobile-settings-header button').click();
-  assert.equal(await mobileSettingsPage.locator('.dashboard-settings-nav h1').isVisible(), true, 'Settings heading must stay visible in mobile list mode after visiting Profiles');
+  await mobileSettingsPage.locator('.workbench-mobile-settings-back').click();
+  assert.equal(await mobileSettingsPage.locator('.dashboard-settings-nav h1').isVisible(), false, 'The duplicate settings heading must stay hidden in mobile list mode');
+  assert.equal(await mobileSettingsPage.locator('#workbench-mobile-settings-title').innerText(), 'Settings', 'The mobile header must keep the Settings title visible');
+  const mobileHeaderBox = await mobileSettingsPage.locator('#workbench-mobile-settings-header').boundingBox();
+  assert.ok(mobileHeaderBox && mobileHeaderBox.x >= 48, 'The mobile settings list header must clear the action rail');
   // Portaled z-[100] host dialogs (such as /models ModelPickerDialog) must appear above mobile settings detail view.
   await mobileSettingsPage.goto(host.origin + '/models?profile=writer', { waitUntil: 'domcontentloaded' });
   await mobileSettingsPage.locator('.workbench-mobile-settings-header').waitFor({ state: 'visible', timeout: 5000 });
@@ -543,6 +573,36 @@ try {
   assert.equal(modalHit.hitHeaderArea, 'smoke-model-picker-portal', 'Portaled z-[100] model picker must sit above mobile settings header');
   assert.deepEqual(mobileSettingsErrors, [], `Browser errors in mobile settings layering check:\n${mobileSettingsErrors.join('\n')}`);
   await mobileSettingsPage.close();
+
+  const mobileReturnPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const mobileReturnErrors = [];
+  mobileReturnPage.on('pageerror', error => mobileReturnErrors.push(error.stack || error.message));
+  await mobileReturnPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await mobileReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  await mobileReturnPage.locator('.project-temporary .codex-session-row').nth(1).click();
+  await mobileReturnPage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  const mobileSplitChatUrl = mobileReturnPage.url();
+  await mobileReturnPage.setViewportSize({ width: 390, height: 844 });
+  await mobileReturnPage.waitForTimeout(300);
+  await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-rail-actions a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
+  await mobileReturnPage.waitForFunction(() => location.pathname === '/config');
+  await mobileReturnPage.locator('#workbench-mobile-settings-header').waitFor({ state: 'visible', timeout: 5000 });
+  const returnButton = mobileReturnPage.locator('.workbench-mobile-settings-chat');
+  assert.equal(await returnButton.isVisible(), true, 'Mobile settings must expose a visible Back to chat button');
+  await returnButton.click();
+  await mobileReturnPage.waitForFunction(() => location.pathname === '/chat');
+  assert.equal(mobileReturnPage.url(), mobileSplitChatUrl, 'Back to chat must restore the original split chat route');
+  assert.equal(await mobileReturnPage.locator('.codex-pane-slot').count(), 2, 'Back to chat must preserve both panes');
+  await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-rail-actions a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
+  await mobileReturnPage.waitForFunction(() => location.pathname === '/config');
+  await mobileReturnPage.locator('[data-workbench-chat-display-link]').click();
+  await mobileReturnPage.waitForFunction(() => new URLSearchParams(location.search).get('workbench') === 'display');
+  await mobileReturnPage.locator('.workbench-mobile-settings-chat').click();
+  await mobileReturnPage.waitForFunction(() => location.pathname === '/chat');
+  assert.equal(mobileReturnPage.url(), mobileSplitChatUrl, 'Back to chat from a settings subpage must restore the split chat route');
+  assert.equal(await mobileReturnPage.locator('.codex-pane-slot').count(), 2, 'Back to chat from a settings subpage must preserve both panes');
+  assert.deepEqual(mobileReturnErrors, [], `Browser errors returning from mobile settings:\n${mobileReturnErrors.join('\n')}`);
+  await mobileReturnPage.close();
 
   console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, the centered floating panel, settings subpage layering, and the three chat detail levels rendered without page errors.');
 } finally {

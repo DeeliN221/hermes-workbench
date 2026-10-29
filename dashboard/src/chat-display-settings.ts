@@ -6,6 +6,7 @@ import {
 } from './chat-detail';
 import { currentProfile } from './profile-scope';
 import { uiText as sourceText } from './ui-locale';
+import { accessoryPanelOpen, withAccessoryPanel } from './workbench-accessory';
 import { renderUserMessageBallSetting } from './user-message-ball';
 import './chat-display-settings.css';
 
@@ -48,7 +49,12 @@ function addSettingsLink(): void {
   const nav = document.querySelector<HTMLElement>('.dashboard-settings-nav');
   if (!nav) return;
   const profile = encodeURIComponent(currentProfile());
-  const href = `/config?workbench=display&profile=${profile}`;
+  // Keep the floating settings panel open even when a host loads this link
+  // before the Workbench shell has claimed the settings navigation.
+  const href = withAccessoryPanel(
+    `/config?workbench=display&profile=${profile}`,
+    accessoryPanelOpen(window.location.search),
+  );
   const existing = nav.querySelector<HTMLAnchorElement>(`[${LINK_ATTR}]`);
   const label = sourceText('聊天显示', 'Chat display');
   if (existing) {
