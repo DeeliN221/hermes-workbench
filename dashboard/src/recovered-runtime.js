@@ -13383,11 +13383,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               ? Q
               : { ...Q, [F]: j };
           });
-          // Keep the address on the active pane so a reload restores the same
-          // focus instead of reopening a stale session.
-          if (x.current === F) {
-            window.history.replaceState(null, "", paneTargetUrl(window.location.href, j));
-          }
         }, []),
         E = t((F, j) => {
           j?.target?.closest?.(".codex-sidebar") || ((x.current = F), _(F));
@@ -13411,7 +13406,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const panes = O5(m, pane, x.current);
           O(panes);
           v(currentState => ({ ...currentState, [pane.id]: { sessionId: F, hermesSessionId: "" } }));
-          window.history.replaceState(null, "", paneTargetUrl(window.location.href, { sessionId: F, hermesSessionId: "" }));
           x.current = pane.id;
           _(pane.id);
         }, [m, O, v, _]),
@@ -13434,7 +13428,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const panes = O5(m, pane, x.current);
           O(panes);
           v(currentState => ({ ...currentState, [pane.id]: { sessionId: "", hermesSessionId: F } }));
-          window.history.replaceState(null, "", paneTargetUrl(window.location.href, { sessionId: "", hermesSessionId: F }));
           x.current = pane.id;
           _(pane.id);
         }, [m, O, v, _]),
