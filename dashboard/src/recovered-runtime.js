@@ -13411,6 +13411,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const panes = O5(m, pane, x.current);
           O(panes);
           v(currentState => ({ ...currentState, [pane.id]: { sessionId: F, hermesSessionId: "" } }));
+          window.history.replaceState(null, "", paneTargetUrl(window.location.href, { sessionId: F, hermesSessionId: "" }));
           x.current = pane.id;
           _(pane.id);
         }, [m, O, v, _]),
@@ -13433,6 +13434,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const panes = O5(m, pane, x.current);
           O(panes);
           v(currentState => ({ ...currentState, [pane.id]: { sessionId: "", hermesSessionId: F } }));
+          window.history.replaceState(null, "", paneTargetUrl(window.location.href, { sessionId: "", hermesSessionId: F }));
           x.current = pane.id;
           _(pane.id);
         }, [m, O, v, _]),
