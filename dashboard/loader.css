@@ -17,3 +17,43 @@
   background: transparent;
   cursor: pointer;
 }
+
+.workbench-sidecar-preview {
+  display: grid;
+  width: min(44rem, calc(100vw - 3rem));
+  gap: 0.6rem;
+  text-align: left;
+}
+
+.workbench-sidecar-preview-label {
+  margin: 0;
+  font-size: 0.8rem;
+  opacity: 0.72;
+}
+
+.workbench-sidecar-preview-message {
+  border-left: 2px solid color-mix(in srgb, currentColor 28%, transparent);
+  padding-left: 0.75rem;
+}
+
+.workbench-sidecar-preview-message strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  opacity: 0.72;
+}
+
+.workbench-sidecar-preview-message p {
+  margin: 0;
+  max-height: 8rem;
+  overflow: hidden;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.workbench-sidecar-preview-message.is-user p {
+  opacity: 0.86;
+}

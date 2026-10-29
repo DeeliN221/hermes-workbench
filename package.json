@@ -12,7 +12,7 @@
     "build": "vite build --config vite.config.ts && vite build --config vite.loader.config.ts && python3 scripts/build-provenance.py",
     "typecheck": "python3 scripts/check-typescript-source.py && tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "test:browser": "node tests/browser/workbench-smoke.mjs && node tests/browser/attachment-upload.mjs && node tests/browser/cron-session-fallback.mjs",
+    "test:browser": "node tests/browser/workbench-smoke.mjs && node tests/browser/attachment-upload.mjs && node tests/browser/cron-session-fallback.mjs && node tests/browser/startup-cache.mjs",
     "preview:local": "pnpm build && node scripts/preview-local.mjs",
     "test:python": "env -u CODEX_APP_SERVER_ENDPOINT -u CODEX_HOME uv run --no-project --with-requirements requirements-dev.txt pytest -q tests",
     "release:verify": "bash scripts/verify-release.sh",

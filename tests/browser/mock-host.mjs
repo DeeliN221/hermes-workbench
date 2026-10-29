@@ -3,14 +3,20 @@
  * Preview mode and browser tests share this boundary so they exercise the same app.
  */
 import { readFile } from 'node:fs/promises';
+import { readFileSync } from 'node:fs';
 import { createServer } from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const ROOT = fileURLToPath(new URL('../..', import.meta.url));
+const VERSION = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')).version;
 const ASSETS = new Map([
   ['/workbench.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/index.js') }],
   ['/style.css', { type: 'text/css; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/style.css') }],
+  ['/dashboard-plugins/workbench/dist/index.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/loader.js') }],
+  ['/dashboard-plugins/workbench/dist/workbench.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/index.js') }],
+  ['/dashboard-plugins/workbench/dist/workbench.css', { type: 'text/css; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/style.css') }],
+  ['/loader.css', { type: 'text/css; charset=utf-8', path: path.join(ROOT, 'dashboard/loader.css') }],
   ['/dashboard-plugins/workbench/dist/pele.global.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'dashboard/dist/pele.global.js') }],
   ['/react.development.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'node_modules/react/umd/react.development.js') }],
   ['/react-dom.development.js', { type: 'text/javascript; charset=utf-8', path: path.join(ROOT, 'node_modules/react-dom/umd/react-dom.development.js') }],
@@ -75,6 +81,44 @@ const fixture = `<!doctype html>
     ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
   });
 </script></body></html>`;
+
+const loaderFixture = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Workbench loader preview</title>
+<link rel="stylesheet" href="/loader.css">
+<style>html,body,#root{margin:0;min-height:100%;background:#071414;color:#e9f2e9}</style></head>
+<body><div id="root"></div><script src="/react.development.js"></script>
+<script src="/react-dom.development.js"></script>
+<script>
+  window.__smokeErrors = [];
+  addEventListener('error', event => window.__smokeErrors.push(event.error?.stack || event.message));
+  addEventListener('unhandledrejection', event => window.__smokeErrors.push(event.reason?.stack || event.reason));
+  class PreviewWebSocket extends EventTarget {
+    static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
+    readyState = PreviewWebSocket.CONNECTING;
+    constructor() { super(); queueMicrotask(() => { this.readyState = PreviewWebSocket.OPEN; this.onopen?.(new Event('open')); }); }
+    send() {} close() { this.readyState = PreviewWebSocket.CLOSED; }
+  }
+  window.WebSocket = PreviewWebSocket;
+  async function fetchJSON(url, init) {
+    const response = await fetch(url, init);
+    if (!response.ok) throw new Error('HTTP ' + response.status + ': ' + url);
+    return response.json();
+  }
+  const slots = {}, components = {};
+  const root = ReactDOM.createRoot(document.getElementById('root'));
+  function render() {
+    const App = slots.workbench?.overlay || components.workbench;
+    if (App) root.render(React.createElement(App));
+  }
+  window.__HERMES_PLUGINS__ = {
+    register(name, component) { components[name] = component; render(); },
+    registerSlot(plugin, slot, component) { (slots[plugin] ||= {})[slot] = component; render(); },
+  };
+  window.__HERMES_PLUGIN_SDK__ = { React, hooks: React, components: {}, sdkVersion: '1.1.0', fetchJSON,
+    authedFetch: (url, init) => fetch(url, init) };
+  window.__HERMES_WORKBENCH_SIDECAR__ = { status: 'idle' };
+</script><script src="/dashboard-plugins/workbench/dist/index.js"></script></body></html>`;
 
 const configFixture = fixture.replace(
   '<body><div id="root"></div>',
@@ -256,6 +300,31 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
     if (url.pathname === '/config' || url.pathname === '/models') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(configFixture);
+      return;
+    }
+    if (url.pathname === '/loader-preview' || (url.pathname === '/chat' && url.searchParams.get('loader') === '1')) {
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(loaderFixture);
+      return;
+    }
+    const versioned = /^\/workbench-sidecar\/v\/([^/]+)\/workbench\.(js|css)$/.exec(url.pathname);
+    if (versioned) {
+      if (versioned[1] !== VERSION) {
+        response.writeHead(404).end();
+        return;
+      }
+      const filename = versioned[2] === 'js' ? 'dashboard/dist/index.js' : 'dashboard/dist/style.css';
+      try {
+        const body = await readFile(path.join(ROOT, filename));
+        response.writeHead(200, {
+          'Content-Type': versioned[2] === 'js' ? 'text/javascript; charset=utf-8' : 'text/css; charset=utf-8',
+          'Content-Length': body.length,
+          'Cache-Control': 'public, max-age=31536000, immutable',
+        });
+        response.end(body);
+      } catch {
+        response.writeHead(503).end();
+      }
       return;
     }
     if (['/', '/sessions', '/chat', '/workbench', '/profiles', '/cron'].includes(url.pathname)) {
