@@ -1,0 +1,190 @@
+/* Full-screen pan-and-zoom lightbox for Mermaid and PlantUML diagrams */
+.hti-diagram-lightbox {
+  position: fixed;
+  inset: 0;
+  z-index: 99999;
+  display: flex;
+  flex-direction: column;
+  background: rgba(10, 15, 20, 0.92);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  color: #f1f5f9;
+  user-select: none;
+  touch-action: none;
+  font-family: var(--theme-font-sans, system-ui, -apple-system, sans-serif);
+  animation: hti-lightbox-fade-in 0.15s ease-out;
+}
+
+@keyframes hti-lightbox-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.hti-diagram-lightbox-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.6rem 1rem;
+  background: rgba(15, 23, 42, 0.85);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  z-index: 2;
+  gap: 0.5rem;
+}
+
+.hti-diagram-lightbox-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  min-width: 0;
+}
+
+.hti-diagram-lightbox-title {
+  font-weight: 600;
+  font-size: 0.95rem;
+  color: #fff;
+  letter-spacing: 0.02em;
+}
+
+.hti-diagram-lightbox-scale {
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.12);
+  color: #cbd5e1;
+}
+
+.hti-diagram-lightbox-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.hti-diagram-lightbox-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2.2rem;
+  height: 2.2rem;
+  padding: 0 0.55rem;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #f8fafc;
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 500;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.hti-diagram-lightbox-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.hti-diagram-lightbox-btn:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 1px;
+}
+
+.hti-diagram-lightbox-close {
+  background: rgba(239, 68, 68, 0.2);
+  border-color: rgba(239, 68, 68, 0.35);
+  color: #fca5a5;
+  font-size: 1.15rem;
+  line-height: 1;
+}
+
+.hti-diagram-lightbox-close:hover {
+  background: rgba(239, 68, 68, 0.35);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #fff;
+}
+
+.hti-diagram-lightbox-viewport {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: grab;
+  touch-action: none;
+}
+
+.hti-diagram-lightbox-viewport.is-dragging {
+  cursor: grabbing;
+}
+
+.hti-diagram-lightbox-stage {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transform-origin: center center;
+  will-change: transform;
+  pointer-events: auto;
+  border-radius: 8px;
+  background: var(--mc-code, var(--hti-md-code, #18231c));
+  border: 1px solid var(--mc-line-soft, var(--hti-md-border, rgba(255, 255, 255, 0.15)));
+  padding: 1.5rem;
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.hti-diagram-lightbox-stage > svg,
+.hti-diagram-lightbox-stage > img {
+  display: block;
+  max-width: 90vw;
+  max-height: 80vh;
+  width: auto;
+  height: auto;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.hti-diagram-lightbox-hint {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  text-align: center;
+  background: rgba(15, 23, 42, 0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  pointer-events: none;
+}
+
+.hti-rich-mermaid-svg:not(:empty),
+.hti-mermaid:not(:empty) {
+  cursor: zoom-in;
+}
+
+.hti-rich-diagram-zoom {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  color: inherit;
+  cursor: pointer;
+  font: inherit;
+  padding: 0.2rem 0.4rem;
+}
+
+.hti-rich-diagram-zoom:hover,
+.hti-rich-diagram-zoom:focus-visible {
+  border-color: var(--hti-md-border, rgba(127, 127, 127, 0.3));
+  color: var(--hti-md-accent, var(--color-primary, #38bdf8));
+  outline: none;
+}
+
+@media (max-width: 600px) {
+  .hti-diagram-lightbox-header {
+    padding: 0.4rem 0.6rem;
+  }
+  .hti-diagram-lightbox-btn {
+    min-width: 2.3rem;
+    height: 2.3rem;
+  }
+  .hti-diagram-lightbox-stage {
+    padding: 0.8rem;
+  }
+  .hti-diagram-lightbox-hint {
+    font-size: 0.68rem;
+  }
+}

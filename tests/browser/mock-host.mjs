@@ -1,3 +1,5 @@
+
+
 /**
  * A local Hermes plugin host backed by deterministic Workbench fixtures.
  * Preview mode and browser tests share this boundary so they exercise the same app.
@@ -181,6 +183,7 @@ function codexTurns() {
         aggregatedOutput: Array.from({ length: 12 }, (_, index) => `preview output line ${index + 1}`).join('\n'),
       },
       { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.\n\n```mermaid\nflowchart LR\n  Chat --> Pele\n  Pele --> SVG\n```' }] },
+      { id: 'preview-agent-plantuml', type: 'agentMessage', content: [{ type: 'text', text: '```plantuml\n@startuml\nUser -> Workbench: Zoom\nWorkbench --> User: Scaled\n@enduml\n```' }] },
     ],
   }];
 }
@@ -332,6 +335,18 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(fixture);
       return;
+    }
+    if (url.pathname.startsWith('/dashboard-plugins/workbench/dist/plantuml/')) {
+      const filename = path.basename(url.pathname);
+      try {
+        const body = await readFile(path.join(ROOT, 'dashboard/dist/plantuml', filename));
+        response.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Content-Length': body.length });
+        response.end(body);
+        return;
+      } catch {
+        response.writeHead(404).end();
+        return;
+      }
     }
     const asset = ASSETS.get(url.pathname);
     if (!asset) {
