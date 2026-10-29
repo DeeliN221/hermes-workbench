@@ -3,6 +3,7 @@ import { record, text, firstDefined, optionalNumber, timestamp, type JsonRecord 
 import { uiText } from './ui-locale';
 import { visibleChatText } from './chat-line-output';
 import { sameMessage, withTurnError } from './chat-runtime-errors';
+import { normalizeResponseQuota, type ResponseQuota } from './response-quota';
 
 export type MessageStatus = 'running' | 'completed' | 'failed' | 'accepted' | 'pending';
 export type TurnStatus = 'running' | 'completed' | 'failed';
@@ -13,6 +14,7 @@ export interface ChatMessage {
   toolName?: string; input?: unknown; result?: unknown; exitCode?: number | null; durationMs?: number | null;
   turnDurationMs?: number | null; turnStatus?: TurnStatus; turnStartedAt?: number; observedAt?: number;
   turnCompletedAt?: number; weeklyRemainingPercent?: number; suppressDeltas?: boolean; error?: boolean;
+  quota?: ResponseQuota;
   submissionError?: unknown; runtimeError?: unknown; delivery?: unknown; questions?: unknown;
   attachments?: MessageAttachmentPreview[];
   subagent?: {
@@ -126,6 +128,7 @@ export function normalizeMessage(value: unknown, fallbackId: string): ChatMessag
     turnStatus: turnStatus(item.turnStatus), turnStartedAt: timestamp(firstDefined(item, 'turnStartedAt', 'turn_started_at')),
     observedAt: timestamp(item.observedAt), turnCompletedAt: timestamp(item.turnCompletedAt),
     weeklyRemainingPercent: typeof item.weeklyRemainingPercent === 'number' ? item.weeklyRemainingPercent : undefined,
+    quota: normalizeResponseQuota(item.quota),
     error: item.error === true || status === 'failed' || (exitCode != null && exitCode !== 0), suppressDeltas: item.suppressDeltas === true,
   };
   message.paragraphs = visibleChatText(message).split(/\n{2,}/).filter(Boolean);
@@ -150,6 +153,7 @@ export function mergeMessage(previous: ChatMessage, next: ChatMessage): ChatMess
     turnStatus: next.turnStatus ?? previous.turnStatus, observedAt: next.observedAt ?? previous.observedAt,
     turnCompletedAt: next.turnCompletedAt ?? previous.turnCompletedAt,
     weeklyRemainingPercent: next.weeklyRemainingPercent ?? previous.weeklyRemainingPercent,
+    quota: next.quota ?? previous.quota,
     turnStartedAt: next.turnStartedAt !== undefined ? next.turnStartedAt : previous.turnStartedAt,
     subagent,
   }, next.id)!; // A normalized message always contains an identity and content.
@@ -178,7 +182,7 @@ export function messagesFromTurns(turns: unknown[], sessionId: string): ChatMess
       const item = record(value), itemState = item.type === 'userMessage' ? 'completed' : itemStatus(item, status || 'completed');
       const message = normalizeMessage({ ...item, status: itemState, turnId: turn.id, turnDurationMs: duration, turnStartedAt: started,
         turnCompletedAt: timestamp(turn.completedAt ?? turn.completed_at) ?? (state !== 'running' && started !== undefined && duration != null ? started + duration : undefined),
-        weeklyRemainingPercent: turn.weeklyRemainingPercent, turnStatus: state,
+        weeklyRemainingPercent: turn.weeklyRemainingPercent, quota: normalizeResponseQuota(turn.quota), turnStatus: state,
       }, `${sessionId}:${turnIndex}:${itemIndex}`);
       return message ? [{ ...message, suppressDeltas: itemState === 'running' }] : [];
     });
@@ -190,6 +194,7 @@ export function applyChatEvent(messages: ChatMessage[], value: unknown): ChatMes
   if (method === 'workbench/turnMetrics') return messages.map(message => message.turnId === params.turnId ? {
     ...message, turnCompletedAt: timestamp(params.completedAt),
     weeklyRemainingPercent: typeof params.weeklyRemainingPercent === 'number' ? params.weeklyRemainingPercent : undefined,
+    quota: normalizeResponseQuota(params.quota),
   } : message);
   if (method === 'turn/completed' || method === 'turn/failed') {
     const turn = record(params.turn), state = turnStatus(turn.status) || 'completed';
