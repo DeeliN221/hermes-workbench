@@ -9429,10 +9429,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function Xo(i) {
     return i.length < f5;
   }
-  function O5(i, e, t) {
-    if (!Xo(i)) return [...i];
-    const r = i.findIndex((n) => n.id === t);
-    return r < 0 ? [...i, e] : [...i.slice(0, r + 1), e, ...i.slice(r + 1)];
+  // New panes always join at the rightmost end; the visual order never jumps.
+  function O5(i, e) {
+    return [...i, e];
+  }
+  // Clicking a session must never be refused: below the limit the pane is
+  // appended at the right, at the limit the rightmost pane is swapped for a
+  // brand new pane (a fresh id keeps the previous transcript, drafts and
+  // scroll position from leaking into the new session).
+  function openSessionPane(i, e) {
+    if (Xo(i)) return { panes: [...i, e], replacedPaneId: "" };
+    return {
+      panes: [...i.slice(0, i.length - 1), e],
+      replacedPaneId: i[i.length - 1].id,
+    };
   }
   function g5(i, e, t) {
     if (i.length <= 1) return { panes: [...i], activePaneId: t };
@@ -13335,61 +13345,75 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           j?.target?.closest?.(".codex-sidebar") || ((x.current = F), _(F));
         }, []),
         D = t((F) => {
+          const target = { sessionId: F, hermesSessionId: "" };
+          const activate = (paneId) => {
+            ((x.current = paneId), _(paneId));
+            // Keep the route on the active pane: a later pane-array change
+            // re-runs the deep-link sync and must not pull focus back.
+            window.history.replaceState(null, "", paneTargetUrl(window.location.href, target));
+          };
           for (const [j, Q] of y.current)
             if (Q.getTarget().sessionId === F) {
-              ((x.current = j), _(j));
+              activate(j);
               return;
             }
           const current = y.current.get(x.current);
           if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectSession(F);
+            activate(x.current);
             return;
           }
-          if (!Xo(m)) {
-            setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
-            return;
-          }
+          // A full workspace swaps its rightmost pane instead of refusing.
           const pane = { id: p5(m), initialSessionId: F, initialHermesSessionId: "" };
-          const panes = O5(m, pane, x.current);
-          O(panes);
-          v(currentState => ({ ...currentState, [pane.id]: { sessionId: F, hermesSessionId: "" } }));
-          x.current = pane.id;
-          _(pane.id);
+          const next = openSessionPane(m, pane);
+          O(next.panes);
+          v((currentState) => {
+            const state = { ...currentState, [pane.id]: target };
+            if (next.replacedPaneId) delete state[next.replacedPaneId];
+            return state;
+          });
+          activate(pane.id);
         }, [m, O, v, _]),
         A = t((F) => {
+          const target = { sessionId: "", hermesSessionId: F };
+          const activate = (paneId) => {
+            ((x.current = paneId), _(paneId));
+            window.history.replaceState(null, "", paneTargetUrl(window.location.href, target));
+          };
           for (const [j, Q] of y.current)
             if (Q.getTarget().hermesSessionId === F) {
-              ((x.current = j), _(j));
+              activate(j);
               return;
             }
           const current = y.current.get(x.current);
           if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectHermesHistory(F);
+            activate(x.current);
             return;
           }
-          if (!Xo(m)) {
-            setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
-            return;
-          }
+          // A full workspace swaps its rightmost pane instead of refusing.
           const pane = { id: p5(m), initialSessionId: "", initialHermesSessionId: F };
-          const panes = O5(m, pane, x.current);
-          O(panes);
-          v(currentState => ({ ...currentState, [pane.id]: { sessionId: "", hermesSessionId: F } }));
-          x.current = pane.id;
-          _(pane.id);
+          const next = openSessionPane(m, pane);
+          O(next.panes);
+          v((currentState) => {
+            const state = { ...currentState, [pane.id]: target };
+            if (next.replacedPaneId) delete state[next.replacedPaneId];
+            return state;
+          });
+          activate(pane.id);
         }, [m, O, v, _]),
         R = t((workspaceId) => {
           y.current.get(x.current)?.startNewSession(workspaceId);
         }, []),
         M = t(
-          (F = "", j = x.current) => {
+          (F = "") => {
             if (!Xo(m)) return;
             const Q = {
                 id: p5(m),
                 initialSessionId: F,
                 initialHermesSessionId: "",
               },
-              k = O5(m, Q, j);
+              k = O5(m, Q);
             k.length !== m.length &&
               (O(k),
               v((N) => ({
@@ -13450,7 +13474,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           if (existing) { active = existing[0]; continue; }
           if (!Xo(panes)) { skipped++; continue; }
           const pane = { id: p5(panes), initialSessionId: sessionId, initialHermesSessionId: "" };
-          panes = O5(panes, pane, panes.at(-1).id);
+          panes = O5(panes, pane);
           targets[pane.id] = { sessionId, hermesSessionId: "" };
           active = pane.id; opened++;
         }
