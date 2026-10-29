@@ -149,6 +149,7 @@ try {
   });
   assert.ok(headerLayout.pickerLeft < headerLayout.titleLeft, 'The color picker must sit left of the title');
   assert.ok(Math.abs(headerLayout.pickerTop - headerLayout.titleTop) < 16, 'The title and color picker must share one row');
+  assert.ok(headerLayout.height <= 52, `The one-line chat header must stay compact; got ${headerLayout.height}px`);
   await panePage.evaluate(() => {
     window.__copiedSessionId = '';
     Object.defineProperty(navigator, 'clipboard', {
@@ -194,6 +195,72 @@ try {
   assert.equal(compactProjectList.scrollHeight, compactProjectList.clientHeight, 'A short project list must not scroll');
   assert.deepEqual(compactProjectErrors, [], `Browser errors in the short project list:\n${compactProjectErrors.join('\n')}`);
   await compactProjectsPage.close();
+
+  const messageNavigatorPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const messageNavigatorErrors = [];
+  messageNavigatorPage.on('pageerror', error => messageNavigatorErrors.push(error.stack || error.message));
+  await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  await messageNavigatorPage.evaluate(() => {
+    const list = document.querySelector('.codex-message-list');
+    const template = list?.querySelector('.codex-message.is-user');
+    if (!list || !template) throw new Error('Missing user message fixture');
+    for (let index = 0; index < 6; index++) {
+      const clone = template.cloneNode(true);
+      clone.setAttribute('data-message-id', `preview-user-${index}`);
+      const body = clone.querySelector('.codex-message-body');
+      if (body) body.textContent = `Follow-up user message ${index + 1}: verify the navigator jump target.`;
+      list.append(clone);
+    }
+    const spacer = document.createElement('div');
+    spacer.style.height = '1200px';
+    list.append(spacer);
+  });
+  await messageNavigatorPage.waitForFunction(() => document.querySelectorAll('.codex-message.is-user[data-message-id]').length === 7);
+  const messageBall = messageNavigatorPage.locator('[data-workbench-user-message-ball]');
+  await messageBall.waitFor({ state: 'visible', timeout: 5000 });
+  assert.match(await messageBall.getAttribute('aria-label'), /7/);
+  await messageBall.click();
+  const messagePanel = messageNavigatorPage.locator('[data-workbench-user-message-panel]');
+  await messagePanel.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await messagePanel.locator('[data-user-message-item]').count(), 7, 'The navigator must list every user message');
+  const beforeJump = await messageNavigatorPage.locator('.codex-message-list').evaluate(node => node.scrollTop);
+  await messagePanel.locator('[data-user-message-item]').nth(4).click();
+  const jumped = await messageNavigatorPage.evaluate(() => ({
+    target: document.querySelector('[data-message-id="preview-user-3"]')?.classList.contains('is-user-message-jump-target'),
+    panelVisible: !document.querySelector('[data-workbench-user-message-panel]')?.hasAttribute('hidden'),
+  }));
+  assert.equal(jumped.target, true, 'Choosing a user message must mark its jump target');
+  assert.equal(jumped.panelVisible, false, 'Choosing a user message must close the navigator panel');
+  await messageNavigatorPage.waitForFunction(() => document.querySelector('.codex-message-list')?.scrollTop > 0);
+  const afterJump = await messageNavigatorPage.locator('.codex-message-list').evaluate(node => node.scrollTop);
+  assert.ok(afterJump > beforeJump, 'Choosing a user message must scroll the conversation');
+
+  await messageNavigatorPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
+  const navigatorToggle = messageNavigatorPage.locator('[data-testid="user-message-ball-toggle"]');
+  assert.equal(await navigatorToggle.getAttribute('aria-checked'), 'true');
+  await navigatorToggle.click();
+  assert.equal(await navigatorToggle.getAttribute('aria-checked'), 'false');
+  assert.equal(await messageNavigatorPage.evaluate(() => localStorage.getItem('workbench.user-message-ball.v1')), 'false');
+  await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  assert.equal(await messageNavigatorPage.locator('[data-workbench-user-message-ball]').isVisible(), false, 'The setting must hide the navigator');
+  await messageNavigatorPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
+  await messageNavigatorPage.locator('[data-testid="user-message-ball-toggle"]').click();
+  await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  await messageNavigatorPage.locator('[data-workbench-user-message-ball]').waitFor({ state: 'visible', timeout: 5000 });
+
+  await messageNavigatorPage.setViewportSize({ width: 390, height: 844 });
+  await messageNavigatorPage.reload({ waitUntil: 'domcontentloaded' });
+  await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
+  const mobileHeaderHeight = await messageNavigatorPage.locator('.codex-center-header').evaluate(node => node.getBoundingClientRect().height);
+  assert.ok(mobileHeaderHeight <= 56, `The mobile chat header must stay compact; got ${mobileHeaderHeight}px`);
+  await messageNavigatorPage.locator('[data-workbench-user-message-ball]').waitFor({ state: 'visible', timeout: 5000 });
+  assert.deepEqual(messageNavigatorErrors, [], `Browser errors in the user message navigator:\n${messageNavigatorErrors.join('\n')}`);
+  await messageNavigatorPage.close();
 
   const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileErrors = [];

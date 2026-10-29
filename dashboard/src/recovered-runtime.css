@@ -10583,3 +10583,15 @@ html.dark .hti-rich-text {
   border-color: var(--codex-surface);
   box-shadow: 0 0 0 2px var(--codex-ink);
 }
+
+/* The chat title is a single ellipsized line; do not reserve a second row. */
+:root[data-workbench-shell="true"] .codex-center-header {
+  min-height: 3rem;
+  padding-block: 0.5rem;
+}
+@media (max-width: 900px) {
+  :root[data-workbench-shell="true"] .codex-center-header {
+    min-height: 3.25rem;
+    padding-block: 0.375rem;
+  }
+}
