@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Share custom chat model display names across every profile instead of storing one alias set per profile, and migrate existing aliases into the shared set on first load.
+- Regroup the settings navigation into Preferences, Agent, Maintenance, and a collapsed More section instead of one flat sixteen-link list.
 - Search every Codex session by message content as well as title and id, and merge Hermes full-text history hits into the same session picker.
 - Expand profile choices inline beneath the sidebar profile control instead of opening a modal.
 - Prefill card discussions directly with a short, editable `Check task <id>` prompt instead of showing a card prompt panel or sending a fixed brainstorm request.

@@ -24,7 +24,9 @@ import { useWorkbenchLocale } from './workbench-locale';
 import { uiText as runtimeText } from './ui-locale';
 import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
-import { MODEL_ALIASES_CHANGE_EVENT } from './model-aliases';
+import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-aliases';
+import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
+installModelAliasSync();
 import { createRecentHome } from './recent-home';
 import { installHomeChatNavigation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
@@ -2395,24 +2397,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       "/system",
       "/webhooks",
     ]),
-    Yp = () => [
-      ["/config", runtimeText("常规", "General")],
-      ["/config?workbench=shortcuts", runtimeText("快捷键", "Keyboard shortcuts")],
-      ["/config?workbench=display", runtimeText("聊天显示", "Chat display"), "data-workbench-chat-display-link"],
-      ["/config?workbench=models", runtimeText("模型显示", "Model visibility"), "data-workbench-model-link"],
-      ["/profiles", runtimeText("配置档案", "Profiles")],
-      ["/models", runtimeText("模型", "Models")],
-      ["/env", runtimeText("凭据", "Credentials")],
-      ["/plugins", runtimeText("插件", "Plugins")],
-      ["/mcp", runtimeText("外部工具", "External tools")],
-      ["/channels", runtimeText("消息渠道", "Channels")],
-      ["/webhooks", runtimeText("网络回调", "Webhooks")],
-      ["/pairing", runtimeText("设备配对", "Pairing")],
-      ["/system", runtimeText("系统", "System")],
-      ["/logs", runtimeText("日志", "Logs")],
-      ["/docs", runtimeText("帮助", "Help")],
-      ["/config?workbench=versions", runtimeText("版本切换", "Version switching"), "data-workbench-version-link"],
-    ];
+    Yp = () => settingsNavSections().flatMap((section) => section.items);
   function Ws(i) {
     const e = new URL(i, "http://localhost");
     return {
@@ -2596,6 +2581,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           try { return window.localStorage.getItem(NAV_COLLAPSED_KEY) === "true"; }
           catch { return false; }
         }),
+        [settingsMoreOpen, setSettingsMoreOpen] = s(readSettingsMoreOpen),
         [p, m] = s(tm),
         [O, g] = s([]),
         [_, w] = s(() => jp()),
@@ -3056,19 +3042,37 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               { className: "dashboard-settings-nav", "aria-label": runtimeText("设置分类", "Settings categories") },
               l("div", { className: "workbench-settings-heading" },
                 l("h1", null, runtimeText("设置", "Settings")), l(LanguageControl)),
-              Yp().map(([z, G, linkAttr]) =>
-                l(
-                  "a",
-                  {
-                    key: z,
-                    href: Cn(u.panel ? withAccessoryPanel(z) : z, u.profile),
-                    ...(linkAttr ? { [linkAttr]: "true" } : {}),
-                    "aria-current": (z === "/config?workbench=shortcuts" ? isShortcuts : z === "/config?workbench=display" ? isChatDisplay : z === "/config?workbench=models" ? isModelVisibility : z === "/config?workbench=versions" ? isVersionSettings : z === "/config" ? u.path === z && !u.settingsTab : u.path === z || z === "/profiles" && u.path.startsWith("/profiles/")) ? "page" : void 0,
-                    onClick: (ae) => Q(ae, z),
-                  },
-                  G,
-                ),
-              ),
+              settingsNavSections().map((section) => {
+                const links = section.items.map(([z, G, linkAttr]) =>
+                  l(
+                    "a",
+                    {
+                      key: z,
+                      href: Cn(u.panel ? withAccessoryPanel(z) : z, u.profile),
+                      ...(linkAttr ? { [linkAttr]: "true" } : {}),
+                      "aria-current": settingsLinkActive(z, u) ? "page" : void 0,
+                      onClick: (ae) => Q(ae, z),
+                    },
+                    G,
+                  ));
+                if (!section.collapsible) {
+                  return l("section", { key: section.id, className: "workbench-settings-group", "data-settings-group": section.id, "aria-labelledby": `workbench-settings-group-${section.id}` },
+                    l("h2", { id: `workbench-settings-group-${section.id}` }, section.title), links);
+                }
+                // Keep the active rarely used page visible even when the user collapsed "More".
+                const activeInside = section.items.some(([z]) => settingsLinkActive(z, u));
+                const expanded = settingsMoreOpen || activeInside;
+                return l("section", { key: section.id, className: "workbench-settings-group is-collapsible", "data-settings-group": section.id },
+                  l("button", {
+                    type: "button",
+                    className: "workbench-settings-more-toggle",
+                    "aria-expanded": String(expanded),
+                    "aria-controls": `workbench-settings-group-${section.id}-links`,
+                    disabled: activeInside,
+                    onClick: () => setSettingsMoreOpen((value) => { writeSettingsMoreOpen(!value); return !value; }),
+                  }, l("span", null, section.title), l("span", { className: "workbench-settings-more-count" }, String(section.items.length)), zc(t, expanded ? "chevron-down" : "chevron-right")),
+                  l("div", { id: `workbench-settings-group-${section.id}-links`, className: "workbench-settings-more-links", hidden: !expanded }, links));
+              }),
               O.length
                 ? l(
                     "section",

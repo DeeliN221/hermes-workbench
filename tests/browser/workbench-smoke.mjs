@@ -502,7 +502,7 @@ try {
   await deepseekAlias.waitFor({ state: 'visible', timeout: 5000 });
   await deepseekAlias.fill(' ds-flash ');
   await deepseekAlias.press('Enter');
-  await aliasPage.waitForFunction(() => localStorage.getItem('workbench.model-aliases.v1:default')?.includes('ds-flash'));
+  await aliasPage.waitForFunction(() => localStorage.getItem('workbench.model-aliases.v2')?.includes('ds-flash'));
   assert.equal(await deepseekAlias.inputValue(), 'ds-flash', 'Alias input must trim before saving');
 
   await aliasPage.evaluate(() => history.back());
@@ -517,12 +517,76 @@ try {
   await aliasPage.waitForFunction(() => document.querySelector('.codex-model-summary')?.textContent?.includes('ds-flash'));
   assert.match(await aliasPage.locator('.codex-model-summary').innerText(), /ds-flash/);
 
+  // The same alias must show up in another profile's chat without re-entering it.
+  await aliasPage.goto(host.origin + '/chat?session=codex-preview&profile=writer', { waitUntil: 'domcontentloaded' });
+  await aliasPage.locator('.codex-option-toggle').waitFor({ state: 'visible', timeout: 5000 });
+  await aliasPage.evaluate(() => document.getElementById('preview-banner')?.remove());
+  await aliasPage.locator('.codex-option-toggle').click();
+  await aliasPage.locator('.codex-setting-row').first().click();
+  const writerAliasChoice = aliasPage.locator('.codex-setting-choice', { hasText: 'ds-flash' });
+  await writerAliasChoice.waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await writerAliasChoice.locator('span').first().getAttribute('title'), 'deepseek/deepseek-flash',
+    'A chat display name must apply to every profile');
+  await writerAliasChoice.click();
+
   await aliasPage.goto(host.origin + '/config?workbench=models&profile=default', { waitUntil: 'domcontentloaded' });
   const restoredAlias = aliasPage.locator('[data-model-alias="deepseek/deepseek-flash"]');
   await restoredAlias.waitFor({ state: 'visible', timeout: 5000 });
   assert.equal(await restoredAlias.inputValue(), 'ds-flash', 'The alias must survive navigation and settings re-renders');
+  // Regrouped settings navigation: four groups, with rarely used pages folded into "More".
+  const settingsNav = await aliasPage.evaluate(() => {
+    const nav = document.querySelector('.dashboard-settings-nav');
+    const groups = [...(nav?.querySelectorAll('.workbench-settings-group') || [])];
+    const more = nav?.querySelector('[data-settings-group="more"]');
+    return {
+      groups: groups.map(group => group.getAttribute('data-settings-group')),
+      headings: groups.map(group => group.querySelector('h2')?.textContent?.trim() || null),
+      topLevelLinks: [...(nav?.querySelectorAll(':scope > a') || [])].length,
+      moreExpanded: more?.querySelector('.workbench-settings-more-toggle')?.getAttribute('aria-expanded'),
+      moreLinksHidden: Boolean(more?.querySelector('.workbench-settings-more-links')?.hasAttribute('hidden')),
+      moreLinkCount: more?.querySelectorAll('.workbench-settings-more-links a').length,
+    };
+  });
+  assert.deepEqual(settingsNav.groups, ['preferences', 'agent', 'maintenance', 'more'], 'Settings must group into four sections');
+  assert.deepEqual(settingsNav.headings, ['Preferences', 'Agent', 'Maintenance', null], 'Groups must be labelled by intent');
+  assert.equal(settingsNav.topLevelLinks, 0, 'Long lists must live inside grouped sections, not as a flat link list');
+  assert.equal(settingsNav.moreExpanded, 'false', 'The More section must start collapsed');
+  assert.equal(settingsNav.moreLinksHidden, true, 'Collapsed More links must not be reachable visually');
+  assert.equal(settingsNav.moreLinkCount, 7, 'The More section must keep all rarely used settings reachable');
+  await aliasPage.evaluate(() => document.getElementById('preview-banner')?.remove());
+  await aliasPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').click();
+  assert.equal(await aliasPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').getAttribute('aria-expanded'), 'true');
+  await aliasPage.locator('[data-settings-group="more"] a', { hasText: 'Plugins' }).waitFor({ state: 'visible', timeout: 3000 });
+  await aliasPage.reload({ waitUntil: 'domcontentloaded' });
+  await aliasPage.locator('.dashboard-settings-nav').waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await aliasPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').getAttribute('aria-expanded'), 'true',
+    'The expanded More section must survive a reload');
   assert.deepEqual(aliasErrors, [], 'Browser errors in the alias flow:\n' + aliasErrors.join('\n'));
   await aliasPage.close();
+
+  // The floating settings panel keeps the grouped navigation usable in its narrow column.
+  const floatingSettings = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const floatingErrors = [];
+  floatingSettings.on('pageerror', error => floatingErrors.push(error.stack || error.message));
+  await floatingSettings.goto(host.origin + '/config?workbench=models&profile=default&panel=1', { waitUntil: 'domcontentloaded' });
+  await floatingSettings.locator('.dashboard-settings-nav').waitFor({ state: 'visible', timeout: 5000 });
+  const floatingNav = await floatingSettings.evaluate(() => {
+    const nav = document.querySelector('.dashboard-settings-nav');
+    const toggle = nav?.querySelector('.workbench-settings-more-toggle');
+    const navRect = nav?.getBoundingClientRect();
+    const toggleRect = toggle?.getBoundingClientRect();
+    return {
+      groups: [...(nav?.querySelectorAll('.workbench-settings-group') || [])].map(group => group.getAttribute('data-settings-group')),
+      toggleInside: Boolean(navRect && toggleRect && toggleRect.left >= navRect.left - 1 && toggleRect.right <= navRect.right + 1),
+      toggleWidth: toggleRect?.width || 0,
+      navWidth: navRect?.width || 0,
+    };
+  });
+  assert.deepEqual(floatingNav.groups, ['preferences', 'agent', 'maintenance', 'more'], 'Floating panel must keep the grouped settings navigation');
+  assert.equal(floatingNav.toggleInside, true, 'The More toggle must stay inside the floating settings column');
+  assert.ok(floatingNav.toggleWidth > 0 && floatingNav.toggleWidth <= floatingNav.navWidth, 'The More toggle must fit the narrow floating column');
+  assert.deepEqual(floatingErrors, [], 'Browser errors in the floating settings panel:\n' + floatingErrors.join('\n'));
+  await floatingSettings.close();
 
   const mobileSettingsPage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileSettingsErrors = [];
@@ -530,6 +594,12 @@ try {
   await mobileSettingsPage.goto(host.origin + '/config?workbench=display&profile=writer', { waitUntil: 'domcontentloaded' });
   await mobileSettingsPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
   await mobileSettingsPage.locator('.workbench-mobile-settings-back').click();
+  // The mobile settings list must expose the grouped navigation and expand More on tap.
+  await mobileSettingsPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').waitFor({ state: 'visible', timeout: 5000 });
+  await mobileSettingsPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').click();
+  await mobileSettingsPage.locator('[data-settings-group="more"] a', { hasText: 'Plugins' }).waitFor({ state: 'visible', timeout: 3000 });
+  await mobileSettingsPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').click();
+  await mobileSettingsPage.locator('[data-settings-group="more"] a', { hasText: 'Plugins' }).waitFor({ state: 'hidden', timeout: 3000 });
   await mobileSettingsPage.locator('[data-workbench-model-link]').click();
   await mobileSettingsPage.locator('[data-testid="model-visibility-settings"] .workbench-model-group').first().waitFor({ state: 'visible', timeout: 5000 });
   const mobileSettingsCheck = await mobileSettingsPage.evaluate(() => {
@@ -604,7 +674,7 @@ try {
   assert.deepEqual(mobileReturnErrors, [], `Browser errors returning from mobile settings:\n${mobileReturnErrors.join('\n')}`);
   await mobileReturnPage.close();
 
-  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, the centered floating panel, settings subpage layering, and the three chat detail levels rendered without page errors.');
+  console.log('Workbench browser smoke passed: home, same-profile chat panes, profile switching, icon-only file actions, mobile drawer, board-dialog and organizer rail offsets, the centered floating panel, grouped settings navigation with a collapsible More section, cross-profile chat display names, settings subpage layering, and the three chat detail levels rendered without page errors.');
 } finally {
   await browser.close();
   await host.close();

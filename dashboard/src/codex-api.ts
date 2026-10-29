@@ -167,7 +167,7 @@ export async function loadCodexModelCatalog(read: FetchJSON, profile: string) {
 
 export async function loadCodexModels(read: FetchJSON, profile: string) {
   const { choices, config } = await readCodexModelChoices(read, profile);
-  return applyProfileChatDefaults(applyModelAliases(profile, visibleModels(profile, choices)), config);
+  return applyProfileChatDefaults(applyModelAliases(visibleModels(profile, choices)), config);
 }
 export async function markCodexSessionRead(read: FetchJSON, profile: string, session: string, readSeq: number) {
   if (readSeq) await read(`${API}/session/read?${sessionQuery(profile, session)}`, json('POST', { profile, readSeq }));
