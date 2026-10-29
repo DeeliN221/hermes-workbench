@@ -7,13 +7,13 @@ import { organizeCodexSession, type CodexSession } from './codex-api';
 import type { FetchJSON } from './workbench-api';
 
 export const SESSION_COLORS = [
-  '#3b82f6', '#14b8a6', '#8b5cf6', '#f59e0b',
-  '#f43f5e', '#22c55e', '#06b6d4', '#f97316',
+  '#ef4444', '#f97316', '#eab308', '#22c55e',
+  '#06b6d4', '#3b82f6', '#8b5cf6',
 ] as const;
 
 export const SESSION_COLOR_LABELS = [
-  ['蓝色', 'Blue'], ['青色', 'Teal'], ['紫色', 'Purple'], ['琥珀色', 'Amber'],
-  ['玫红色', 'Rose'], ['绿色', 'Green'], ['天蓝色', 'Cyan'], ['橙色', 'Orange'],
+  ['红色', 'Red'], ['橙色', 'Orange'], ['黄色', 'Yellow'], ['绿色', 'Green'],
+  ['青色', 'Cyan'], ['蓝色', 'Blue'], ['紫色', 'Violet'],
 ] as const;
 
 type SessionColorEntry = { color: string; pending: boolean };
