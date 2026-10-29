@@ -187,6 +187,9 @@ function codexTurns() {
   }];
 }
 
+const createdSessions = [];
+let createdCounter = 0;
+
 /** Return deterministic plugin API data for the fixture routes. */
 function apiPayload(url, method) {
   const pathname = url.pathname;
@@ -200,8 +203,15 @@ function apiPayload(url, method) {
   if (pathname === '/api/profiles') return { profiles: [{ name: 'default' }, { name: 'writer' }] };
   if (pathname.endsWith('/home-read-state')) return method === 'GET' ? { items: [] } : { ok: true };
   if (pathname === '/api/plugins/workbench/codex/sessions') {
-    if (method === 'POST') return { session: { ...codex[0], id: `codex-new-${Date.now()}`, title: 'New chat' } };
-    return { items: url.searchParams.get('deleted') === 'true' ? [] : codex };
+    if (method === 'POST') {
+      const created = { ...codex[0], id: `codex-new-${createdCounter += 1}`, title: 'New chat', createdAt: Math.floor(Date.now() / 1000) };
+      createdSessions.push({ profile, session: created });
+      return { session: created };
+    }
+    // Keep sessions created through the fixture visible, so a reload after
+    // creating one restores the pane instead of pruning it as missing data.
+    const extra = createdSessions.filter(item => item.profile === profile).map(item => item.session);
+    return { items: url.searchParams.get('deleted') === 'true' ? [] : [...extra, ...codex] };
   }
   if (pathname === '/api/plugins/workbench/codex/search') {
     return { results: [{
