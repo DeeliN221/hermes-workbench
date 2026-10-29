@@ -38,6 +38,14 @@ _ASSET_HEADERS = {
     "X-Content-Type-Options": "nosniff",
 }
 
+# Release directories never change in place. The loader requests assets through
+# a versioned path so browsers can keep the large runtime without pinning a
+# stale bundle after a version switch.
+_IMMUTABLE_ASSET_HEADERS = {
+    "Cache-Control": "public, max-age=31536000, immutable",
+    "X-Content-Type-Options": "nosniff",
+}
+
 
 class TrustedProxyGate:
     """Fail closed unless Caddy vouches for an allowed Hermes dashboard user."""
@@ -207,6 +215,28 @@ def create_app(release_root: Path | None = None, *, codex_service: Any = None) -
         if not target.is_file():
             raise HTTPException(status_code=404, detail="Workbench stylesheet is missing")
         return FileResponse(target, media_type="text/css", headers=_ASSET_HEADERS.copy())
+
+    def versioned_asset(version: str, filename: str, media_type: str) -> FileResponse:
+        """Serve one immutable runtime asset only for the active release version."""
+
+        if version != _release_version(root):
+            raise HTTPException(status_code=404, detail="Workbench version is not active")
+        target = assets / filename
+        if not target.is_file():
+            raise HTTPException(status_code=404, detail=f"Workbench asset is missing: {filename}")
+        return FileResponse(target, media_type=media_type, headers=_IMMUTABLE_ASSET_HEADERS.copy())
+
+    @app.get("/workbench-sidecar/v/{version}/workbench.js")
+    async def versioned_javascript(version: str) -> FileResponse:
+        """Serve the runtime under a versioned, cache-forever URL."""
+
+        return versioned_asset(version, "index.js", "text/javascript")
+
+    @app.get("/workbench-sidecar/v/{version}/workbench.css")
+    async def versioned_stylesheet(version: str) -> FileResponse:
+        """Serve styles under the same immutable version as the runtime."""
+
+        return versioned_asset(version, "style.css", "text/css")
 
     app.add_middleware(TrustedProxyGate)
     return app

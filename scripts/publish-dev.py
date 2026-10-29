@@ -41,6 +41,7 @@ if target.is_symlink() or not (target / 'dist/index.js').is_file():
 backup = args.backup_root / str(time.time_ns())
 backup.mkdir(parents=True)
 files = {'dist/index.js': args.source / 'dist/loader.js',
+         'dist/style.css': args.source / 'loader.css',
          'dist/workbench.js': args.source / 'dist/index.js',
          'dist/workbench.css': args.source / 'dist/style.css',
          'dist/pele.global.js': args.source / 'dist/pele.global.js',

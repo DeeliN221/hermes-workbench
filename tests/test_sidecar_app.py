@@ -63,6 +63,23 @@ def test_health_and_assets_are_ready_without_api_credentials(sidecar) -> None:
     assert script.headers["x-content-type-options"] == "nosniff"
 
 
+def test_versioned_runtime_assets_are_immutable_and_reject_other_releases(sidecar) -> None:
+    """Repeat visits can reuse the large runtime without serving a stale version."""
+
+    _module, client = sidecar
+    script = client.get("/workbench-sidecar/v/test-release/workbench.js")
+    stylesheet = client.get("/workbench-sidecar/v/test-release/workbench.css")
+    stale = client.get("/workbench-sidecar/v/old-release/workbench.js")
+
+    assert script.status_code == 200
+    assert script.text == "window.workbench = true"
+    assert script.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert stylesheet.status_code == 200
+    assert stylesheet.text == "body{}"
+    assert stylesheet.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert stale.status_code == 404
+
+
 def test_capabilities_make_codex_the_only_new_chat_provider(sidecar) -> None:
     """External Claude/Pi sessions are discoverable history, never new Workbench chats."""
 

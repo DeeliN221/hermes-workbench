@@ -31,6 +31,7 @@ import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
 import { currentProfile, rememberProfile, rememberChat, profileDrafts, profileAttachments } from './profile-scope';
 import { createProfileControls } from './profile-controls';
 import { groupWorkspaceEntries, workspaceEntryKey, uniqueWorkspaceEntries, workspaceAbsolutePath, downloadWorkspaceFile } from './workspace-file-actions';
+import { loadCodexSnapshot, saveCodexSnapshot } from './codex-snapshot-cache';
 import { installManagedFilesListing } from './files-listing';
 installManagedFilesListing();
 import { installKanbanWorkflowBridge } from './kanban-workflow-bridge';
@@ -8336,11 +8337,25 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   }
   function rememberCodexSnapshot(key, snapshot) {
     if (!key) return;
+    const compact = compactCodexSnapshot(snapshot);
     codexSnapshotCache.delete(key);
-    codexSnapshotCache.set(key, compactCodexSnapshot(snapshot));
+    codexSnapshotCache.set(key, compact);
     while (codexSnapshotCache.size > CODEX_SNAPSHOT_CACHE_LIMIT) {
       codexSnapshotCache.delete(codexSnapshotCache.keys().next().value);
     }
+    pendingCodexSnapshotSaves.set(key, compact);
+    if (!codexSnapshotSaveTimer) {
+      codexSnapshotSaveTimer = window.setTimeout(flushCodexSnapshotSaves, 0);
+    }
+  }
+  const pendingCodexSnapshotSaves = new Map();
+  let codexSnapshotSaveTimer = 0;
+  function flushCodexSnapshotSaves() {
+    codexSnapshotSaveTimer = 0;
+    for (const [key, snapshot] of pendingCodexSnapshotSaves) {
+      saveCodexSnapshot(key, snapshot);
+    }
+    pendingCodexSnapshotSaves.clear();
   }
   function tt(i) {
     return encodeURIComponent(i);
@@ -10219,6 +10234,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         j = paneInitialSession(S, F),
         Q = b ?? H,
         [k, N] = o(Q ? "" : j),
+        [initialCodexSnapshot] = o(() => k ? loadCodexSnapshot(`${M}\0${k}`) : null),
         [B, T] = o(Q),
         kanbanChatContext = s(null),
         Y = s(k),
@@ -10245,7 +10261,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [Ct, Et] = o(!1),
         [ce, ve] = o(""),
         [vt, Kt] = o(0),
-        [It, ht] = o([]),
+        [It, ht] = o(initialCodexSnapshot?.messages || []),
         [Jt, zi] = o(null),
         [draftState, setDraftState] = o(() => ({ value: Q ? "" : profileDrafts(M, f).get(On(M, j)) || "", revision: 0 })),
         Ei = draftState.value,
@@ -10262,11 +10278,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [Le, gt] = o(!1),
         [Xi, _i] = o(!1),
         [kanbanPrefillFor, setKanbanPrefillFor] = o(""),
-        [yr, Nt] = o(!1),
+        [yr, Nt] = o(!!initialCodexSnapshot?.turnId),
         [Fn, Wr] = o(!1),
         [Zo, Xl] = o(!1),
         jo = s(!1),
-        [qr, Wi] = o(""),
+        [qr, Wi] = o(initialCodexSnapshot?.turnId || ""),
         [Ts, Es] = o(!0),
         [Wl, Zr] = o(!1),
         [wr, ql] = o(() => p && b0()),
@@ -10816,7 +10832,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         r(() => {
           const L = `${M}\0${k}\0${B}`;
           const $t = k && !B ? `${M}\0${k}` : "";
-          const Pt = $t ? codexSnapshotCache.get($t) : null;
+          const cachedSnapshot = $t ? codexSnapshotCache.get($t) : null;
+          const Pt = cachedSnapshot || ($t ? loadCodexSnapshot($t) : null);
+          if (Pt && !cachedSnapshot) codexSnapshotCache.set($t, Pt);
           J0.current !== L &&
             ((J0.current = L),
             (X.current += 1),
