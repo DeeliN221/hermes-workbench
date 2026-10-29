@@ -182,8 +182,7 @@ function codexTurns() {
         command: 'printf "preview output\\n"',
         aggregatedOutput: Array.from({ length: 12 }, (_, index) => `preview output line ${index + 1}`).join('\n'),
       },
-      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.\n\n```mermaid\nflowchart LR\n  Chat --> Pele\n  Pele --> SVG\n```' }] },
-      { id: 'preview-agent-plantuml', type: 'agentMessage', content: [{ type: 'text', text: '```plantuml\n@startuml\nUser -> Workbench: Zoom\nWorkbench --> User: Scaled\n@enduml\n```' }] },
+      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.\n\n```mermaid\nflowchart LR\n  Chat --> Pele\n  Pele --> SVG\n```\n\n```plantuml\n@startuml\nUser -> Workbench: Zoom\nWorkbench --> User: Scaled\n@enduml\n```' }] },
     ],
   }];
 }
