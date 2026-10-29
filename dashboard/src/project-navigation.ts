@@ -6,37 +6,48 @@ export interface ProjectSession {
   groupId?: string | null;
   deleted?: boolean;
   favorite?: boolean;
-  /** Prefer the numeric epoch supplied by the Codex session API. */
+  /** Display-only activity timestamps; they never decide the list order. */
   updatedAtEpoch?: number;
   updatedAt?: string | number;
-  createdAt?: number;
+  /** Creation time from the Codex session API (Unix seconds or milliseconds). */
+  createdAt?: number | string;
 }
 export interface SessionProject { id: string; name: string }
 export const PANE_DRAG_TYPE = 'application/x-hermes-pane-sessions';
 export const SESSION_DRAG_TYPE = 'application/x-hermes-project-session';
 
-function sessionUpdatedAt(session: ProjectSession): number {
-  const rawValues = [session.updatedAtEpoch, session.updatedAt, session.createdAt];
-  for (const raw of rawValues) {
-    if (typeof raw === 'number' && Number.isFinite(raw)) return raw < 1e12 ? raw * 1000 : raw;
-    if (typeof raw === 'string' && raw.trim()) {
-      const numeric = Number(raw);
-      if (Number.isFinite(numeric)) return numeric < 1e12 ? numeric * 1000 : numeric;
-      const parsed = Date.parse(raw);
-      if (Number.isFinite(parsed)) return parsed;
-    }
-  }
-  return 0;
+/** Normalize a creation timestamp to milliseconds; missing or invalid values return null. */
+function sessionCreatedAt(session: ProjectSession): number | null {
+  const raw = session.createdAt;
+  const numeric = typeof raw === 'number' ? raw : typeof raw === 'string' && raw.trim() ? Number(raw) : NaN;
+  if (!Number.isFinite(numeric) || numeric <= 0) return null;
+  return numeric < 1e12 ? numeric * 1000 : numeric;
 }
 
-function compareSessions<T extends ProjectSession>(a: T, b: T): number {
-  const recent = sessionUpdatedAt(b) - sessionUpdatedAt(a);
-  if (recent) return recent;
-  return Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+function compareIds(a: string, b: string): number {
+  if (a === b) return 0;
+  return a < b ? -1 : 1;
 }
 
-function latestSessionUpdatedAt<T extends ProjectSession>(sessions: T[]): number {
-  return sessions.reduce((latest, session) => Math.max(latest, sessionUpdatedAt(session)), 0);
+/**
+ * Fixed list order: favorites first, then newest creation time first.
+ * Activity timestamps are ignored so sending or receiving a message never moves a row;
+ * sessions without a usable createdAt fall back to their id and settle below dated rows.
+ */
+export function compareSessions<T extends ProjectSession>(a: T, b: T): number {
+  const favorite = Number(Boolean(b.favorite)) - Number(Boolean(a.favorite));
+  if (favorite) return favorite;
+  const left = sessionCreatedAt(a);
+  const right = sessionCreatedAt(b);
+  if (left !== null && right !== null) {
+    if (left !== right) return right - left;
+  } else if (left !== null) return -1;
+  else if (right !== null) return 1;
+  return compareIds(a.id ?? '', b.id ?? '');
+}
+
+function latestSessionCreatedAt<T extends ProjectSession>(sessions: T[]): number {
+  return sessions.reduce((latest, session) => Math.max(latest, sessionCreatedAt(session) ?? 0), 0);
 }
 
 export function partitionProjectSessions<T extends ProjectSession>(sessions: T[], projects: SessionProject[]) {
@@ -53,7 +64,8 @@ export function partitionProjectSessions<T extends ProjectSession>(sessions: T[]
   }
   groups.forEach(group => group.sessions.sort(compareSessions));
   temporary.sort(compareSessions);
-  groups.sort((a, b) => latestSessionUpdatedAt(b.sessions) - latestSessionUpdatedAt(a.sessions));
+  // Folders follow their newest-created member so folder order matches member order.
+  groups.sort((a, b) => latestSessionCreatedAt(b.sessions) - latestSessionCreatedAt(a.sessions));
   return { groups, temporary };
 }
 
