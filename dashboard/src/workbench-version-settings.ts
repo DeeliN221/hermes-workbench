@@ -3,6 +3,7 @@ import { currentProfile } from './profile-scope';
 import { loadCodexModelCatalog, type ChatModelChoice } from './codex-api';
 import { readHiddenModels, writeHiddenModels } from './model-visibility';
 import type { FetchJSON } from './workbench-api';
+import { accessoryPanelOpen, withAccessoryPanel } from './workbench-accessory';
 const LINK_ATTR = 'data-workbench-version-link';
 const MODEL_LINK_ATTR = 'data-workbench-model-link';
 const PANEL_ATTR = 'data-workbench-version-panel';
@@ -91,8 +92,9 @@ function addSettingsLinks(): void {
   const nav = document.querySelector<HTMLElement>('.dashboard-settings-nav');
   if (!nav) return;
   const profile = encodeURIComponent(currentProfile());
-  addSettingsLink(nav, MODEL_LINK_ATTR, `/config?workbench=models&profile=${profile}`, sourceText("模型显示", "Model visibility"));
-  addSettingsLink(nav, LINK_ATTR, `/config?workbench=versions&profile=${profile}`, sourceText("版本切换", "Version switching"));
+  const panel = accessoryPanelOpen(window.location.search);
+  addSettingsLink(nav, MODEL_LINK_ATTR, withAccessoryPanel(`/config?workbench=models&profile=${profile}`, panel), sourceText("模型显示", "Model visibility"));
+  addSettingsLink(nav, LINK_ATTR, withAccessoryPanel(`/config?workbench=versions&profile=${profile}`, panel), sourceText("版本切换", "Version switching"));
 }
 
 async function renderModelVisibility(panel: HTMLElement, explicitProfile?: string): Promise<void> {

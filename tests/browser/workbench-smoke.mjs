@@ -195,6 +195,35 @@ try {
   assert.deepEqual(compactProjectErrors, [], `Browser errors in the short project list:\n${compactProjectErrors.join('\n')}`);
   await compactProjectsPage.close();
 
+  const settingsReturnPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const settingsReturnErrors = [];
+  settingsReturnPage.on('pageerror', error => settingsReturnErrors.push(error.stack || error.message));
+  await settingsReturnPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
+  await settingsReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  await settingsReturnPage.locator('.project-temporary .codex-session-row').nth(1).click();
+  await settingsReturnPage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  const splitChatUrl = settingsReturnPage.url();
+  await settingsReturnPage.evaluate(() => document.querySelector('.dashboard-crafting-grid a[aria-label="Settings"]')?.click());
+  await settingsReturnPage.waitForFunction(() => location.pathname === '/config' && new URLSearchParams(location.search).get('panel') === '1');
+  await settingsReturnPage.locator('.dashboard-accessory-close').waitFor({ state: 'visible', timeout: 5000 });
+  for (const [selector, tab] of [
+    ['[data-workbench-chat-display-link]', 'display'],
+    ['[data-workbench-model-link]', 'models'],
+    ['[data-workbench-version-link]', 'versions'],
+  ]) {
+    await settingsReturnPage.locator(selector).click();
+    await settingsReturnPage.waitForFunction(expected => new URLSearchParams(location.search).get('workbench') === expected, tab);
+    assert.equal(new URL(settingsReturnPage.url()).searchParams.get('panel'), '1', `${tab} settings must keep the floating panel marker`);
+    assert.equal(await settingsReturnPage.locator('.dashboard-accessory-close').isVisible(), true, `${tab} settings must keep the close control visible`);
+  }
+  await settingsReturnPage.locator('.dashboard-accessory-close').click();
+  await settingsReturnPage.waitForFunction(() => location.pathname === '/chat');
+  assert.equal(settingsReturnPage.url(), splitChatUrl, 'Closing settings must restore the original split chat route');
+  assert.equal(await settingsReturnPage.locator('.codex-pane-slot').count(), 2, 'Closing settings must preserve both chat panes');
+  assert.equal(await settingsReturnPage.evaluate(() => document.querySelector('.dashboard-persistent-workbench')?.getAttribute('data-chat-visible')), 'true');
+  assert.deepEqual(settingsReturnErrors, [], `Browser errors returning from floating settings:\n${settingsReturnErrors.join('\n')}`);
+  await settingsReturnPage.close();
+
   const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
   const mobileErrors = [];
   mobilePage.on('pageerror', error => mobileErrors.push(error.stack || error.message));
