@@ -41,6 +41,7 @@ import { subscribeChatLists, stableChatList, createChatEventBatch } from './chat
 import { useSelectableMarkdown } from './selectable-markdown';
 import { cronSortOptions, cronSections, readCronSidebarPrefs } from './cron-sidebar';
 import { clearNewSessionRoute, isNewSessionRoute, paneInitialSession, paneTargetUrl, temporarySessionTarget } from './codex-pane-route';
+import { dropPaneIds, paneLayoutStorage, resolvePaneLayout, savePaneLayout, verifyPaneTargets } from './codex-pane-layout';
 import { version as workbenchVersion } from '../../package.json';
 import { observeTerminalTheme } from './terminal-theme';
 import { craftingIcon } from './crafting-icons';
@@ -13286,18 +13287,63 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         startEmpty = isNewSessionRoute(window.location.href),
         b = startEmpty ? "" : S.get("hermesSession") ? "" : S.get("session") || "",
         p = startEmpty ? "" : S.get("hermesSession") || "",
-        [m, O] = o(m5(b, p)),
-        [g, _] = o("pane-1"),
-        [w, v] = o({ "pane-1": { sessionId: b, hermesSessionId: p } }),
+        layoutStorage = paneLayoutStorage(),
+        // Resolve once per mount: the profile owns its layout, and a later
+        // in-place profile change must never write panes into another scope.
+        restoredLayout = n(
+          () => resolvePaneLayout({
+            profile: paneProfile,
+            storage: layoutStorage,
+            startEmpty,
+            routeTarget: { sessionId: b, hermesSessionId: p },
+          }),
+          [],
+        ),
+        [m, O] = o(restoredLayout.panes),
+        [g, _] = o(restoredLayout.activePaneId),
+        [w, v] = o(restoredLayout.targets),
         x = s(g),
         y = s(new Map()),
         paneDrag = s(null),
         [draggingPane, setDraggingPane] = o(false),
-        [paneDropNotice, setPaneDropNotice] = o("");
+        [paneDropNotice, setPaneDropNotice] = o(""),
+        // Drop panes whose saved session no longer resolves; one pane always survives.
+        applyPrune = t((droppedPaneIds) => {
+          const next = dropPaneIds(m, w, x.current, droppedPaneIds);
+          if (next.panes === m && next.activePaneId === x.current) return;
+          O(next.panes);
+          v(next.targets);
+          x.current = next.activePaneId;
+          _(next.activePaneId);
+          const activeTarget = next.targets[next.activePaneId];
+          if (activeTarget) window.history.replaceState(null, "", paneTargetUrl(window.location.href, activeTarget));
+        }, [m, w]);
       x.current = g;
       r(() => {
         if (!startEmpty) return;
         window.history.replaceState(null, "", clearNewSessionRoute(window.location.href));
+      }, []);
+      r(() => {
+        savePaneLayout(paneProfile, m, w, g, layoutStorage);
+      }, [paneProfile, layoutStorage, m, w, g]);
+      r(() => {
+        if (!restoredLayout.restored) return;
+        const entries = restoredLayout.panes
+          .map((pane) => {
+            const paneTarget = restoredLayout.targets[pane.id] || { sessionId: "", hermesSessionId: "" };
+            return {
+              paneId: pane.id,
+              sessionId: paneTarget.sessionId || "",
+              hermesSessionId: paneTarget.hermesSessionId || "",
+            };
+          })
+          .filter((entry) => entry.sessionId || entry.hermesSessionId);
+        if (!entries.length) return;
+        let active = true;
+        verifyPaneTargets(i.fetchJSON, paneProfile, entries)
+          .then((missing) => { if (active && missing.length) applyPrune(missing); })
+          .catch(() => {});
+        return () => { active = false; };
       }, []);
       r(() => {
         const openWorkspace = () => y.current.get(x.current)?.openWorkspace();
