@@ -13,6 +13,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import stat
 import threading
 import unicodedata
@@ -20,13 +21,23 @@ import uuid
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
 
-from fastapi import APIRouter, File, HTTPException, Request, UploadFile
+from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
 
-DEFAULT_MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024
-"""Default maximum encoded bytes accepted for one attachment."""
+DEFAULT_MAX_ATTACHMENT_BYTES: int | None = None
+"""Default byte limit for one attachment; ``None`` keeps uploads uncapped."""
 
-DEFAULT_MAX_ATTACHMENTS = 10
+DEFAULT_MAX_ATTACHMENTS = 100
 """Default maximum number of attachments accepted in one submitted message."""
+
+MAX_FOLDER_FILES = 1000
+"""Upper bound for one folder upload, matching Starlette's multipart file limit."""
+
+MAX_FOLDER_DEPTH = 32
+"""Maximum number of path components accepted inside one folder upload."""
+
+_ON_DEMAND_NOTE = (
+    "Read only what the task needs; do not paste the entire file or folder into the context window."
+)
 
 _ATTACHMENT_DIRECTORY = ".workbench-attachments"
 _MANIFEST_NAME = ".manifest.json"
@@ -57,9 +68,9 @@ class UploadLike(Protocol):
 
 
 def _configured_limit(
-    names: tuple[str, ...], default: int, label: str, override: int | None
-) -> int:
-    """Read one positive integer limit from an explicit override or environment."""
+    names: tuple[str, ...], default: int | None, label: str, override: int | None
+) -> int | None:
+    """Read one optional limit; zero means unlimited and negative values are invalid."""
 
     if override is not None:
         value = override
@@ -74,13 +85,17 @@ def _configured_limit(
             except ValueError as exc:
                 raise HTTPException(status_code=500, detail=f"Invalid {label} configuration") from exc
             break
-    if value < 1:
+    if value is None:
+        return None
+    if value == 0:
+        return None
+    if value < 0:
         raise HTTPException(status_code=500, detail=f"Invalid {label} configuration")
     return value
 
 
-def _max_attachment_bytes(override: int | None = None) -> int:
-    """Return the configured byte limit for one upload."""
+def _max_attachment_bytes(override: int | None = None) -> int | None:
+    """Return the configured byte limit for one upload, or ``None`` when unlimited."""
 
     return _configured_limit(
         _MAX_BYTES_ENV_NAMES,
@@ -93,12 +108,61 @@ def _max_attachment_bytes(override: int | None = None) -> int:
 def _max_attachments(override: int | None = None) -> int:
     """Return the configured per-message attachment count limit."""
 
-    return _configured_limit(
+    limit = _configured_limit(
         _MAX_FILES_ENV_NAMES,
         DEFAULT_MAX_ATTACHMENTS,
         "attachment count limit",
         override,
     )
+    if limit is None:
+        raise HTTPException(status_code=500, detail="Invalid attachment count limit configuration")
+    return limit
+
+
+def normalize_relative_path(raw_path: str) -> str:
+    """Normalize one folder-relative path and reject traversal or control characters."""
+
+    text = unicodedata.normalize("NFKC", str(raw_path or "")).replace("\\", "/")
+    if not text or text.startswith("/"):
+        raise ValueError("folder path must be relative")
+    parts: list[str] = []
+    for part in text.split("/"):
+        if part in {"", "."}:
+            continue
+        if part == "..":
+            raise ValueError("folder path must not traverse upward")
+        if len(part.encode("utf-8")) > _MAX_FILENAME_BYTES:
+            raise ValueError("folder path component is too long")
+        if any(ord(character) < 32 or ord(character) == 127 or character == ":" for character in part):
+            raise ValueError("folder path contains invalid characters")
+        parts.append(part)
+    if not parts or len(parts) > MAX_FOLDER_DEPTH:
+        raise ValueError("folder path is empty or too deep")
+    if sum(len(part) for part in parts) > 800:
+        raise ValueError("folder path is too long")
+    return "/".join(parts)
+
+
+def _decode_folder_paths(raw_paths: str, expected: int) -> list[str]:
+    """Decode the folder manifest and require one safe relative path per file."""
+
+    try:
+        payload = json.loads(raw_paths)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise HTTPException(status_code=400, detail="Folder paths must be a JSON list") from exc
+    if not isinstance(payload, list) or len(payload) != expected:
+        raise HTTPException(status_code=400, detail="Folder paths must match the uploaded files")
+    paths: list[str] = []
+    for value in payload:
+        if not isinstance(value, str):
+            raise HTTPException(status_code=400, detail="Folder paths must be strings")
+        try:
+            paths.append(normalize_relative_path(value))
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    if len(set(paths)) != len(paths):
+        raise HTTPException(status_code=400, detail="Folder paths must be unique")
+    return paths
 
 
 def sanitize_filename(raw_name: str | None) -> str:
@@ -283,6 +347,33 @@ def _remove_partial(directory: Path, target: Path) -> None:
         pass
 
 
+def _write_upload(target: Path, upload: UploadLike, byte_limit: int | None) -> int:
+    """Stream one upload to a new file with exclusive creation and optional byte cap."""
+
+    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
+    descriptor = os.open(target, flags, 0o600)
+    total = 0
+    try:
+        with os.fdopen(descriptor, "wb") as output:
+            descriptor = -1
+            while True:
+                chunk = upload.file.read(_CHUNK_BYTES)
+                if not chunk:
+                    break
+                if not isinstance(chunk, bytes):
+                    chunk = bytes(chunk)
+                total += len(chunk)
+                if byte_limit is not None and total > byte_limit:
+                    raise HTTPException(status_code=413, detail="Attachment size limit exceeded")
+                output.write(chunk)
+            output.flush()
+            os.fsync(output.fileno())
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+    return total
+
+
 def _safe_record_path(scope: Path, identifier: str, record: dict[str, Any]) -> Path | None:
     """Resolve one manifest path while rejecting traversal, links, and replacement files."""
 
@@ -312,6 +403,35 @@ def _safe_record_path(scope: Path, identifier: str, record: dict[str, Any]) -> P
     except (FileNotFoundError, OSError, RuntimeError, ValueError):
         return None
     return resolved if resolved.is_file() else None
+
+
+def _safe_folder_path(scope: Path, identifier: str, record: dict[str, Any]) -> Path | None:
+    """Resolve one stored folder root while rejecting links and replaced directories."""
+
+    name = record.get("name")
+    relative_value = record.get("path")
+    if not isinstance(name, str) or not isinstance(relative_value, str):
+        return None
+    relative = Path(relative_value)
+    if (
+        relative.is_absolute()
+        or len(relative.parts) != 2
+        or relative.parts[0] != identifier
+        or relative.parts[1] != name
+    ):
+        return None
+    directory = scope / identifier
+    target = directory / name
+    try:
+        for component in (directory, target):
+            if stat.S_ISLNK(os.lstat(component).st_mode):
+                return None
+        resolved_scope = scope.resolve(strict=True)
+        resolved = target.resolve(strict=True)
+        resolved.relative_to(resolved_scope)
+    except (FileNotFoundError, OSError, RuntimeError, ValueError):
+        return None
+    return resolved if resolved.is_dir() else None
 
 
 class AttachmentStore:
@@ -354,6 +474,7 @@ class AttachmentStore:
         scope = _scope_directory(root, user, profile, session_id, create=True)
         if scope is None:  # pragma: no cover - create=True always returns a directory
             raise HTTPException(status_code=500, detail="Attachment storage is unavailable")
+        byte_limit = _max_attachment_bytes(self.max_bytes)
         with self._lock_for(scope):
             records = _read_manifest(scope)
             identifier = uuid.uuid4().hex
@@ -364,27 +485,7 @@ class AttachmentStore:
                 if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
                     raise OSError("attachment directory is invalid")
                 target = directory / name
-                flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL | getattr(os, "O_NOFOLLOW", 0)
-                descriptor = os.open(target, flags, 0o600)
-                total = 0
-                try:
-                    with os.fdopen(descriptor, "wb") as output:
-                        descriptor = -1
-                        while True:
-                            chunk = upload.file.read(_CHUNK_BYTES)
-                            if not chunk:
-                                break
-                            if not isinstance(chunk, bytes):
-                                chunk = bytes(chunk)
-                            total += len(chunk)
-                            if total > _max_attachment_bytes(self.max_bytes):
-                                raise HTTPException(status_code=413, detail="Attachment size limit exceeded")
-                            output.write(chunk)
-                        output.flush()
-                        os.fsync(output.fileno())
-                finally:
-                    if descriptor >= 0:
-                        os.close(descriptor)
+                total = _write_upload(target, upload, byte_limit)
                 record = {
                     "id": identifier,
                     "name": name,
@@ -416,6 +517,82 @@ class AttachmentStore:
             profile,
             session_id,
             upload,
+        )
+
+    def _save_folder_sync(
+        self,
+        root: Path,
+        user: str,
+        profile: str,
+        session_id: str,
+        folder_name: str,
+        entries: list[tuple[str, UploadLike]],
+    ) -> dict[str, Any]:
+        """Stream one folder tree into exclusive storage and publish one record."""
+
+        if not entries:
+            raise HTTPException(status_code=400, detail="Folder upload is empty")
+        if len(entries) > MAX_FOLDER_FILES:
+            raise HTTPException(status_code=400, detail="Folder file limit exceeded")
+        name = sanitize_filename(folder_name or entries[0][0].split("/", 1)[0])
+        scope = _scope_directory(root, user, profile, session_id, create=True)
+        if scope is None:  # pragma: no cover - create=True always returns a directory
+            raise HTTPException(status_code=500, detail="Attachment storage is unavailable")
+        byte_limit = _max_attachment_bytes(self.max_bytes)
+        with self._lock_for(scope):
+            records = _read_manifest(scope)
+            identifier = uuid.uuid4().hex
+            directory = scope / identifier
+            folder = directory / name
+            try:
+                directory.mkdir(mode=0o700, exist_ok=False)
+                folder.mkdir(mode=0o700, exist_ok=False)
+                total = 0
+                for relative, upload in entries:
+                    parts = relative.split("/")
+                    parent = folder
+                    for part in parts[:-1]:
+                        parent = parent / part
+                        parent.mkdir(mode=0o700, exist_ok=True)
+                        mode = os.lstat(parent).st_mode
+                        if stat.S_ISLNK(mode) or not stat.S_ISDIR(mode):
+                            raise OSError("attachment folder is invalid")
+                    total += _write_upload(parent / parts[-1], upload, byte_limit)
+                record = {
+                    "id": identifier,
+                    "name": name,
+                    "size": total,
+                    "fileCount": len(entries),
+                    "mimeType": "inode/directory",
+                    "kind": "folder",
+                    "path": f"{identifier}/{name}",
+                }
+                records[identifier] = record
+                _write_manifest(scope, records)
+            except Exception:
+                shutil.rmtree(directory, ignore_errors=True)
+                raise
+        return {key: record[key] for key in ("id", "name", "size", "fileCount", "mimeType", "kind")}
+
+    async def save_folder(
+        self,
+        root: Path,
+        user: str,
+        profile: str,
+        session_id: str,
+        folder_name: str,
+        entries: list[tuple[str, UploadLike]],
+    ) -> dict[str, Any]:
+        """Stream a folder in a worker thread so large batches do not block ASGI."""
+
+        return await asyncio.to_thread(
+            self._save_folder_sync,
+            root,
+            user,
+            profile,
+            session_id,
+            folder_name,
+            entries,
         )
 
     def resolve_inputs(
@@ -451,17 +628,47 @@ class AttachmentStore:
                 record = records.get(identifier)
                 if record is None:
                     raise HTTPException(status_code=404, detail="Attachment not found")
+                if record.get("kind") == "folder":
+                    folder = _safe_folder_path(scope, identifier, record)
+                    if folder is None:
+                        raise HTTPException(status_code=404, detail="Attachment is unavailable")
+                    result.append(
+                        {
+                            "type": "text",
+                            "text": (
+                                f"User attachment folder: {record['name']} "
+                                f"({record.get('fileCount', 0)} files, {record.get('size', 0)} bytes)\n"
+                                f"Path: {folder}\n"
+                                "List or search the folder first, then open only the relevant files or ranges. "
+                                f"{_ON_DEMAND_NOTE}"
+                            ),
+                        }
+                    )
+                    continue
                 target = _safe_record_path(scope, identifier, record)
                 if target is None:
                     raise HTTPException(status_code=404, detail="Attachment is unavailable")
                 raster_mime = detect_raster_mime(target)
                 if raster_mime is not None:
-                    result.append({"type": "localImage", "path": str(target)})
+                    result.append(
+                        {
+                            "type": "text",
+                            "text": (
+                                f"Image attachment: {record['name']} ({record.get('size', 0)} bytes)\n"
+                                f"Path: {target}\n"
+                                "Open the image only when the task needs it. "
+                                f"{_ON_DEMAND_NOTE}"
+                            ),
+                        }
+                    )
                 else:
                     result.append(
                         {
                             "type": "text",
-                            "text": f"User attachment: {record['name']}\nPath: {target}",
+                            "text": (
+                                f"User attachment: {record['name']} ({record.get('size', 0)} bytes)\n"
+                                f"Path: {target}\n{_ON_DEMAND_NOTE}"
+                            ),
                         }
                     )
             return result
@@ -494,6 +701,37 @@ def create_router(bridge: Any) -> APIRouter:
         attachment = await store.save_upload(root, user, checked_profile, checked_session, file)
         return {"attachment": attachment}
 
+    @router.post("/attachments/folder")
+    async def upload_folder(
+        request: Request,
+        files: list[UploadFile] = File(...),  # noqa: B008
+        paths: str = Form(...),
+        name: str = Form(""),
+        profile: str = "default",
+        session_id: str = "",
+    ) -> dict[str, Any]:
+        """Store a folder batch under one attachment id while preserving its tree."""
+
+        if len(files) > MAX_FOLDER_FILES:
+            raise HTTPException(status_code=400, detail="Folder file limit exceeded")
+        checked_paths = _decode_folder_paths(paths, len(files))
+        user = _user(request)
+        checked_profile = _safe(profile, "profile")
+        checked_session = _safe(session_id, "session")
+        root = await _session_workspace(bridge, request, checked_profile, checked_session)
+        store = getattr(bridge, "attachments", None)
+        if not isinstance(store, AttachmentStore):
+            raise HTTPException(status_code=503, detail="Codex attachment storage is unavailable")
+        attachment = await store.save_folder(
+            root,
+            user,
+            checked_profile,
+            checked_session,
+            name,
+            list(zip(checked_paths, files, strict=True)),
+        )
+        return {"attachment": attachment}
+
     return router
 
 
@@ -501,7 +739,9 @@ __all__ = [
     "DEFAULT_MAX_ATTACHMENTS",
     "DEFAULT_MAX_ATTACHMENT_BYTES",
     "AttachmentStore",
+    "MAX_FOLDER_FILES",
     "create_router",
     "detect_raster_mime",
+    "normalize_relative_path",
     "sanitize_filename",
 ]

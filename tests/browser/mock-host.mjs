@@ -59,7 +59,7 @@ const fixture = `<!doctype html>
     React, hooks: React, sdkVersion: '1.1.0',
     components: { Dialog: Passthrough, DialogClose: Passthrough, DialogContent: Passthrough,
       DialogDescription: Passthrough, DialogTitle: Passthrough },
-    fetchJSON, authedFetch: url => fetch(url),
+    fetchJSON, authedFetch: (url, init) => fetch(url, init),
   };
   const slots = {};
   window.__HERMES_PLUGINS__ = {
@@ -146,9 +146,11 @@ function apiPayload(url, method) {
       matched: 'content', updated_at: codex[1].updatedAt, deleted: false, group_name: 'Preview Project 1', status: 'idle',
     }], contentSearch: true, contentError: '', truncated: false };
   }
-  if (pathname === '/api/plugins/workbench/codex/session' || pathname === '/api/plugins/workbench/codex/session/preview') {
+  if (pathname === '/api/plugins/workbench/codex/session') {
+    if (method === 'POST') return { request: { status: 'accepted', turn_id: 'preview-turn' } };
     return { cached: true, turns: codexTurns() };
   }
+  if (pathname === '/api/plugins/workbench/codex/session/preview') return { cached: true, turns: codexTurns() };
   if (pathname === '/api/plugins/workbench/codex/session/read') return { ok: true };
   if (pathname === '/api/plugins/workbench/codex/groups') {
     const count = url.searchParams.get('profile') === 'writer' ? 2 : 6;
@@ -164,6 +166,12 @@ function apiPayload(url, method) {
     model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, defaultReasoningEffort: 'medium',
     supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }],
   }] };
+  if (pathname === '/api/plugins/workbench/codex/attachments/folder' && method === 'POST') return { attachment: {
+    id: 'folder-preview', name: 'project', size: 19, fileCount: 2, mimeType: 'inode/directory', kind: 'folder',
+  } };
+  if (pathname === '/api/plugins/workbench/codex/attachments' && method === 'POST') return { attachment: {
+    id: 'file-preview', name: 'notes.txt', size: 5, mimeType: 'text/plain', kind: 'file', fileCount: 0,
+  } };
   if (pathname === '/api/config') return { model: 'gpt-6.1-sol', agent: { reasoning_effort: 'medium' } };
   if (pathname === '/api/plugins/workbench/workspace') return { workspace: {
     id: 'preview-workspace', name: 'hermes-workbench', path: '/home/preview/hermes-workbench', profile,
@@ -206,6 +214,7 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       return;
     }
     if (url.pathname.startsWith('/api/')) {
+      request.resume();
       const body = JSON.stringify(apiPayload(url, request.method || 'GET'));
       response.writeHead(200, { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) });
       response.end(body);

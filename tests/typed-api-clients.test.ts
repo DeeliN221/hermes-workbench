@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { cronForm, cronPayload, nativeCronPayload, needsExtendedCron, mergeCronHistory, cronSessionId, cronSessionProfiles, isCronSessionNotFound, updateCronJob, changeCronJobState } from '../dashboard/src/cron-api';
 import { listSkillEntries, mutateSkillFile, saveSkillFile, skillPreviewKind, downloadSkillFile } from '../dashboard/src/skills-api';
-import { answerCodexApproval, sendCodexMessage, normalizeSession, normalizeGoal, CodexSendError } from '../dashboard/src/codex-api';
+import { answerCodexApproval, sendCodexMessage, normalizeSession, normalizeGoal, normalizeAttachment, uploadCodexFolder, CodexSendError } from '../dashboard/src/codex-api';
 import type { FetchJSON } from '../dashboard/src/workbench-api';
 const client = (value: unknown) => vi.fn(async () => value) as unknown as FetchJSON;
 describe('typed cron API', () => {
@@ -70,5 +70,25 @@ describe('typed Codex command API', () => {
   });
   it('does not silently retry an approval with unknown delivery', async () => {
     await expect(answerCodexApproval(client({ status: 'pending' }), 'writer', 's', 'approval', 'approve')).rejects.toMatchObject({ requestDeliveryUnknown: true });
+  });
+  it('keeps folder metadata and posts one manifest for a folder batch', async () => {
+    expect(normalizeAttachment({ id: 'f', name: 'project', size: '12', fileCount: '2', kind: 'folder' })).toMatchObject({
+      id: 'f', name: 'project', size: 12, kind: 'folder', fileCount: 2,
+    });
+    const calls: Array<{ url: string; init: RequestInit }> = [];
+    const upload = (async (url: string, init: RequestInit) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ attachment: { id: 'folder-1', name: 'project', size: 9, fileCount: 2, kind: 'folder' } }), { status: 200 });
+    }) as never;
+    const entries = [
+      { file: new File(['a'], 'a.txt'), relativePath: 'a.txt' },
+      { file: new File(['b'], 'b.txt'), relativePath: 'sub/b.txt' },
+    ];
+    await expect(uploadCodexFolder(upload, 'writer', 's/1', 'project', entries)).resolves.toMatchObject({ id: 'folder-1', kind: 'folder', fileCount: 2 });
+    expect(calls[0].url).toContain('/attachments/folder?profile=writer&session_id=s%2F1');
+    const form = calls[0].init.body as FormData;
+    expect(form.getAll('files')).toHaveLength(2);
+    expect(JSON.parse(String(form.get('paths')))).toEqual(['a.txt', 'sub/b.txt']);
+    expect(form.get('name')).toBe('project');
   });
 });

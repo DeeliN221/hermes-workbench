@@ -6,6 +6,7 @@ import { sameMessage, withTurnError } from './chat-runtime-errors';
 
 export type MessageStatus = 'running' | 'completed' | 'failed' | 'accepted' | 'pending';
 export type TurnStatus = 'running' | 'completed' | 'failed';
+export interface MessageAttachmentPreview { id: string; name: string; src: string }
 export interface ChatMessage {
   id: string; itemId?: string; clientId?: unknown; clientRequestId?: string; turnId?: string;
   role: string; content: string; paragraphs?: string[]; status?: MessageStatus; phase?: 'commentary' | 'final';
@@ -13,6 +14,7 @@ export interface ChatMessage {
   turnDurationMs?: number | null; turnStatus?: TurnStatus; turnStartedAt?: number; observedAt?: number;
   turnCompletedAt?: number; weeklyRemainingPercent?: number; suppressDeltas?: boolean; error?: boolean;
   submissionError?: unknown; runtimeError?: unknown; delivery?: unknown; questions?: unknown;
+  attachments?: MessageAttachmentPreview[];
   subagent?: {
     tool: string;
     prompt?: string;
@@ -107,11 +109,16 @@ export function normalizeMessage(value: unknown, fallbackId: string): ChatMessag
     ? Array.isArray(item.summary) ? item.summary.map(contentText).join('\n\n') : contentText(item.content)
     : collabAgent ? collabSummary : contentText(tool ? result : item.text ?? item.content);
   const status = itemStatus(item), exitCode = optionalNumber(firstDefined(item, 'exitCode', 'exit_code'));
+  const attachments = Array.isArray(item.attachments) ? item.attachments.flatMap(value => {
+    const row = record(value), id = text(row.id), name = text(row.name), src = text(row.src);
+    return id && src && (src.startsWith('blob:') || src.startsWith('data:image/')) ? [{ id, name, src }] : [];
+  }) : undefined;
   const message: ChatMessage = {
     id: user ? text(item.clientId, role ? text(item.id, itemId) : itemId) : itemId, itemId,
     clientId: item.clientId, submissionError: item.submissionError, runtimeError: item.runtimeError,
     turnId: text(item.turnId) || undefined, role: user ? 'user' : reasoning ? 'reasoning' : tool ? 'tool' : role || 'assistant',
     delivery: item.delivery, questions: item.questions, content, status, phase: messagePhase(item.phase ?? nested.phase),
+    attachments,
     toolName: text(item.toolName ?? (collabAgent ? 'collab_agent_tool_call' : item.tool) ?? (type === 'commandExecution' ? uiText('终端', 'Terminal') : tool ? type : '')) || undefined,
     input: collabAgent ? subagent : item.input ?? item.command ?? item.arguments ?? item.changes, result, exitCode, subagent,
     durationMs: optionalNumber(firstDefined(item, 'durationMs', 'duration_ms')),
@@ -128,6 +135,7 @@ export function mergeMessage(previous: ChatMessage, next: ChatMessage): ChatMess
   const subagent = next.subagent ?? previous.subagent;
   return normalizeMessage({
     ...previous, ...next, status: next.status ?? previous.status, phase: next.phase ?? previous.phase,
+    attachments: next.attachments ?? previous.attachments,
     type: subagent ? 'collabAgentToolCall' : undefined,
     tool: subagent?.tool,
     prompt: subagent?.prompt,

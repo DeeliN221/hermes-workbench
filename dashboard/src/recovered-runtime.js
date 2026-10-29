@@ -4,9 +4,10 @@ import { reconcileMarkdownHtml } from './markdown-html';
 import { EditorView as Te, lineNumbers as aS, highlightActiveLine as iS, highlightActiveLineGutter as cS,
   syntaxHighlighting as Su, defaultHighlightStyle as mS, codeHighlightStyle as O2,
   codeLanguage as w2, fileLanguage as AL, fileLanguage as fM } from './editor-runtime';
-import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as yQ, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessage as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
+import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as yQ, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessage as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, uploadCodexFolder as eF, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
 import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
+import { applyMessagePreviews } from './message-previews';
 import { optionalNumber as pn, firstDefined as oi, timestamp as El, record as mt, text as Ae } from './api-values';
 import { cronList as Sn, cronSchedule as I5, cronTimezone as $0, cronForm as N5, cronPayload as Td, nativeCronPayload as B5, needsExtendedCron as z5, cronSessionId as T0, cronSessionProfiles, isCronSessionNotFound, mergeCronHistory as E0, cronTimestamp as A0, listCronJobs as q5, listCronRuns as Z5, listCronExecutions as j5, createNativeCronJob as F5, createExtendedCronJob as H5, updateCronJob as V5, changeCronJobState as U5, deleteCronJob as Y5 } from './cron-api';
 import { listSkills as iM, readSkillDescription as rM, listSkillEntries as B0, readSkillFile as nM, saveSkillFile as sM, mutateSkillFile as Md, skillPreviewUrl as oM, skillArchiveUrl as aM, isSkillTextPath as zl, skillPreviewKind as z0, downloadSkillFile as lM, uploadSkillArchive as cM, uploadSkillFile as hM } from './skills-api';
@@ -14,6 +15,7 @@ import { ProcessSummary } from './process-summary';
 import { displayCommand } from './command-display';
 import { createShortcutSettings, useSendShortcut, shouldSendMessage, sendShortcutHint } from './send-shortcut';
 import { createCodexUserInput, pendingAsyncQuestions, formatQuestionAnswers } from './codex-user-input';
+import { collectAttachmentDrop, folderBatchFromFileList, isAttachmentDrag } from './workbench-attachment-drop';
 import './codex-user-input.css';
 import { createLanguageControl } from './language-control';
 import { useWorkbenchLocale } from './workbench-locale';
@@ -9432,7 +9434,26 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return `${i.name}\0${i.type}\0${i.size}\0${i.lastModified}`;
   }
   function _5(i) {
-    return { localId: h0(), file: i, status: "pending", progress: 0 };
+    return {
+      localId: h0(),
+      file: i,
+      status: "pending",
+      progress: 0,
+      preview:
+        i.type.startsWith("image/") && typeof URL !== "undefined" && typeof URL.createObjectURL === "function"
+          ? URL.createObjectURL(i)
+          : void 0,
+    };
+  }
+  function F7(i) {
+    const e = i.entries.reduce((t, r) => t + (Number.isFinite(r.file.size) ? r.file.size : 0), 0);
+    return {
+      localId: h0(),
+      file: new File([], i.name, { type: "inode/directory" }),
+      status: "pending",
+      progress: 0,
+      folder: { name: i.name, entries: i.entries, size: e },
+    };
   }
   function Qd(i) {
     return i instanceof t0 && i.status >= 400 && i.status < 500;
@@ -9947,6 +9968,22 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               "article",
               { className: "codex-message is-user", "data-message-id": e.id },
               W(i, "div", { className: "codex-message-body" }, e.content),
+              e.attachments?.length
+                ? W(
+                    i,
+                    "div",
+                    { className: "codex-message-attachments" },
+                    ...e.attachments.map((attachment) =>
+                      W(i, "img", {
+                        key: attachment.id,
+                        className: "codex-message-attachment",
+                        src: attachment.src,
+                        alt: attachment.name,
+                        loading: "lazy",
+                      }),
+                    ),
+                  )
+                : null,
               e.status === "pending"
                 ? W(i, "div", { className: "codex-message-status" }, runtimeText("待确认", "Awaiting confirmation"))
                 : null,
@@ -10230,6 +10267,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         Zi = s(se);
       Zi.current = se;
       const H0 = s(null),
+        H1 = s(null),
         ji = s(new Map()),
         Ho = s(null),
         Vo = s(!0),
@@ -10775,7 +10813,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 .then((ue) => {
                   if (!ue || !ne || U !== X.current || Y.current !== k || Vn.current !== xe) return;
                   rememberCodexSnapshot($t, ue);
-                  ht(ue.messages);
+                  ht((current) => applyMessagePreviews(current, ue.messages));
                   Wi(ue.turnId);
                   Nt(!!ue.turnId);
                   Fr(Wo(ue.pendingApprovals.at(-1)));
@@ -10791,7 +10829,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   Hl(""),
                   Vn.current === xe)
                 ) {
-                  (ht(ue.messages), Wi(ue.turnId), Nt(!!ue.turnId));
+                  (ht((current) => applyMessagePreviews(current, ue.messages)), Wi(ue.turnId), Nt(!!ue.turnId));
                   const $e = ue.pendingApprovals.at(-1);
                   Fr(Wo($e));
                 }
@@ -10887,14 +10925,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               ((U = !0),
                 (ne = ft.next),
                 ht((Xt) => {
-                  const ti = new Set(ft.messages.map((mi) => mi.id)),
+                  const incoming = applyMessagePreviews(Xt, ft.messages),
+                    ti = new Set(incoming.map((mi) => mi.id)),
                     St = Xt.filter(
                       (mi) =>
                         mi.role === "user" &&
                         (mi.status === "pending" || mi.status === "accepted") &&
-                        !ft.messages.some(message => sameMessage(message, mi)),
+                        !incoming.some(message => sameMessage(message, mi)),
                     );
-                  return [...ft.messages, ...St];
+                  return [...incoming, ...St];
                 }),
                 Wi(ft.turnId),
                 Nt(!!ft.turnId),
@@ -11093,6 +11132,16 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           },
           [M],
         ),
+        addFolderItem = t(
+          (L) => {
+            const U = On(M, Y.current);
+            _e((ee) => {
+              const ne = [...ee, L];
+              return (pi.current.set(U, ne), (Zi.current = ne), ne);
+            });
+          },
+          [M],
+        ),
         $M = t(
           (L) => {
             const U = On(M, Y.current);
@@ -11160,9 +11209,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 L,
               );
               try {
-                const Ie = await e5(Yd, M, L, ue.file, ($e) =>
-                  Ko(U, ue.localId, (ze) => ({ ...ze, progress: $e }), ee, L),
-                );
+                const progress = ($e) =>
+                  Ko(U, ue.localId, (ze) => ({ ...ze, progress: $e }), ee, L);
+                const Ie = ue.folder
+                  ? await eF(Yd, M, L, ue.folder.name, ue.folder.entries, progress)
+                  : await e5(Yd, M, L, ue.file, progress);
                 (xe.push(Ie.id),
                   Ko(
                     U,
@@ -11297,6 +11348,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             zt = [];
           ji.current.set(ze, { requestId: ne, content: L });
           const Ke = () => Hi.current && Ie === X.current && Y.current === $e;
+          const previews = U.flatMap((item) =>
+            item.preview ? [{ id: item.localId, name: item.file.name, src: item.preview }] : [],
+          );
           (!cardShortcut && ((Ji.current = ""), Ot("")),
             Nt(!0),
             Pt(""),
@@ -11304,10 +11358,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               ...Me,
               {
                 id: ne,
+                clientRequestId: ne,
                 role: "user",
                 observedAt: Date.now(),
                 content: ee,
                 status: "pending",
+                attachments: previews.length ? previews : void 0,
                 paragraphs: [ee],
               },
             ]));
@@ -12493,6 +12549,64 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 "aria-label": runtimeText("待发送附件", "Pending attachments"),
               },
               ...se.map((L) => {
+                if (L.preview) {
+                  const previewStatus = L.status === "failed"
+                    ? runtimeText("图片上传失败", "Image upload failed")
+                    : L.status === "uploading"
+                      ? runtimeText("正在上传图片", "Uploading image")
+                      : runtimeText("图片附件", "Image attachment");
+                  return W(
+                    e,
+                    "div",
+                    {
+                      className: `codex-attachment-preview is-${L.status}`,
+                      key: L.localId,
+                      role: "listitem",
+                      title: previewStatus,
+                    },
+                    W(e, "img", {
+                      className: "codex-attachment-preview-image",
+                      src: L.preview,
+                      alt: "",
+                      "aria-hidden": !0,
+                    }),
+                    L.status === "uploading"
+                      ? W(
+                          e,
+                          "span",
+                          { className: "codex-attachment-preview-progress", "aria-hidden": !0 },
+                          W(e, "span", { style: { width: "100%" } }),
+                        )
+                      : null,
+                    L.status === "failed"
+                      ? W(
+                          e,
+                          "button",
+                          {
+                            type: "button",
+                            className: "codex-attachment-preview-retry",
+                            onClick: () => $M(L.localId),
+                            disabled: submitting || Ls,
+                            "aria-label": runtimeText("重试上传图片", "Retry image upload"),
+                          },
+                          runtimeText("重试", "Retry"),
+                        )
+                      : null,
+                    W(
+                      e,
+                      "button",
+                      {
+                        type: "button",
+                        className: "codex-attachment-preview-remove",
+                        onClick: () => TM(L.localId),
+                        disabled: submitting || Ls,
+                        "aria-label": runtimeText("移除图片", "Remove image"),
+                        title: runtimeText("移除图片", "Remove image"),
+                      },
+                      st(e, "close"),
+                    ),
+                  );
+                }
                 const U =
                   L.status === "uploading"
                     ? (L.progress >= 1 ? runtimeText("正在确认附件…", "Confirming attachment…") : runtimeText("上传中…", "Uploading…"))
@@ -12508,7 +12622,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     className: `codex-attachment-chip is-${L.status}`,
                     key: L.localId,
                     role: "listitem",
-                    title: L.error || L.file.name,
+                    title: L.folder
+                      ? runtimeText(
+                          `${L.file.name}：内容按需读取，不会整体加入上下文`,
+                          `${L.file.name}: contents are read on demand and are not loaded into context`,
+                        )
+                      : L.error || L.file.name,
                   },
                   W(
                     e,
@@ -12524,7 +12643,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                       e,
                       "span",
                       { className: "codex-attachment-size" },
-                      b5(L.file.size),
+                      L.folder
+                        ? runtimeText(
+                            `${L.folder.entries.length} 个文件 · ${b5(L.folder.size)}`,
+                            `${L.folder.entries.length} files · ${b5(L.folder.size)}`,
+                          )
+                        : b5(L.file.size),
                     ),
                   ),
                   W(
@@ -12581,7 +12705,41 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         lD = W(
           e,
           "div",
-          { className: "codex-composer-wrap", ref: F0 },
+          {
+            className: "codex-composer-wrap",
+            ref: F0,
+            "data-drop-label": runtimeText("松开以添加文件或文件夹", "Drop files or folders to attach"),
+            onDragEnter: (L) => {
+              if (!isAttachmentDrag(L.dataTransfer)) return;
+              (L.preventDefault(), L.stopPropagation(), F0.current?.classList.add("is-drop-target"));
+            },
+            onDragOver: (L) => {
+              if (!isAttachmentDrag(L.dataTransfer)) return;
+              (L.preventDefault(), L.stopPropagation());
+              L.dataTransfer && (L.dataTransfer.dropEffect = "copy");
+            },
+            onDragLeave: (L) => {
+              (L.relatedTarget instanceof Node && F0.current?.contains(L.relatedTarget)) ||
+                F0.current?.classList.remove("is-drop-target");
+            },
+            onDrop: (L) => {
+              if (!isAttachmentDrag(L.dataTransfer)) return;
+              (L.preventDefault(), L.stopPropagation(), F0.current?.classList.remove("is-drop-target"));
+              if (submitting || Ls) return;
+              const data = L.dataTransfer;
+              (async () => {
+                try {
+                  const batches = await collectAttachmentDrop(data);
+                  for (const batch of batches) {
+                    if (batch.kind === "folder") addFolderItem(F7(batch));
+                    else ov(batch.entries.map((entry) => entry.file));
+                  }
+                } catch (error) {
+                  Pt(String(error));
+                }
+              })();
+            },
+          },
           W(
             e,
             "div",
@@ -12596,6 +12754,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 (ov(Array.from(L.target.files || [])), (L.target.value = ""));
               },
               "aria-label": runtimeText("添加附件", "Add attachment"),
+            }),
+            W(e, "input", {
+              ref: H1,
+              className: "codex-attachment-input",
+              name: "attachment-folder",
+              type: "file",
+              multiple: !0,
+              webkitdirectory: "",
+              directory: "",
+              onChange: (L) => {
+                const batch = folderBatchFromFileList(L.target.files);
+                (batch && addFolderItem(F7(batch)), (L.target.value = ""));
+              },
+              "aria-label": runtimeText("添加文件夹", "Add folder"),
             }),
             aD,
             W(e, ChatComposerInput, {
@@ -12635,6 +12807,19 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     title: runtimeText("添加附件（可多选）", "Add attachments (multiple allowed)"),
                   },
                   st(e, "paperclip"),
+                ),
+                W(
+                  e,
+                  "button",
+                  {
+                    type: "button",
+                    className: "codex-icon-button",
+                    disabled: submitting || Ls,
+                    onClick: () => H1.current?.click(),
+                    "aria-label": runtimeText("添加文件夹", "Add folder"),
+                    title: runtimeText("上传整个文件夹", "Upload a folder"),
+                  },
+                  st(e, "folder"),
                 ),
                 W(
                   e,
