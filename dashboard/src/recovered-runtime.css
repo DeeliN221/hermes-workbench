@@ -5754,11 +5754,104 @@ body[data-theme*="dark"] .hti-rich-markdown {
 .codex-attachment-input {
   display: none;
 }
+.codex-composer-wrap.is-drop-target::after {
+  content: attr(data-drop-label);
+  position: absolute;
+  z-index: 4;
+  inset: 0.35rem var(--codex-composer-inline, 0.8rem) 0.6rem;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--codex-accent);
+  border-radius: 0.85rem;
+  color: var(--codex-accent-strong);
+  background: color-mix(in srgb, var(--codex-surface) 88%, transparent);
+  font-size: 0.95rem;
+  font-weight: 600;
+  pointer-events: none;
+}
 .codex-attachment-list {
   display: flex;
   flex-wrap: wrap;
+  align-items: flex-end;
   gap: 0.45rem;
   padding: 0.55rem 0.8rem 0.15rem;
+}
+.codex-attachment-preview {
+  position: relative;
+  display: grid;
+  place-items: center;
+  max-width: min(15rem, 100%);
+  padding: 0.25rem;
+  border: 1px solid var(--codex-border);
+  border-radius: 0.55rem;
+  background: var(--codex-surface-soft);
+}
+.codex-attachment-preview-image {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(14rem, 100%);
+  max-height: 10rem;
+  border-radius: 0.35rem;
+  object-fit: contain;
+}
+.codex-attachment-preview.is-uploaded {
+  border-color: var(--mc-line, #acd9d8);
+}
+.codex-attachment-preview.is-failed {
+  border-color: var(--mc-danger, #e4b9bf);
+  background: var(--mc-danger-soft, #fff8f8);
+}
+.codex-attachment-preview-remove,
+.codex-attachment-preview-retry {
+  position: absolute;
+  z-index: 1;
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.6rem;
+  min-height: 1.6rem;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 0 0.3rem;
+  color: #fff;
+  background: #0009;
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+.codex-attachment-preview-remove {
+  top: 0.35rem;
+  right: 0.35rem;
+}
+.codex-attachment-preview-remove .codex-ui-icon {
+  width: 0.95rem;
+  height: 0.95rem;
+}
+.codex-attachment-preview-retry {
+  bottom: 0.35rem;
+  left: 0.35rem;
+  border-radius: 0.35rem;
+  background: var(--mc-danger, #a5342d);
+}
+.codex-attachment-preview-remove:hover:not(:disabled),
+.codex-attachment-preview-retry:hover:not(:disabled) {
+  background: #000c;
+}
+.codex-attachment-preview-progress {
+  position: absolute;
+  right: 0.35rem;
+  bottom: 0.2rem;
+  left: 0.35rem;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--codex-border-soft);
+}
+.codex-attachment-preview-progress > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--codex-accent);
+  animation: codex-attachment-progress-pulse 1.1s ease-in-out infinite alternate;
 }
 .codex-attachment-chip {
   position: relative;
@@ -5778,7 +5871,7 @@ body[data-theme*="dark"] .hti-rich-markdown {
 }
 .codex-attachment-chip-main {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   min-width: 0;
   gap: 0.35rem;
 }
@@ -6517,6 +6610,13 @@ body[data-theme*="dark"] .hti-rich-markdown {
   }
   .codex-message.is-user .codex-message-body {
     max-width: 94%;
+  }
+  .codex-message-attachments {
+    max-width: 94%;
+  }
+  .codex-message-attachment {
+    max-width: 12rem;
+    max-height: 9rem;
   }
   .codex-composer-wrap {
     padding: 0.5rem 0.65rem 0.7rem;
@@ -8842,6 +8942,25 @@ dialog.codex-session-search-dialog-backdrop::backdrop {
   color: var(--cron-danger);
   font-size: 0.75rem;
   white-space: pre-wrap;
+}
+.codex-message-attachments {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.45rem;
+  max-width: min(86%, 42rem);
+  margin-top: 0.15rem;
+}
+.codex-message-attachment {
+  display: block;
+  width: auto;
+  height: auto;
+  max-width: min(18rem, 100%);
+  max-height: 14rem;
+  border: 1px solid var(--codex-border);
+  border-radius: 0.5rem;
+  object-fit: contain;
+  background: var(--codex-surface-soft);
 }
 .dashboard-cron-runs-view {
   display: grid;

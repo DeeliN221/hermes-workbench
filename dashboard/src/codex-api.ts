@@ -23,7 +23,8 @@ export interface CodexGoal {
   objective: string | null; threadId: string; status: GoalStatus | null; tokenBudget: number | null;
   tokensUsed: number | null; timeUsedSeconds: number | null; createdAt: string; updatedAt: string;
 }
-export interface CodexAttachment { id: string; name: string; size: number; mimeType: string }
+export interface CodexAttachment { id: string; name: string; size: number; mimeType: string; kind: 'file' | 'folder'; fileCount: number }
+export interface FolderUploadEntry { file: File; relativePath: string }
 export interface SessionOptions { model?: string; effort?: string; serviceTier?: string; cwd?: string; workspaceId?: string; sessionId?: string }
 export interface SendOptions extends SessionOptions { attachmentIds?: string[]; expectedTurnId?: string }
 export class CodexSendError extends Error {
@@ -193,9 +194,10 @@ export async function sendCodexMessage(read: FetchJSON, profile: string, session
   return { accepted: request.status === 'accepted', status: text(request.status), turnId: text(request.turn_id), error: runtimeErrorText(request.result), clientRequestId: requestId };
 }
 export function normalizeAttachment(value: unknown): CodexAttachment | null {
-  const row = record(value), id = text(row.id), size = Number(row.size);
+  const row = record(value), id = text(row.id), size = Number(row.size), fileCount = Number(row.fileCount ?? row.file_count);
   return id ? { id, name: text(row.name, uiText('附件', 'Attachments')), size: Number.isFinite(size) && size >= 0 ? size : 0,
-    mimeType: text(row.mimeType ?? row.mime_type, 'application/octet-stream') } : null;
+    mimeType: text(row.mimeType ?? row.mime_type, 'application/octet-stream'), kind: row.kind === 'folder' ? 'folder' : 'file',
+    fileCount: Number.isFinite(fileCount) && fileCount >= 0 ? fileCount : 0 } : null;
 }
 export async function uploadCodexAttachment(fetch: AuthedFetch, profile: string, session: string, file: File, progress?: (fraction: number) => void) {
   progress?.(0);
@@ -204,6 +206,19 @@ export async function uploadCodexAttachment(fetch: AuthedFetch, profile: string,
   if (!response.ok) throw new Error(await response.text().catch(() => '') || uiText(`附件上传失败（HTTP ${response.status}）`, `Attachment upload failed (HTTP ${response.status})`));
   const attachment = normalizeAttachment(record(await response.json()).attachment);
   if (!attachment) throw new Error(uiText('附件上传未返回有效附件编号', 'Upload returned no valid attachment ID'));
+  progress?.(1); return attachment;
+}
+export async function uploadCodexFolder(fetch: AuthedFetch, profile: string, session: string, name: string, entries: FolderUploadEntry[], progress?: (fraction: number) => void) {
+  progress?.(0);
+  if (!entries.length) throw new Error(uiText('文件夹为空', 'Folder is empty'));
+  const form = new FormData();
+  for (const entry of entries) form.append('files', entry.file, entry.file.name || 'attachment');
+  form.append('paths', JSON.stringify(entries.map(entry => entry.relativePath)));
+  form.append('name', name);
+  const response = await fetch(`${API}/attachments/folder?${sessionQuery(profile, session)}`, { method: 'POST', body: form });
+  if (!response.ok) throw new Error(await response.text().catch(() => '') || uiText(`文件夹上传失败（HTTP ${response.status}）`, `Folder upload failed (HTTP ${response.status})`));
+  const attachment = normalizeAttachment(record(await response.json()).attachment);
+  if (!attachment) throw new Error(uiText('文件夹上传未返回有效附件编号', 'Upload returned no valid attachment ID'));
   progress?.(1); return attachment;
 }
 export async function stopCodexTurn(read: FetchJSON, profile: string, session: string, turnId: string) {

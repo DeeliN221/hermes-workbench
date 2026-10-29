@@ -29,6 +29,15 @@ describe('typed Codex transcript boundary', () => {
     expect(metric[0]).toMatchObject({ turnCompletedAt: start + 5000, weeklyRemainingPercent: 64 });
     expect(metric[1]).toEqual(another);
   });
+  it('keeps local image previews on the optimistic request through native merges', () => {
+    const optimistic = normalizeMessage({ id: 'request', clientRequestId: 'request', role: 'user', status: 'pending', content: 'See image',
+      attachments: [{ id: 'local-image', name: 'photo.png', src: 'blob:http://localhost/preview' }] }, 'fallback')!;
+    expect(optimistic.attachments).toEqual([{ id: 'local-image', name: 'photo.png', src: 'blob:http://localhost/preview' }]);
+    const started = applyChatEvent([optimistic], event('item/started', { turnId: 't', item: { id: 'native', clientId: 'request', type: 'userMessage', content: 'See image' } }));
+    expect(started).toHaveLength(1);
+    expect(started[0].attachments).toEqual(optimistic.attachments);
+    expect(normalizeMessage({ id: 'bad', role: 'user', content: 'x', attachments: [{ id: 'bad', name: 'x', src: 'javascript:alert(1)' }] }, 'fallback')!.attachments).toEqual([]);
+  });
   it('keeps failed tools failed and emits one diagnostic when a turn fails', () => {
     const initial = [normalizeMessage({ id: 'command', role: 'tool', turnId: 't', status: 'running', content: 'failed', exitCode: 1 }, 'fallback')!];
     const failure = event('turn/failed', { turn: { id: 't', status: 'failed', startedAt: start, error: { message: 'Capacity exceeded' } } });
