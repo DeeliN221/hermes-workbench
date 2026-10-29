@@ -30,10 +30,17 @@ function byClass(node: unknown, className: string): unknown[] {
 }
 
 describe('response allowance summary', () => {
-  it('shows the selected Google family five-hour and weekly windows', () => {
+  it('prefers the five-hour allowance when available to keep the summary on one line', () => {
     const tree = render({ running: false, duration: 1000, completedAt: 1800000000000,
       quota: { kind: 'google', label: 'Claude', subscription: true, fiveHourRemaining: 0, weeklyRemaining: 47.2 } });
-    expect(text(tree).join(' ')).toContain('Claude 5h left 0% · Weekly left 47.2%');
+    expect(text(tree).join(' ')).toContain('Claude 5h left 0%');
+    expect(text(tree).join(' ')).not.toContain('Weekly left');
+  });
+
+  it('falls back to the weekly window when no five-hour window exists', () => {
+    const tree = render({ running: false, duration: 1000, completedAt: 1800000000000,
+      quota: { kind: 'google', label: 'Claude', subscription: true, weeklyRemaining: 47.2 } });
+    expect(text(tree).join(' ')).toContain('Claude Weekly left 47.2%');
   });
 
   it('does not show an allowance for a direct API model', () => {
