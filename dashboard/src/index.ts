@@ -39,5 +39,9 @@ import './recent-home.css';
 
 import './compact-actions.css';
 
+import './diagram-lightbox.css';
+import { installDiagramLightbox } from './diagram-lightbox';
+installDiagramLightbox();
+
 import { installMobileSettings } from './mobile-settings';
 installMobileSettings();

@@ -88,7 +88,13 @@ function makeHost(source: string): HTMLElement {
       copy.textContent = uiText('已复制', 'Copied');
     } catch { copy.textContent = uiText('复制失败', 'Copy failed'); }
   });
-  controls.append(details, copy);
+  const zoom = document.createElement('button');
+  zoom.type = 'button';
+  zoom.className = 'hti-rich-diagram-zoom';
+  zoom.textContent = uiText('放大', 'Zoom');
+  zoom.title = uiText('全屏放大查看', 'Open zoomable diagram');
+  zoom.setAttribute('aria-label', zoom.title);
+  controls.append(details, copy, zoom);
   header.append(label, controls);
   const output = document.createElement('div');
   output.className = 'hti-rich-mermaid-svg';
@@ -119,6 +125,7 @@ async function renderHost(host: HTMLElement, isCurrent: () => boolean): Promise<
     image.style.maxWidth = '100%';
     image.style.height = 'auto';
     output.replaceChildren(image);
+    output.title = uiText('点击全屏放大查看', 'Click to zoom and pan');
     host.dataset.plantumlTheme = theme;
     host.classList.remove('hti-rich-mermaid-error');
     host.querySelector('.hti-rich-mermaid-error-note')?.remove();

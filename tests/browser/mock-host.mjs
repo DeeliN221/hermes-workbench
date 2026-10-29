@@ -1,3 +1,5 @@
+
+
 /**
  * A local Hermes plugin host backed by deterministic Workbench fixtures.
  * Preview mode and browser tests share this boundary so they exercise the same app.
@@ -192,10 +194,13 @@ function codexTurns() {
         command: 'printf "preview output\\n"',
         aggregatedOutput: Array.from({ length: 12 }, (_, index) => `preview output line ${index + 1}`).join('\n'),
       },
-      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.\n\n```mermaid\nflowchart LR\n  Chat --> Pele\n  Pele --> SVG\n```' }] },
+      { id: 'preview-agent', type: 'agentMessage', content: [{ type: 'text', text: 'The local host is running. This is mock data and does not access production credentials or real Codex sessions.\n\n```mermaid\nflowchart LR\n  Chat --> Pele\n  Pele --> SVG\n```\n\n```plantuml\n@startuml\nUser -> Workbench: Zoom\nWorkbench --> User: Scaled\n@enduml\n```' }] },
     ],
   }];
 }
+
+const createdSessions = [];
+let createdCounter = 0;
 
 /** Return deterministic plugin API data for the fixture routes. */
 function apiPayload(url, method, body = null) {
@@ -222,8 +227,15 @@ function apiPayload(url, method, body = null) {
   if (pathname === '/api/profiles') return { profiles: [{ name: 'default' }, { name: 'writer' }] };
   if (pathname.endsWith('/home-read-state')) return method === 'GET' ? { items: [] } : { ok: true };
   if (pathname === '/api/plugins/workbench/codex/sessions') {
-    if (method === 'POST') return { session: { ...codex[0], id: `codex-new-${Date.now()}`, title: 'New chat' } };
-    return { items: url.searchParams.get('deleted') === 'true' ? [] : codex };
+    if (method === 'POST') {
+      const created = { ...codex[0], id: `codex-new-${createdCounter += 1}`, title: 'New chat', createdAt: Math.floor(Date.now() / 1000) };
+      createdSessions.push({ profile, session: created });
+      return { session: created };
+    }
+    // Keep sessions created through the fixture visible, so a reload after
+    // creating one restores the pane instead of pruning it as missing data.
+    const extra = createdSessions.filter(item => item.profile === profile).map(item => item.session);
+    return { items: url.searchParams.get('deleted') === 'true' ? [] : [...extra, ...codex] };
   }
   if (pathname === '/api/plugins/workbench/codex/search') {
     return { results: [{
@@ -368,6 +380,18 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(fixture);
       return;
+    }
+    if (url.pathname.startsWith('/dashboard-plugins/workbench/dist/plantuml/')) {
+      const filename = path.basename(url.pathname);
+      try {
+        const body = await readFile(path.join(ROOT, 'dashboard/dist/plantuml', filename));
+        response.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8', 'Content-Length': body.length });
+        response.end(body);
+        return;
+      } catch {
+        response.writeHead(404).end();
+        return;
+      }
     }
     const asset = ASSETS.get(url.pathname);
     if (!asset) {

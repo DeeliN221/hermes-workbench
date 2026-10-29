@@ -1,17 +1,36 @@
-.workbench-user-message-ball {
+/* Each chat pane owns one navigator layer; the layer is the positioning
+   container so the ball never drifts when panes scroll, resize or swipe. */
+.workbench-user-message-layer {
   --umb-surface: var(--dashboard-page-surface, var(--mc-surface, #fff));
   --umb-soft: var(--dashboard-page-surface-soft, var(--mc-raised, #f4f6f4));
   --umb-ink: var(--dashboard-ink, var(--mc-ink, #203345));
   --umb-muted: var(--dashboard-muted, var(--mc-muted, #75838f));
   --umb-line: var(--dashboard-line, var(--mc-line, #dfe5e8));
   --umb-accent: var(--dashboard-accent, var(--mc-accent, #0b9da5));
-  position: fixed;
-  z-index: 68;
+  --umb-clear: 0px;
+  --umb-gap: 14px;
+  --umb-ball-size: 44px;
+  --umb-panel-gap: 10px;
+  --umb-dock: calc(var(--umb-clear) + var(--umb-gap) + var(--umb-ball-size) + var(--umb-panel-gap));
+  position: absolute;
+  inset: 0;
+  z-index: 19;
+  overflow: hidden;
+  pointer-events: none;
+}
+.codex-center.is-user-message-navigator-host {
+  position: relative;
+}
+.workbench-user-message-ball {
+  position: absolute;
+  right: var(--umb-gap);
+  bottom: calc(var(--umb-clear) + var(--umb-gap));
+  z-index: 1;
   display: grid;
   place-items: center;
   box-sizing: border-box;
-  width: 44px;
-  height: 44px;
+  width: var(--umb-ball-size);
+  height: var(--umb-ball-size);
   padding: 0;
   border: 1px solid var(--umb-line);
   border-radius: 999px;
@@ -19,6 +38,7 @@
   background: color-mix(in srgb, var(--umb-surface) 92%, transparent);
   box-shadow: 0 10px 28px #0d1b1f24, 0 2px 6px #0d1b1f18;
   cursor: pointer;
+  pointer-events: auto;
   backdrop-filter: blur(8px);
 }
 .workbench-user-message-ball:hover,
@@ -48,25 +68,22 @@
   text-align: center;
 }
 .workbench-user-message-panel {
-  --umb-surface: var(--dashboard-page-surface, var(--mc-surface, #fff));
-  --umb-soft: var(--dashboard-page-surface-soft, var(--mc-raised, #f4f6f4));
-  --umb-ink: var(--dashboard-ink, var(--mc-ink, #203345));
-  --umb-muted: var(--dashboard-muted, var(--mc-muted, #75838f));
-  --umb-line: var(--dashboard-line, var(--mc-line, #dfe5e8));
-  --umb-accent: var(--dashboard-accent, var(--mc-accent, #0b9da5));
-  position: fixed;
-  z-index: 69;
+  position: absolute;
+  right: var(--umb-gap);
+  bottom: var(--umb-dock);
+  z-index: 2;
   display: flex;
   flex-direction: column;
   box-sizing: border-box;
-  width: min(360px, calc(100vw - 24px));
-  max-height: min(60vh, 520px);
+  width: min(360px, calc(100% - var(--umb-gap) * 2));
+  max-height: min(60vh, 520px, calc(100% - var(--umb-dock) - var(--umb-gap)));
   border: 1px solid var(--umb-line);
   border-radius: 14px;
   background: var(--umb-surface);
   color: var(--umb-ink);
   box-shadow: 0 18px 52px #0d1b1f3d;
   overflow: hidden;
+  pointer-events: auto;
 }
 .workbench-user-message-panel[hidden] { display: none; }
 .workbench-user-message-panel > header {
