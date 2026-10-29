@@ -150,6 +150,19 @@ try {
   assert.ok(headerLayout.pickerLeft < headerLayout.titleLeft, 'The color picker must sit left of the title');
   assert.ok(Math.abs(headerLayout.pickerTop - headerLayout.titleTop) < 16, 'The title and color picker must share one row');
   assert.ok(headerLayout.height <= 52, `The one-line chat header must stay compact; got ${headerLayout.height}px`);
+  await panePage.locator('.codex-pane-color-trigger').click();
+  const colorMenu = panePage.locator('.codex-pane-color-menu');
+  await colorMenu.waitFor({ state: 'visible', timeout: 5000 });
+  const colorGrid = colorMenu.locator('.codex-session-color-grid');
+  assert.equal(await colorGrid.locator('.codex-session-color-swatch').count(), 8, 'The color picker must keep eight cells');
+  assert.equal(await colorGrid.locator('button.codex-session-color-swatch').count(), 7, 'Seven cells are rainbow presets');
+  assert.equal(await colorGrid.locator('input[type="color"]').count(), 1, 'The last cell must open a custom color input');
+  assert.equal(await colorMenu.getByText('Restore default').count(), 0, 'The reset action must be removed');
+  const colorColumns = await colorGrid.evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length);
+  assert.equal(colorColumns, 4, 'The color picker must keep two rows of four cells');
+  await colorGrid.locator('input[type="color"]').fill('#123456');
+  await panePage.waitForFunction(() => document.querySelector('.codex-pane-color-dot')?.getAttribute('style')?.includes('18, 52, 86'));
+  if (await colorMenu.isVisible()) await panePage.locator('.codex-pane-color-trigger').click();
   await panePage.evaluate(() => {
     window.__copiedSessionId = '';
     Object.defineProperty(navigator, 'clipboard', {

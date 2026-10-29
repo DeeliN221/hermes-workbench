@@ -15,10 +15,10 @@ import {
 beforeEach(() => resetSessionColors());
 
 describe('Codex session accent colours', () => {
-  it('ships exactly the eight approved palette entries', () => {
+  it('ships exactly the seven rainbow palette entries', () => {
     expect([...SESSION_COLORS]).toEqual([
-      '#3b82f6', '#14b8a6', '#8b5cf6', '#f59e0b',
-      '#f43f5e', '#22c55e', '#06b6d4', '#f97316',
+      '#ef4444', '#f97316', '#eab308', '#22c55e',
+      '#06b6d4', '#3b82f6', '#8b5cf6',
     ]);
   });
 
