@@ -7,15 +7,6 @@ export function modelKey(value: string): string {
   return id.replace(/-v\d+(?:\.\d+)?(?=-|$)/g, '');
 }
 
-/** Keep only the Codex models exposed by this Workbench. */
-export function filterCodexModels<T extends ModelChoice>(choices: T[]): T[] {
-  return choices.filter(choice => {
-    const id = choice.id.trim().toLowerCase();
-    const model = id.slice(id.lastIndexOf('/') + 1);
-    return /^gpt(?:[-.]|$)/.test(model) || modelKey(id) === 'deepseek-flash';
-  });
-}
-
 /** Resolve the profile's Hermes setting against the live Codex model catalog. */
 export function applyProfileModel<T extends ModelChoice>(choices: T[], config: unknown): T[] {
   const model = (config as { model?: string | { default?: string } } | null)?.model;

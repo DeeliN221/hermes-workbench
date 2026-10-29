@@ -2,7 +2,8 @@
 import type { FetchJSON } from './workbench-api';
 import { record, rows, text, optionalNumber, type AuthedFetch } from './api-values';
 import { loadChatSetup } from './chat-setup';
-import { applyProfileChatDefaults, filterCodexModels } from './profile-model';
+import { applyProfileChatDefaults } from './profile-model';
+import { visibleModels } from './model-visibility';
 import { runtimeErrorText } from './chat-runtime-errors';
 import { uiText } from './ui-locale';
 const API = '/api/plugins/workbench/codex';
@@ -139,7 +140,12 @@ export async function listCodexWorkspaces(read: FetchJSON, profile: string) {
     return path ? [{ id: text(row.id, path), name: text(row.name, path), path }] : [];
   });
 }
-export async function loadCodexModels(read: FetchJSON, profile: string) {
+export interface ChatModelChoice {
+  id: string; label: string; supportsFast: boolean; fastServiceTier?: string;
+  efforts: string[]; defaultEffort: string; isDefault: boolean;
+}
+
+async function readCodexModelChoices(read: FetchJSON, profile: string): Promise<{ choices: ChatModelChoice[]; config: unknown }> {
   const [catalog, config] = await loadChatSetup(read, profile);
   const choices = rows(catalog, 'data', 'models').flatMap(value => {
     const row = record(value), id = text(row.model ?? row.id);
@@ -149,7 +155,17 @@ export async function loadCodexModels(read: FetchJSON, profile: string) {
       efforts: rows(row.supportedReasoningEfforts).map(value => text(record(value).reasoningEffort)).filter(Boolean),
       defaultEffort: text(row.defaultReasoningEffort), isDefault: row.isDefault === true }];
   });
-  return applyProfileChatDefaults(filterCodexModels(choices), config);
+  return { choices, config };
+}
+
+/** Return the complete catalog for settings; chat visibility is applied separately. */
+export async function loadCodexModelCatalog(read: FetchJSON, profile: string) {
+  return (await readCodexModelChoices(read, profile)).choices;
+}
+
+export async function loadCodexModels(read: FetchJSON, profile: string) {
+  const { choices, config } = await readCodexModelChoices(read, profile);
+  return applyProfileChatDefaults(visibleModels(profile, choices), config);
 }
 export async function markCodexSessionRead(read: FetchJSON, profile: string, session: string, readSeq: number) {
   if (readSeq) await read(`${API}/session/read?${sessionQuery(profile, session)}`, json('POST', { profile, readSeq }));
