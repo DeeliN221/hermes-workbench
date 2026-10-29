@@ -13166,7 +13166,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   {
                     type: "button",
                     className: "codex-icon-button codex-pane-close",
-                    onClick: O,
+                    // Closing must not also activate the pane being removed.
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      O();
+                    },
                     "aria-label": runtimeText("关闭当前窗格", "Close current pane"),
                     title: runtimeText("关闭当前窗格", "Close current pane"),
                   },
@@ -13346,12 +13350,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, []),
         D = t((F) => {
           const target = { sessionId: F, hermesSessionId: "" };
-          const activate = (paneId) => {
-            ((x.current = paneId), _(paneId));
-            // Keep the route on the active pane: a later pane-array change
-            // re-runs the deep-link sync and must not pull focus back.
-            window.history.replaceState(null, "", paneTargetUrl(window.location.href, target));
-          };
+          const activate = (paneId) => ((x.current = paneId), _(paneId));
           for (const [j, Q] of y.current)
             if (Q.getTarget().sessionId === F) {
               activate(j);
@@ -13376,10 +13375,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, [m, O, v, _]),
         A = t((F) => {
           const target = { sessionId: "", hermesSessionId: F };
-          const activate = (paneId) => {
-            ((x.current = paneId), _(paneId));
-            window.history.replaceState(null, "", paneTargetUrl(window.location.href, target));
-          };
+          const activate = (paneId) => ((x.current = paneId), _(paneId));
           for (const [j, Q] of y.current)
             if (Q.getTarget().hermesSessionId === F) {
               activate(j);
@@ -13461,7 +13457,19 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         window.addEventListener("popstate", startFromRoute);
         return () => window.removeEventListener("popstate", startFromRoute);
       }, [M, startEmpty]);
-      r(() => installHomeChatNavigation(currentProfile(), { codex: D, hermes: A }), [D, A]);
+      // Subscribe to the deep link once. Re-running this sync every time the
+      // pane array changes would re-open the session from a stale URL and pull
+      // the focus back from the pane the user just opened.
+      const routeHandlers = s({ codex: D, hermes: A });
+      routeHandlers.current = { codex: D, hermes: A };
+      r(
+        () =>
+          installHomeChatNavigation(currentProfile(), {
+            codex: (id) => routeHandlers.current.codex(id),
+            hermes: (id) => routeHandlers.current.hermes(id),
+          }),
+        [],
+      );
       const dropPaneSessions = (event) => {
         const payload = event.dataTransfer?.getData(PANE_DRAG_TYPE);
         if (!payload || payload !== paneDrag.current) return;
