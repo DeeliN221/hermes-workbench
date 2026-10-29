@@ -30,26 +30,29 @@ function byClass(node: unknown, className: string): unknown[] {
 }
 
 describe('response allowance summary', () => {
-  it('prefers the five-hour allowance when available to keep the summary on one line', () => {
+  it('shows only the remaining number for subscriptions, preferring the five-hour window', () => {
     const tree = render({ running: false, duration: 1000, completedAt: 1800000000000,
       quota: { kind: 'google', label: 'Claude', subscription: true, fiveHourRemaining: 0, weeklyRemaining: 47.2 } });
-    expect(text(tree).join(' ')).toContain('Claude 5h left 0%');
-    expect(text(tree).join(' ')).not.toContain('Weekly left');
+    expect(text(tree).join(' ')).toContain('0%');
+    expect(text(tree).join(' ')).not.toContain('5h');
+    expect(text(tree).join(' ')).not.toContain('Weekly');
   });
 
-  it('falls back to the weekly window when no five-hour window exists', () => {
+  it('shows the weekly remaining percentage when no five-hour window exists', () => {
     const tree = render({ running: false, duration: 1000, completedAt: 1800000000000,
       quota: { kind: 'google', label: 'Claude', subscription: true, weeklyRemaining: 47.2 } });
-    expect(text(tree).join(' ')).toContain('Claude Weekly left 47.2%');
+    expect(text(tree).join(' ')).toContain('47.2%');
+    expect(text(tree).join(' ')).not.toContain('Weekly');
   });
 
-  it('does not show an allowance for a direct API model', () => {
+  it('draws a simple dash for non-subscription models', () => {
     const tree = render({ running: false, duration: 1000, completedAt: 1800000000000 });
-    expect(byClass(tree, 'codex-weekly-quota')).toHaveLength(0);
+    expect(text(tree).join(' ')).toContain('—');
   });
 
-  it('keeps the legacy weekly badge for pre-upgrade turns', () => {
+  it('keeps the legacy weekly number for pre-upgrade turns', () => {
     const tree = render({ running: false, duration: 1000, completedAt: 1800000000000, weeklyRemainingPercent: 73 });
-    expect(text(tree).join(' ')).toContain('Weekly left 73%');
+    expect(text(tree).join(' ')).toContain('73%');
+    expect(text(tree).join(' ')).not.toContain('Weekly');
   });
 });

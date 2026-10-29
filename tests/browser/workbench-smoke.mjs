@@ -33,7 +33,7 @@ try {
   const quota = quotaPage.locator('.codex-weekly-quota').first();
   await quota.waitFor({ state: 'attached', timeout: 5000 });
   const quotaText = (await quota.textContent() || '').trim();
-  assert.match(quotaText, /Claude 5h left 0%/);
+  assert.equal(quotaText, '0%');
   assert.deepEqual(quotaErrors, [], `Browser errors in the response allowance:\n${quotaErrors.join('\n')}`);
   await quotaPage.close();
 

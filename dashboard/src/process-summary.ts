@@ -18,23 +18,22 @@ export function ProcessSummary({ React, timing }: { React: ReactHost; timing: Pr
   const h = React.createElement;
   const completed = timing.completedAt === undefined ? null : new Date(timing.completedAt);
   const quota = timing.quota;
-  let quotaPart: string | undefined;
-  if (quota?.fiveHourRemaining !== undefined) {
-    quotaPart = uiText(`5h 剩余 ${quota.fiveHourRemaining}%`, `5h left ${quota.fiveHourRemaining}%`);
-  } else if (quota?.weeklyRemaining !== undefined) {
-    quotaPart = uiText(`周剩余 ${quota.weeklyRemaining}%`, `Weekly left ${quota.weeklyRemaining}%`);
-  }
-  const quotaText = quota
-    ? quotaPart ? `${quota.label} ${quotaPart}` : uiText('额度 —', 'Allowance —')
-    : timing.weeklyRemainingPercent === undefined ? null : uiText(`周剩余 ${timing.weeklyRemainingPercent}%`, `Weekly left ${timing.weeklyRemainingPercent}%`);
+  const remaining = quota?.fiveHourRemaining !== undefined
+    ? quota.fiveHourRemaining
+    : quota?.weeklyRemaining !== undefined
+      ? quota.weeklyRemaining
+      : timing.weeklyRemainingPercent;
+  const quotaText = remaining !== undefined ? `${remaining}%` : '—';
   const fullDetails: string[] = [];
   if (quota?.fiveHourRemaining !== undefined) fullDetails.push(uiText(`5h 剩余 ${quota.fiveHourRemaining}%`, `5h left ${quota.fiveHourRemaining}%`));
   if (quota?.weeklyRemaining !== undefined) fullDetails.push(uiText(`周剩余 ${quota.weeklyRemaining}%`, `Weekly left ${quota.weeklyRemaining}%`));
   const quotaTitle = quota
     ? (fullDetails.length ? `${quota.label} ${fullDetails.join(' · ')}` : uiText(`回答完成时的 ${quota.label} 订阅额度剩余比例`, `${quota.label} subscription allowance remaining when this response completed`))
-    : uiText('回答完成时的 Codex 订阅周额度剩余比例', 'Codex weekly allowance remaining when this response completed');
+    : remaining !== undefined
+      ? uiText('回答完成时的 Codex 订阅周额度剩余比例', 'Codex weekly allowance remaining when this response completed')
+      : uiText('非订阅模型，无额度限制', 'Direct API model without subscription allowance');
   return h('span', { className: 'codex-process-summary' },
     h('span', { 'data-testid': 'codex-tool-duration' }, duration === undefined ? uiText('耗时未知', 'Unknown duration') : uiText(`耗时 ${formatProcessedDuration(duration)}`, `Duration ${formatProcessedDuration(duration)}`)),
     completed ? h('time', { dateTime: completed.toISOString(), className: 'codex-response-time', title: uiText('回答完成时间', 'Response completed at') }, completed.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false })) : null,
-    completed && quotaText ? h('span', { className: 'codex-weekly-quota', title: quotaTitle }, quotaText) : null);
+    completed ? h('span', { className: 'codex-weekly-quota', title: quotaTitle }, quotaText) : null);
 }
