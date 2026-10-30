@@ -168,6 +168,10 @@ async function newPage(browser, host, viewport) {
   await page.goto(host.origin + '/kanban?board=workbench', { waitUntil: 'domcontentloaded' });
   await page.evaluate(markup => {
     document.body.insertAdjacentHTML('beforeend', markup);
+    // The host serves /kanban as a full page; the chat shell is not mounted there.
+    // Hide it so the screenshots show the same content area the operator sees.
+    const shell = document.getElementById('root');
+    if (shell) shell.style.display = 'none';
     const style = document.createElement('style');
     style.textContent = ':root{--wb-line:var(--color-border);--wb-muted:var(--color-muted-foreground);--wb-panel:var(--color-card);--wb-radius:6px}';
     document.head.append(style);
