@@ -218,6 +218,7 @@ try {
   assert.equal(await panePage.evaluate(() => window.__copiedSessionId), 'codex-preview');
   await panePage.locator('.project-temporary .codex-session-row').nth(1).click();
   await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  await panePage.waitForFunction(() => document.querySelectorAll('.codex-session-color-bar').length === 2);
   const splitBars = await panePage.locator('.codex-session-color-bar').evaluateAll(bars => bars.map(bar =>
     bar.closest('.project-session-drag')?.getAttribute('data-session-id') || ''));
   assert.deepEqual([...splitBars].sort(), ['codex-preview', 'codex-regression'],
