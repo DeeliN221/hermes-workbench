@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
-import { compareSessions, createProjectNavigation, partitionProjectSessions, projectDropSession } from '../dashboard/src/project-navigation';
+import {
+  PROJECT_SPLIT_DEFAULT, PROJECT_SPLIT_MAX, PROJECT_SPLIT_MIN,
+  clampProjectSplit, compareSessions, createProjectNavigation, partitionProjectSessions, projectDropSession,
+} from '../dashboard/src/project-navigation';
 
 describe('manual project membership', () => {
   const projects = [{ id: 'one', name: 'Research' }, { id: 'empty', name: 'Empty' }];
@@ -132,4 +135,37 @@ it('keeps independent project actions outside disclosure summaries', () => {
   remove.props.onClick({ preventDefault: vi.fn(), currentTarget: trigger });
   expect(onRename).toHaveBeenCalledWith(project, trigger);
   expect(onDelete).toHaveBeenCalledWith(project);
+});
+
+describe('project and temporary session split', () => {
+  it('keeps both panes usable and falls back to the default for invalid values', () => {
+    expect(clampProjectSplit(PROJECT_SPLIT_MIN - 0.1)).toBe(PROJECT_SPLIT_MIN);
+    expect(clampProjectSplit(PROJECT_SPLIT_MAX + 0.1)).toBe(PROJECT_SPLIT_MAX);
+    expect(clampProjectSplit(Number.NaN)).toBe(PROJECT_SPLIT_DEFAULT);
+    expect(clampProjectSplit(0.5)).toBe(0.5);
+  });
+
+  it('renders an accessible horizontal separator between the two sections', () => {
+    const sdk = {
+      React: {
+        Fragment: 'fragment', useId: () => 'project-split-test',
+        createElement: (type: string, props: any, ...children: any[]) => ({ type, props: props || {}, children: children.flat() }),
+      },
+      hooks: { useState: (value: any) => [value, vi.fn()], useRef: (value: any) => ({ current: value }), useEffect: vi.fn() },
+    };
+    const tree = createProjectNavigation(sdk)({
+      profile: 'default', sessions: [], projects: [], activeSessionId: '',
+      renderSession: vi.fn(), onCreate: vi.fn(), onNewSession: vi.fn(), onRename: vi.fn(), onDelete: vi.fn(), onMove: vi.fn(),
+    });
+    const split = tree.children[0];
+    expect(split.props.className).toContain('project-navigation-split');
+    expect(split.children.map((child: any) => child.props.className)).toEqual([
+      'project-navigation', 'project-navigation-resizer', 'project-temporary',
+    ]);
+    const separator = split.children[1];
+    expect(separator.props.role).toBe('separator');
+    expect(separator.props['aria-orientation']).toBe('horizontal');
+    expect(separator.props['aria-valuenow']).toBe(Math.round(PROJECT_SPLIT_DEFAULT * 100));
+    expect(separator.props.tabIndex).toBe(0);
+  });
 });
