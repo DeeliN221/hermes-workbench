@@ -15,6 +15,29 @@ export interface ProjectSession {
 export interface SessionProject { id: string; name: string }
 export const PANE_DRAG_TYPE = 'application/x-hermes-pane-sessions';
 export const SESSION_DRAG_TYPE = 'application/x-hermes-project-session';
+export const PROJECT_SPLIT_DEFAULT = 0.56;
+export const PROJECT_SPLIT_MIN = 0.18;
+export const PROJECT_SPLIT_MAX = 1 - PROJECT_SPLIT_MIN;
+const PROJECT_SPLIT_STORAGE_KEY = 'hermes-workbench-project-session-split';
+const PROJECT_SPLIT_RESIZER_HEIGHT = 11;
+const PROJECT_SPLIT_PANE_MIN_HEIGHT = 72;
+
+/** Keep the divider usable while leaving both sections room to scroll. */
+export function clampProjectSplit(value: number): number {
+  if (!Number.isFinite(value)) return PROJECT_SPLIT_DEFAULT;
+  return Math.min(PROJECT_SPLIT_MAX, Math.max(PROJECT_SPLIT_MIN, value));
+}
+
+function readProjectSplit(): number {
+  try {
+    const stored = Number.parseFloat(window.localStorage.getItem(PROJECT_SPLIT_STORAGE_KEY) || '');
+    return Number.isFinite(stored) ? clampProjectSplit(stored) : PROJECT_SPLIT_DEFAULT;
+  } catch { return PROJECT_SPLIT_DEFAULT; }
+}
+
+function storeProjectSplit(value: number): void {
+  try { window.localStorage.setItem(PROJECT_SPLIT_STORAGE_KEY, String(value)); } catch { /* storage is optional */ }
+}
 
 /** Normalize a creation timestamp to milliseconds; missing or invalid values return null. */
 function sessionCreatedAt(session: ProjectSession): number | null {
@@ -114,6 +137,8 @@ export function createProjectNavigation(sdk: Record<string, any>) {
     const [dropTarget, setDropTarget] = useState(undefined);
     const [notice, setNotice] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
+    const [projectSplit, setProjectSplit] = useState(readProjectSplit());
+    const [resizingSplit, setResizingSplit] = useState(false);
     const initialCollapsed = typeof document !== 'undefined'
       && document.documentElement.dataset.workbenchNavCollapsed === 'true';
     const [collapsed, setCollapsed] = useState(initialCollapsed);
@@ -121,6 +146,9 @@ export function createProjectNavigation(sdk: Record<string, any>) {
     const [railTop, setRailTop] = useState(12);
     const historyTrigger = useRef(null);
     const railFlyout = useRef(null as HTMLElement | null);
+    const splitLayout = useRef(null as HTMLDivElement | null);
+    const splitValue = useRef(projectSplit);
+    const splitDrag = useRef(null as { pointerId: number; startY: number; startRatio: number; usable: number } | null);
     const historyId = sdk.React.useId();
     const moving = useRef(false);
     const folders = useRef(new Map<string, HTMLDetailsElement>());
@@ -155,6 +183,49 @@ export function createProjectNavigation(sdk: Record<string, any>) {
       }
     }, [activeProjectId, props.activeSessionId]);
     const { groups, temporary } = partitionProjectSessions(sessions, projects);
+    splitValue.current = projectSplit;
+    const applyProjectSplit = (value: number) => {
+      const next = clampProjectSplit(value);
+      splitValue.current = next;
+      setProjectSplit(next);
+      return next;
+    };
+    const startSplitDrag = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      const layout = splitLayout.current;
+      if (!layout) return;
+      const height = layout.getBoundingClientRect().height - PROJECT_SPLIT_RESIZER_HEIGHT;
+      if (height <= 0) return;
+      event.preventDefault();
+      splitDrag.current = {
+        pointerId: event.pointerId, startY: event.clientY, startRatio: splitValue.current, usable: height,
+      };
+      setResizingSplit(true);
+      (event.currentTarget as HTMLElement).setPointerCapture?.(event.pointerId);
+    };
+    const moveSplitDrag = (event: PointerEvent) => {
+      const drag = splitDrag.current;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const edge = Math.min(0.45, PROJECT_SPLIT_PANE_MIN_HEIGHT / drag.usable);
+      applyProjectSplit(Math.min(1 - edge, Math.max(edge, drag.startRatio + (event.clientY - drag.startY) / drag.usable)));
+    };
+    const endSplitDrag = (event: PointerEvent) => {
+      const drag = splitDrag.current;
+      if (!drag || (event.pointerId !== undefined && drag.pointerId !== event.pointerId)) return;
+      storeProjectSplit(splitValue.current);
+      splitDrag.current = null;
+      setResizingSplit(false);
+      (event.currentTarget as HTMLElement).releasePointerCapture?.(event.pointerId);
+    };
+    const keyProjectSplit = (event: KeyboardEvent) => {
+      const step = event.shiftKey ? 0.08 : 0.03;
+      let next: number | null = null;
+      if (event.key === 'ArrowUp') next = splitValue.current - step;
+      else if (event.key === 'ArrowDown') next = splitValue.current + step;
+      if (next === null) return;
+      event.preventDefault();
+      storeProjectSplit(applyProjectSplit(next));
+    };
     const dropProps = (projectId: string | null) => ({
       onDragOver: (event: DragEvent) => {
         if (!event.dataTransfer?.types.includes(SESSION_DRAG_TYPE) || moving.current) return;
@@ -235,7 +306,9 @@ export function createProjectNavigation(sdk: Record<string, any>) {
         notice ? h('p', { className: 'project-rail-notice', role: 'status' }, notice) : null);
     }
     return h(sdk.React.Fragment, null,
-      h('section', { className: 'project-navigation', 'aria-label': sourceText("项目", "Projects") },
+      h('div', { className: `project-navigation-split${resizingSplit ? ' is-resizing' : ''}`, ref: splitLayout },
+      h('section', { className: 'project-navigation', 'aria-label': sourceText("项目", "Projects"),
+        style: { flexBasis: `calc((100% - ${PROJECT_SPLIT_RESIZER_HEIGHT}px) * ${projectSplit})` } },
         h('div', { className: 'project-section-heading' }, h('span', null, sourceText("项目", "Projects")),
           h('div', { className: 'project-heading-actions' },
           h('button', { type: 'button', className: 'project-history-toggle', ref: historyTrigger,
@@ -272,13 +345,21 @@ export function createProjectNavigation(sdk: Record<string, any>) {
             h('button', { type: 'button', title: sourceText("删除项目", "Delete project"), 'aria-label': sourceText(`删除项目：${project.name}`, `Delete project: ${project.name}`),
               onClick: (event: MouseEvent) => { event.preventDefault(); props.onDelete(project); } }, icon('M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14'))))),
         groups.length ? null : h('p', { className: 'project-empty' }, sourceText("新建项目后，将会话拖入整理", "Create a project, then drag in sessions to organize them")))),
+      h('div', { className: 'project-navigation-resizer', role: 'separator', 'aria-orientation': 'horizontal',
+        'aria-label': sourceText("调整项目与临时会话的高度", "Resize projects and temporary sessions"),
+        'aria-valuemin': Math.round(PROJECT_SPLIT_MIN * 100), 'aria-valuemax': Math.round(PROJECT_SPLIT_MAX * 100),
+        'aria-valuenow': Math.round(projectSplit * 100), tabIndex: 0,
+        title: sourceText("拖动调整项目与临时会话的高度", "Drag to resize projects and temporary sessions"),
+        onPointerDown: startSplitDrag, onPointerMove: moveSplitDrag, onPointerUp: endSplitDrag,
+        onPointerCancel: endSplitDrag, onLostPointerCapture: endSplitDrag, onKeyDown: keyProjectSplit },
+        h('span', { className: 'project-navigation-resizer-grip', 'aria-hidden': true })),
       h('section', { className: `project-temporary${dropTarget === null ? ' is-drop-target' : ''}`,
         'aria-label': sourceText("临时会话", "Temporary sessions"), ...dropProps(null) },
         h('div', { className: 'project-section-heading' }, h('span', null, sourceText("临时会话", "Temporary sessions")),
           h('button', { type: 'button', className: 'project-create', title: sourceText("新建临时会话", "New temporary session"), 'aria-label': sourceText("新建临时会话", "New temporary session"),
             onClick: props.onNewSession }, icon('M12 5v14M5 12h14'))),
         ...temporary.map(row),
-        temporary.length ? null : h('p', { className: 'project-empty' }, sourceText("未加入项目的会话显示在这里", "Sessions outside projects appear here"))),
+        temporary.length ? null : h('p', { className: 'project-empty' }, sourceText("未加入项目的会话显示在这里", "Sessions outside projects appear here")))),
       notice ? h('p', { className: 'project-empty', role: 'status' }, notice) : null);
   };
 }

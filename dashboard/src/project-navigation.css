@@ -55,6 +55,44 @@
 .project-folder-row:hover .project-count, .project-folder-row:focus-within .project-count { display: none; }
 .project-folder > .project-session-drag { margin-left: 15px; border-left: 1px solid var(--dashboard-line); padding-left: 3px; }
 .project-temporary { margin-top: 14px; border-radius: 10px; min-height: 78px; }
+/* Split the project folders from temporary sessions so each section scrolls
+   on its own. The divider is a real separator: pointer, keyboard and reset. */
+#dashboard-workbench-sessions .codex-session-list:has(> .project-navigation-split) {
+  display: flex !important; flex-direction: column; overflow: hidden;
+}
+.project-navigation-split { display: flex; flex: 1 1 auto; flex-direction: column; min-height: 0; }
+.project-navigation-split > .project-navigation,
+.project-navigation-split > .project-temporary {
+  min-height: 72px; overflow-y: auto; overflow-x: hidden;
+  overscroll-behavior: contain; scrollbar-width: thin;
+}
+.project-navigation-split > .project-navigation { flex: 0 0 auto; }
+#dashboard-workbench-sessions .project-navigation-split > .project-temporary {
+  flex: 1 1 0; margin-top: 0;
+}
+.project-navigation-split .project-list { max-height: none; overflow: visible; }
+.project-navigation-split .project-section-heading {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--dashboard-nav-surface, var(--mc-nav, #deddd5));
+}
+.project-navigation-resizer {
+  position: relative; flex: 0 0 11px; width: 100%; min-height: 11px;
+  cursor: row-resize; touch-action: none;
+}
+.project-navigation-resizer::before {
+  content: ""; position: absolute; top: 5px; right: 8px; left: 8px; height: 1px;
+  background: var(--dashboard-line-soft, var(--dashboard-line));
+}
+.project-navigation-resizer-grip {
+  position: absolute; top: 3px; left: 50%; width: 44px; height: 5px; margin-left: -22px;
+  border-radius: 2px; background: var(--dashboard-line);
+  box-shadow: 0 0 0 2px var(--dashboard-nav-surface, var(--mc-nav, #deddd5));
+}
+.project-navigation-resizer:hover .project-navigation-resizer-grip,
+.project-navigation-resizer:focus-visible .project-navigation-resizer-grip,
+.project-navigation-split.is-resizing .project-navigation-resizer-grip { background: var(--dashboard-accent); }
+.project-navigation-resizer:focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: -2px; }
+.project-navigation-split.is-resizing { cursor: row-resize; user-select: none; }
 .project-empty { margin: 0; padding: 8px 10px 12px; color: var(--dashboard-muted); font-size: 12px; line-height: 1.6; white-space: normal; }
 .is-drop-target { background: var(--dashboard-active); outline: 2px dashed var(--dashboard-accent, #71818b); outline-offset: -2px; }
 .project-session-drag[draggable="true"] { cursor: grab; }
