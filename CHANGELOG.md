@@ -2,28 +2,50 @@
 
 ## Unreleased
 
+- Answer /healthz with {"ok":true} so liveness probes pass while the release assets that /health requires are still missing.
 - Fold completed chat work to one summary line and open it as a bounded scroll window whose height follows the detail level, so long reasoning and tool output no longer stretch the transcript.
 - Answer the Codex runtime status check from cached metadata and move release lookups into the background, so a slow GitHub request no longer times out the health monitor or blocks the version page.
 - Let projects and temporary sessions share the sidebar with a draggable divider that remembers the chosen split.
 - Answer a Workbench update window with a retryable 503 and replay the rejected Codex submission, so a prompt sent mid-update no longer stays "待确认" forever.
 - Hide profile directories without profile identity from the agent roster, so a removed profile can no longer report that its sessions failed to load.
+- Show session accent bars only for sessions open in a split view instead of colouring every sidebar card.
+
+## v20261030-1
+
 - Share custom chat model display names across every profile instead of storing one alias set per profile, and migrate existing aliases into the shared set on first load.
 - Regroup the settings navigation into Preferences, Agent, Maintenance, and a collapsed More section instead of one flat sixteen-link list.
+
+## v20261029-1
+
 - Search every Codex session by message content as well as title and id, and merge Hermes full-text history hits into the same session picker.
-- Expand profile choices inline beneath the sidebar profile control instead of opening a modal.
-- Prefill card discussions directly with a short, editable `Check task <id>` prompt instead of showing a card prompt panel or sending a fixed brainstorm request.
-- Add the versioned `standard@1` Kanban card form and structured drawer editor, with explicit review mode metadata.
-- Exclude Kanban worker runs from recent home so task retries no longer appear as unread conversations.
-- Persist recent-home read state on the server so acknowledgements follow the account across browsers.
-- Show terminal Codex turn errors on recent cards instead of claiming the request is not cached.
-- Render PlantUML locally with the bundled browser engine instead of a remote server.
-- Keep diagram source inside the browser and remove the PlantUML endpoint setting.
-- Reconcile streaming Markdown updates so trailing PlantUML fences render from the complete message.
-- Give each Codex session a persistent accent colour shared by its pane header and temporary-session card.
-- Show session accent bars only for sessions open in a split view instead of colouring every sidebar card.
+
+## v20261028-1
+
 - Limit the project list to five rows, scroll longer lists, and order projects and sessions by recent activity.
 - Keep chat headers on one line and move session-id copying into temporary-session menus.
 - Retry explicit Codex capacity failures in the background with the original request identity and backoff.
+
+## v20261027-1
+
+- Expand profile choices inline beneath the sidebar profile control instead of opening a modal.
+
+## v20261023-1
+
+- Prefill card discussions directly with a short, editable `Check task <id>` prompt instead of showing a card prompt panel or sending a fixed brainstorm request.
+- Add the versioned `standard@1` Kanban card form and structured drawer editor, with explicit review mode metadata.
+- Give each Codex session a persistent accent colour shared by its pane header and temporary-session card.
+
+## v20261022-1
+
+- Exclude Kanban worker runs from recent home so task retries no longer appear as unread conversations.
+- Persist recent-home read state on the server so acknowledgements follow the account across browsers.
+- Show terminal Codex turn errors on recent cards instead of claiming the request is not cached.
+- Reconcile streaming Markdown updates so trailing PlantUML fences render from the complete message.
+
+## v20261021-1
+
+- Render PlantUML locally with the bundled browser engine instead of a remote server.
+- Keep diagram source inside the browser and remove the PlantUML endpoint setting.
 
 ## Fresh public source snapshot
 
@@ -32,7 +54,7 @@
 - Preserve existing functionality and private recovery copies separately.
 - Entries below describe earlier development releases; their tags are not imported into the fresh repository.
 
-Versions follow SemVer. GitHub release notes summarize pull requests and commits between release tags.
+Releases after the snapshot use date tags (vYYYYMMDD-N); the sections below keep their original SemVer headings. GitHub release notes summarize the pull requests between tags.
 
 ## 0.12.0
 
