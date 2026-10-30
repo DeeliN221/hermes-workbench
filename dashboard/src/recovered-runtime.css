@@ -6401,32 +6401,6 @@ body[data-theme*="dark"] .hti-rich-markdown {
 .codex-tool-group[open] > .codex-tool-heading > .codex-ui-icon {
   transform: rotate(90deg);
 }
-.codex-tool-preview {
-  flex: 1 1 100%;
-  min-width: 0;
-  overflow: hidden;
-  color: var(--codex-muted);
-  font-size: 0.72rem;
-  font-weight: 400;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.codex-detail-more {
-  display: inline-flex;
-  align-items: center;
-  margin: 0.35rem 0 0;
-  border: 0;
-  padding: 0;
-  color: var(--codex-accent);
-  background: transparent;
-  cursor: pointer;
-  font: inherit;
-  font-size: 0.72rem;
-  font-weight: 600;
-}
-.codex-detail-more:hover {
-  text-decoration: underline;
-}
 .codex-tool-output-body {
   display: grid;
   justify-items: start;
@@ -6435,6 +6409,14 @@ body[data-theme*="dark"] .hti-rich-markdown {
 .codex-process-content {
   margin-top: 0.5rem;
   padding-left: 1.125rem;
+}
+/* Long reasoning and tool output scroll inside one bounded window instead of
+   stretching the transcript. The detail level supplies the height cap inline. */
+.codex-process-window {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-color: var(--mc-line, #c6d7e8) transparent;
+  scrollbar-width: thin;
 }
 .codex-process-text {
   margin: 0;
