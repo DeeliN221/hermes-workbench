@@ -162,6 +162,8 @@ try {
   await panePage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await panePage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
   await panePage.waitForFunction(() => document.querySelectorAll('.project-folder-row').length === 6);
+  assert.equal(await panePage.locator('.codex-session-color-bar').count(), 0,
+    'A single pane must not show session accent bars');
   assert.equal(await panePage.locator('.codex-session-id').count(), 0, 'The session id must not occupy a second header line');
   assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip');
   const projectList = await panePage.locator('.project-list').evaluate(node => ({
@@ -216,8 +218,16 @@ try {
   assert.equal(await panePage.evaluate(() => window.__copiedSessionId), 'codex-preview');
   await panePage.locator('.project-temporary .codex-session-row').nth(1).click();
   await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  const splitBars = await panePage.locator('.codex-session-color-bar').evaluateAll(bars => bars.map(bar =>
+    bar.closest('.project-session-drag')?.getAttribute('data-session-id') || ''));
+  assert.deepEqual([...splitBars].sort(), ['codex-preview', 'codex-regression'],
+    'Split view must mark exactly the open session cards');
   const paneProfiles = await panePage.locator('.codex-pane-slot [data-profile]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-profile')));
   assert.deepEqual(paneProfiles, ['default', 'default'], 'Panes must stay within one profile');
+  await panePage.locator('.codex-pane-slot').nth(1).locator('.codex-pane-close').click();
+  await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 1);
+  assert.equal(await panePage.locator('.codex-session-color-bar').count(), 0,
+    'Closing the split pane must hide session accent bars');
   await panePage.evaluate(() => {
     const url = new URL(location.href);
     url.searchParams.set('profile', 'writer');
