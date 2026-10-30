@@ -175,10 +175,11 @@ try {
     overflowY: getComputedStyle(node).overflowY,
   }));
   assert.equal(projectList.count, 6, 'The preview must exercise more than five projects');
-  assert.equal(projectList.overflowY, 'auto');
-  assert.equal(projectList.clientHeight, 200, 'The project list must show five 40px project rows');
-  assert.ok(projectList.scrollHeight > projectList.clientHeight, 'The project list must scroll when it exceeds five rows');
+  assert.equal(projectList.overflowY, 'visible', 'The project pane, not the inner list, owns scrolling');
+  assert.equal(projectList.clientHeight, 240, 'All six 40px project rows must render inside the project pane');
+  assert.equal(projectList.scrollHeight, projectList.clientHeight, 'The inner project list must not clip rows');
   assert.ok(projectList.scrollWidth <= projectList.clientWidth, 'The project list must not scroll horizontally');
+  assert.equal(await panePage.locator('.project-navigation-resizer').count(), 1, 'Each split has one draggable separator');
   const headerLayout = await panePage.evaluate(() => {
     const picker = document.querySelector('.codex-pane-color-picker')?.getBoundingClientRect();
     const title = document.querySelector('.codex-center-title')?.getBoundingClientRect();
