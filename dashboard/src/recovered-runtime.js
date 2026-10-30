@@ -63,6 +63,7 @@ import { visibleChatText } from './chat-line-output';
 import { clipChatText, lastChatLine, readChatDetailMode } from './chat-detail';
 import { resolveSessionTitle } from './session-title';
 import { SESSION_COLORS, SESSION_COLOR_LABELS, primeSessionColors, saveSessionColor, sessionColor, subscribeSessionColors } from './session-colors';
+import { MAX_SESSION_TITLE_LENGTH, primeSessionTitles, rememberDerivedSessionTitle, renameSessionTitle, sessionTitleEntry, sessionTitleErrorMessage, subscribeSessionTitles } from './session-titles';
 import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
 /** Maintain the complete buildable Workbench runtime; locate sidebar grouping via hti-session-group-toggle. */
 (function () {
@@ -9437,10 +9438,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function Xo(i) {
     return i.length < f5;
   }
-  function O5(i, e, t) {
-    if (!Xo(i)) return [...i];
-    const r = i.findIndex((n) => n.id === t);
-    return r < 0 ? [...i, e] : [...i.slice(0, r + 1), e, ...i.slice(r + 1)];
+  // New panes always join at the rightmost end; the visual order never jumps.
+  function O5(i, e) {
+    return [...i, e];
+  }
+  // Clicking a session must never be refused: below the limit the pane is
+  // appended at the right, at the limit the rightmost pane is swapped for a
+  // brand new pane (a fresh id keeps the previous transcript, drafts and
+  // scroll position from leaking into the new session).
+  function openSessionPane(i, e) {
+    if (Xo(i)) return { panes: [...i, e], replacedPaneId: "" };
+    return {
+      panes: [...i.slice(0, i.length - 1), e],
+      replacedPaneId: i[i.length - 1].id,
+    };
   }
   function g5(i, e, t) {
     if (i.length <= 1) return { panes: [...i], activePaneId: t };
@@ -9960,6 +9971,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function w0(i) {
     return i.title === i.id ? runtimeText("未命名会话", "Untitled session") : i.title;
   }
+  /** A local rename wins over the last polled list until the server catches up. */
+  function sessionDisplayTitle(profile, session) {
+    const entry = sessionTitleEntry(profile, session.id);
+    if (!entry) return w0(session);
+    // A transcript default only fills the gap while the list has no name yet.
+    if (entry.source === "derived" && session.title && session.title !== session.id) return w0(session);
+    return entry.title || runtimeText("未命名会话", "Untitled session");
+  }
   function $5(i) {
     return i.status === "running"
       ? { className: "is-running", label: runtimeText("正在响应", "Responding") }
@@ -10210,6 +10229,82 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         )
       );
     }
+    /** One rename dialog for both the session card menu and the pane header. */
+    function SessionTitleDialog({ target, dialogRef, inputRef, value, error, saving, onCancel, onChange, onSubmit }) {
+      return (
+        r(() => {
+          const node = dialogRef.current;
+          if (!node) return;
+          (node.open || node.showModal(),
+            window.requestAnimationFrame(() => {
+              const input = inputRef.current;
+              input && (input.focus(), input.select());
+            }));
+          return () => {
+            node.open && node.close();
+          };
+        }, [target, dialogRef, inputRef]),
+        W(
+          e,
+          "dialog",
+          {
+            ref: dialogRef,
+            className: "codex-navigation-dialog-backdrop",
+            "aria-labelledby": "codex-session-title-dialog-title",
+            onCancel: onCancel,
+            onMouseDown: (event) => {
+              event.target === event.currentTarget && onCancel(event);
+            },
+          },
+          W(
+            e,
+            "section",
+            { className: "codex-navigation-dialog codex-session-title-dialog" },
+            W(
+              e,
+              "h2",
+              { id: "codex-session-title-dialog-title" },
+              runtimeText("重命名会话", "Rename session"),
+            ),
+            W(e, "input", {
+              ref: inputRef,
+              value: value,
+              name: "session-title",
+              placeholder: runtimeText("会话标题", "Session title"),
+              "aria-label": runtimeText("会话标题", "Session title"),
+              onChange: onChange,
+              onKeyDown: (event) => {
+                event.key === "Enter" && (event.preventDefault(), onSubmit());
+              },
+            }),
+            W(
+              e,
+              "p",
+              { className: "codex-session-title-hint" },
+              runtimeText(
+                `留空保存可恢复默认标题。最多 ${MAX_SESSION_TITLE_LENGTH} 个字符。`,
+                `Leave it empty to restore the default title. Up to ${MAX_SESSION_TITLE_LENGTH} characters.`,
+              ),
+            ),
+            error
+              ? W(e, "div", { className: "codex-navigation-dialog-error", role: "alert" }, error)
+              : null,
+            W(
+              e,
+              "div",
+              { className: "codex-navigation-dialog-actions" },
+              W(e, "button", { type: "button", onClick: onCancel, disabled: saving }, runtimeText("取消", "Cancel")),
+              W(
+                e,
+                "button",
+                { type: "button", className: "is-primary", onClick: onSubmit, disabled: saving },
+                saving ? runtimeText("保存中…", "Saving…") : runtimeText("保存", "Save"),
+              ),
+            ),
+          ),
+        )
+      );
+    }
     function d({
       paneId: f,
       initialSessionId: S,
@@ -10330,6 +10425,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [Y0, Pt] = o(""),
         [paneColorMenu, setPaneColorMenu] = o(!1),
         [, bumpSessionColors] = o(0),
+        [renameTarget, setRenameTarget] = o(null),
+        [renameDraft, setRenameDraft] = o(""),
+        [renameError, setRenameError] = o(""),
+        [renameSaving, setRenameSaving] = o(!1),
+        [, bumpSessionTitles] = o(0),
         [G0, Hl] = o(""),
         [vM, yM] = o(0),
         [Ls, Ms] = o(!1),
@@ -10347,6 +10447,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         jd = s(null),
         Fd = s(null),
         Ul = s(new Map()),
+        renameDialogRef = s(null),
+        renameInputRef = s(null),
         colorTrigger = s(null),
         Hi = s(!0),
         kr = s(M);
@@ -10387,6 +10489,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           );
         }, [p]),
         r(() => subscribeSessionColors(() => bumpSessionColors(value => value + 1)), []),
+        r(() => subscribeSessionTitles(() => bumpSessionTitles(value => value + 1)), []),
         r(() => {
           const updateDetail = () => setChatDetail(readChatDetailMode());
           window.addEventListener("storage", updateDetail);
@@ -10735,6 +10838,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               G(previous => stableChatList(previous, Ge));
               primeSessionColors(M, $e);
               primeSessionColors(M, Ge);
+              primeSessionTitles(M, $e);
+              primeSessionTitles(M, Ge);
               const zt = Y.current;
               if (zt && Ge.some((Ke) => Ke.id === zt))
                 Kl(runtimeText("当前会话已归档，已停止发送；可在“已归档”中恢复。", "This session is archived and sending is disabled. Restore it from Archived."));
@@ -10894,7 +10999,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   profile: M,
                   sessionId: k,
                 });
-                const Ie = ue.messages.find(($e) => $e.role === "user");
+                const Ie = ue.messages.find(($e) => $e.role === "user"),
+                  serverTitle = ue.session?.title && ue.session.title !== k ? ue.session.title : "";
+                // A transcript that loads before the session list must still name
+                // an untitled session, so the sidebar does not fall back to the id.
+                !serverTitle &&
+                  Ie?.content &&
+                  rememberDerivedSessionTitle(M, k, resolveSessionTitle({ id: k, title: k }, ue.session, Ie.content));
                 (Ie?.content &&
                   $(($e) =>
                     $e.map((ze) =>
@@ -11749,6 +11860,39 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           [wn, M],
         ),
         DM = t(async (L) => !!(await Gd(L)), [Gd]),
+        closeSessionRename = t(() => {
+          (setRenameTarget(null), setRenameDraft(""), setRenameError(""), setRenameSaving(!1));
+        }, []),
+        openSessionRename = t((L) => {
+          if (!L) return;
+          (Ce(""),
+            setRenameError(""),
+            setRenameDraft(sessionTitleEntry(M, L.id)?.title || ""),
+            setRenameTarget({ id: L.id }));
+        }, [M]),
+        submitSessionRename = t(async () => {
+          if (!renameTarget || renameSaving) return;
+          const L = renameTarget.id,
+            U = renameDraft;
+          (setRenameSaving(!0), setRenameError(""));
+          try {
+            const ee = await renameSessionTitle(i.fetchJSON, M, L, U);
+            if (!Hi.current || kr.current !== M) return;
+            if (ee) {
+              $((ne) => ne.map((xe) => (xe.id === ee.id ? { ...xe, ...ee } : xe)));
+              // A cleared title returns to the first-message default already on screen.
+              if (!ee.customTitle && L === Y.current) {
+                const ne = It.find((xe) => xe.role === "user");
+                ne?.content && rememberDerivedSessionTitle(M, L, ne.content);
+              }
+            }
+            (Re(runtimeText("会话标题已更新", "Session title updated")), closeSessionRename());
+          } catch (ee) {
+            Hi.current && kr.current === M && setRenameError(sessionTitleErrorMessage(ee));
+          } finally {
+            Hi.current && kr.current === M && setRenameSaving(!1);
+          }
+        }, [closeSessionRename, renameDraft, renameSaving, renameTarget, M, i.fetchJSON]),
         fv = t((L) => {
           (Ce(""),
             (jd.current = L || null),
@@ -11967,7 +12111,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         ),
         ic = (L, U = !1) => {
           const ee = $5(L),
-            ne = w0(L),
+            ne = sessionDisplayTitle(M, L),
             xe = ae === L.id;
           return W(
             e,
@@ -12117,6 +12261,16 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                           {
                             type: "button",
                             role: "menuitem",
+                            onClick: () => openSessionRename(L),
+                          },
+                          runtimeText("重命名", "Rename"),
+                        ),
+                        W(
+                          e,
+                          "button",
+                          {
+                            type: "button",
+                            role: "menuitem",
                             onClick: () => LM(L),
                           },
                           L.favorite ? runtimeText("取消收藏", "Remove favorite") : runtimeText("收藏", "Favorite"),
@@ -12165,6 +12319,19 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         KM = ec.length ? W(e, "details", { className: "codex-archived-group" },
           W(e, "summary", { className: "codex-workspace-title" }, runtimeText("已归档", "Archived"), W(e, "span", null, ec.length)),
           ...ec.map((session) => ic(session, true))) : null,
+        renameDialog = renameTarget
+          ? W(e, SessionTitleDialog, {
+              target: renameTarget,
+              dialogRef: renameDialogRef,
+              inputRef: renameInputRef,
+              value: renameDraft,
+              error: renameError,
+              saving: renameSaving,
+              onCancel: closeSessionRename,
+              onChange: (L) => setRenameDraft(L.target.value),
+              onSubmit: submitSessionRename,
+            })
+          : null,
         JM = be
           ? W(e, h, {
               dialog: be,
@@ -13045,7 +13212,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               ),
             )
           : null,
-        kv = B ? PM?.title || B : ei ? w0(ei) : runtimeText("新会话", "New session"),
+        kv = B ? PM?.title || B : ei ? sessionDisplayTitle(M, ei) : runtimeText("新会话", "New session"),
         nc = Ts || !!B,
         dD = W(
           e,
@@ -13143,6 +13310,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 { className: "codex-center-title", title: kv },
                 kv,
               ),
+              k && !B
+                ? W(
+                    e,
+                    "button",
+                    {
+                      type: "button",
+                      className: "codex-icon-button codex-session-rename",
+                      onClick: () => openSessionRename(ei || { id: k }),
+                      "aria-label": runtimeText("重命名会话", "Rename session"),
+                      title: runtimeText("重命名会话", "Rename session"),
+                    },
+                    "✎",
+                  )
+                : null,
               B
                 ? W(
                     e,
@@ -13164,7 +13345,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   {
                     type: "button",
                     className: "codex-icon-button codex-pane-close",
-                    onClick: O,
+                    // Closing must not also activate the pane being removed.
+                    onClick: (event) => {
+                      event.stopPropagation();
+                      O();
+                    },
                     "aria-label": runtimeText("关闭当前窗格", "Close current pane"),
                     title: runtimeText("关闭当前窗格", "Close current pane"),
                   },
@@ -13266,6 +13451,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         iD,
         dD,
         fD,
+        renameDialog,
         JM,
         eD,
         tD,
@@ -13388,61 +13574,67 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           j?.target?.closest?.(".codex-sidebar") || ((x.current = F), _(F));
         }, []),
         D = t((F) => {
+          const target = { sessionId: F, hermesSessionId: "" };
+          const activate = (paneId) => ((x.current = paneId), _(paneId));
           for (const [j, Q] of y.current)
             if (Q.getTarget().sessionId === F) {
-              ((x.current = j), _(j));
+              activate(j);
               return;
             }
           const current = y.current.get(x.current);
           if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectSession(F);
+            activate(x.current);
             return;
           }
-          if (!Xo(m)) {
-            setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
-            return;
-          }
+          // A full workspace swaps its rightmost pane instead of refusing.
           const pane = { id: p5(m), initialSessionId: F, initialHermesSessionId: "" };
-          const panes = O5(m, pane, x.current);
-          O(panes);
-          v(currentState => ({ ...currentState, [pane.id]: { sessionId: F, hermesSessionId: "" } }));
-          x.current = pane.id;
-          _(pane.id);
+          const next = openSessionPane(m, pane);
+          O(next.panes);
+          v((currentState) => {
+            const state = { ...currentState, [pane.id]: target };
+            if (next.replacedPaneId) delete state[next.replacedPaneId];
+            return state;
+          });
+          activate(pane.id);
         }, [m, O, v, _]),
         A = t((F) => {
+          const target = { sessionId: "", hermesSessionId: F };
+          const activate = (paneId) => ((x.current = paneId), _(paneId));
           for (const [j, Q] of y.current)
             if (Q.getTarget().hermesSessionId === F) {
-              ((x.current = j), _(j));
+              activate(j);
               return;
             }
           const current = y.current.get(x.current);
           if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectHermesHistory(F);
+            activate(x.current);
             return;
           }
-          if (!Xo(m)) {
-            setPaneDropNotice(runtimeText("已打开三个会话，请先关闭一个窗格再打开历史会话。", "Three sessions are open. Close a pane before opening another history session."));
-            return;
-          }
+          // A full workspace swaps its rightmost pane instead of refusing.
           const pane = { id: p5(m), initialSessionId: "", initialHermesSessionId: F };
-          const panes = O5(m, pane, x.current);
-          O(panes);
-          v(currentState => ({ ...currentState, [pane.id]: { sessionId: "", hermesSessionId: F } }));
-          x.current = pane.id;
-          _(pane.id);
+          const next = openSessionPane(m, pane);
+          O(next.panes);
+          v((currentState) => {
+            const state = { ...currentState, [pane.id]: target };
+            if (next.replacedPaneId) delete state[next.replacedPaneId];
+            return state;
+          });
+          activate(pane.id);
         }, [m, O, v, _]),
         R = t((workspaceId) => {
           y.current.get(x.current)?.startNewSession(workspaceId);
         }, []),
         M = t(
-          (F = "", j = x.current) => {
+          (F = "") => {
             if (!Xo(m)) return;
             const Q = {
                 id: p5(m),
                 initialSessionId: F,
                 initialHermesSessionId: "",
               },
-              k = O5(m, Q, j);
+              k = O5(m, Q);
             k.length !== m.length &&
               (O(k),
               v((N) => ({
@@ -13490,7 +13682,19 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         window.addEventListener("popstate", startFromRoute);
         return () => window.removeEventListener("popstate", startFromRoute);
       }, [M, startEmpty]);
-      r(() => installHomeChatNavigation(currentProfile(), { codex: D, hermes: A }), [D, A]);
+      // Subscribe to the deep link once. Re-running this sync every time the
+      // pane array changes would re-open the session from a stale URL and pull
+      // the focus back from the pane the user just opened.
+      const routeHandlers = s({ codex: D, hermes: A });
+      routeHandlers.current = { codex: D, hermes: A };
+      r(
+        () =>
+          installHomeChatNavigation(currentProfile(), {
+            codex: (id) => routeHandlers.current.codex(id),
+            hermes: (id) => routeHandlers.current.hermes(id),
+          }),
+        [],
+      );
       const dropPaneSessions = (event) => {
         const payload = event.dataTransfer?.getData(PANE_DRAG_TYPE);
         if (!payload || payload !== paneDrag.current) return;
@@ -13503,7 +13707,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           if (existing) { active = existing[0]; continue; }
           if (!Xo(panes)) { skipped++; continue; }
           const pane = { id: p5(panes), initialSessionId: sessionId, initialHermesSessionId: "" };
-          panes = O5(panes, pane, panes.at(-1).id);
+          panes = O5(panes, pane);
           targets[pane.id] = { sessionId, hermesSessionId: "" };
           active = pane.id; opened++;
         }

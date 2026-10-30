@@ -5200,6 +5200,8 @@ body[data-theme*="dark"] .hti-rich-markdown {
 }
 .codex-center-heading-copy {
   display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
   flex: 1 1 auto;
   gap: 0.25rem;
   min-width: 0;
@@ -5214,6 +5216,27 @@ body[data-theme*="dark"] .hti-rich-markdown {
   letter-spacing: -0.025em;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+/* The pane header sits beside the title; the subtitle keeps the full width. */
+.codex-center-heading-copy > .codex-session-rename {
+  grid-column: 2;
+  grid-row: 1;
+}
+.codex-center-heading-copy > .codex-center-subtitle {
+  grid-column: 1 / -1;
+}
+.codex-session-rename {
+  min-width: 1.9rem;
+  min-height: 1.9rem;
+  padding: 0;
+  font-size: 0.95rem;
+  line-height: 1;
+}
+.codex-session-title-hint {
+  margin: 0;
+  color: var(--codex-muted);
+  font-size: 0.78rem;
+  line-height: 1.4;
 }
 .codex-center-subtitle {
   display: block;
