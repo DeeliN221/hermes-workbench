@@ -1489,7 +1489,7 @@ async def shell_socket(websocket: WebSocket) -> None:
 async def profile_names() -> dict:
     """Read the roster without probing skills, providers or gateway processes."""
     def read():
-        from skill_files import _configured_instance_root, _profile_home
+        from skill_files import _configured_instance_root, _profile_has_identity, _profile_home
         root = _configured_instance_root()
         names = ['default']
         directory = root / 'profiles'
@@ -1498,8 +1498,13 @@ async def profile_names() -> dict:
                 if not entry.is_dir() or entry.is_symlink() or entry.name.startswith('.') or entry.name == 'default' or (directory / '.deleted' / entry.name).exists():
                     continue
                 try:
-                    _profile_home(entry.name)
+                    _normalized, home = _profile_home(entry.name)
                 except HTTPException:
+                    continue
+                # Log/cache side effects and half-deleted shells resolve as directories but
+                # carry no profile identity; Hermes 404s their session reads, so listing them
+                # would surface "sessions failed to load" on every home-page refresh.
+                if not _profile_has_identity(home):
                     continue
                 names.append(entry.name)
         return {'profiles': [{'name': name} for name in names]}

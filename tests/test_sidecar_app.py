@@ -94,6 +94,34 @@ def test_capabilities_make_codex_the_only_new_chat_provider(sidecar) -> None:
     assert response.json()["supportsExternalContinuation"] is False
 
 
+def test_profile_roster_hides_directories_without_profile_identity(
+    sidecar, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A ghost profile shell must not be advertised as an agent whose sessions 404."""
+
+    _module, client = sidecar
+    monkeypatch.delenv("HERMES_WORKBENCH_HERMES_HOME", raising=False)
+    profiles = tmp_path / "profiles"
+    (profiles / "writer").mkdir(parents=True)
+    (profiles / "writer" / "config.yaml").write_text("model: fictional-model\n", encoding="utf-8")
+    ghost = profiles / "zz-removed"
+    (ghost / "logs").mkdir(parents=True)
+    (ghost / "logs" / "agent.log").write_text("", encoding="utf-8")
+    retired = profiles / "retired"
+    retired.mkdir()
+    (retired / "config.yaml").write_text("model: fictional-model\n", encoding="utf-8")
+    (profiles / ".deleted").mkdir()
+    (profiles / ".deleted" / "retired").write_text("deleted\n", encoding="utf-8")
+
+    response = client.get(
+        "/api/plugins/workbench/profile-names",
+        headers={"X-Hermes-Proxy-Secret": "proxy-secret", "Remote-User": "alice"},
+    )
+
+    assert response.status_code == 200
+    assert [row["name"] for row in response.json()["profiles"]] == ["default", "writer"]
+
+
 def test_thin_manifest_keeps_cached_asset_paths_without_an_in_process_api() -> None:
     """Initial migration works before Hermes naturally refreshes its plugin cache."""
 

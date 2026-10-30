@@ -254,6 +254,20 @@ def _assert_no_symlink_components(root: Path, target: Path, *, allow_missing: bo
             _http_error(403, "Skill file access through symbolic links is not allowed")
 
 
+# Hermes treats a directory under ``profiles/`` as a profile only when it carries one of
+# these identity markers (``hermes_constants.named_profile_is_live``). Runtime side effects
+# (log rotation, caches) and half-deleted profile shells carry none of them, and the Hermes
+# dashboard answers their session reads with 404 — so never advertise them as agents.
+_PROFILE_IDENTITY_MARKERS = ("config.yaml", ".env", "SOUL.md", "profile.yaml", "auth.json", "state.db")
+
+
+def _profile_has_identity(home: Path) -> bool:
+    """Mirror of Hermes' owner-side rule: does ``home`` identify itself as a profile?"""
+
+    return any((home / marker).is_file() or (home / marker).is_symlink()
+               for marker in _PROFILE_IDENTITY_MARKERS)
+
+
 def _profile_home(profile: str | None) -> tuple[str, Path]:
     """Resolve one profile beneath the configured Hermes root, never by fallback."""
 
