@@ -200,11 +200,45 @@ export async function sendCodexMessage(read: FetchJSON, profile: string, session
   let result: unknown;
   if (fetch) {
     const response = await fetch(url, init);
-    if (!response.ok) throw new CodexSendError(response.status, await response.text().catch(() => '') || uiText(`消息发送失败（HTTP ${response.status}）`, `Message send failed (HTTP ${response.status})`));
+    if (!response.ok) {
+      const raw = await response.text().catch(() => '');
+      // A Workbench self-update rejects writes for a few seconds; say so plainly and
+      // let the caller retry instead of surfacing the raw gate detail.
+      const message = response.status === 503 && /workbench is updating/i.test(raw)
+        ? uiText('Workbench 正在更新，消息未发送；请稍后重新发送', 'Workbench is updating. The message was not sent; retry after the update.')
+        : raw || uiText(`消息发送失败（HTTP ${response.status}）`, `Message send failed (HTTP ${response.status})`);
+      throw new CodexSendError(response.status, message);
+    }
     result = await response.json();
   } else result = await read(url, init);
   const request = record(record(result).request);
   return { accepted: request.status === 'accepted', status: text(request.status), turnId: text(request.turn_id), error: runtimeErrorText(request.result), clientRequestId: requestId };
+}
+
+/** A rejected write that is safe to replay: an update window (503/legacy 409), not a
+ *  semantic conflict. Replaying the same clientRequestId stays idempotent server-side. */
+export function isTransientSendError(error: unknown): boolean {
+  return error instanceof CodexSendError
+    && (error.status === 503 || (error.status === 409 && /workbench is updating/i.test(error.message)));
+}
+
+const SEND_RETRY_DELAYS_MS = [400, 1200, 3000] as const;
+const wait = (ms: number) => new Promise<void>(resolve => setTimeout(resolve, ms));
+
+/** Submit once, replaying only update-window rejections so a release switch does not
+ *  leave the composer with an unconfirmed message the user has to clean up by hand. */
+export async function sendCodexMessageRetry(
+  read: FetchJSON, profile: string, session: string, content: string, requestId: string,
+  options: SendOptions, fetch?: AuthedFetch, delay: (ms: number) => Promise<void> = wait,
+) {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await sendCodexMessage(read, profile, session, content, requestId, options, fetch);
+    } catch (error) {
+      if (!isTransientSendError(error) || attempt >= SEND_RETRY_DELAYS_MS.length) throw error;
+      await delay(SEND_RETRY_DELAYS_MS[attempt]);
+    }
+  }
 }
 export function normalizeAttachment(value: unknown): CodexAttachment | null {
   const row = record(value), id = text(row.id), size = Number(row.size), fileCount = Number(row.fileCount ?? row.file_count);

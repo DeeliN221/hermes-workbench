@@ -122,6 +122,26 @@ def test_profile_roster_hides_directories_without_profile_identity(
     assert [row["name"] for row in response.json()["profiles"]] == ["default", "writer"]
 
 
+def test_update_window_rejects_mutations_as_retryable(sidecar, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A release switch is transient: writes must look retryable, not like client errors."""
+
+    module, client = sidecar
+    monkeypatch.setattr(module, "begin_mutation", lambda: False)
+    headers = {"X-Hermes-Proxy-Secret": "proxy-secret", "Remote-User": "alice"}
+
+    blocked = client.post(
+        "/api/plugins/workbench/codex/session?profile=default&session_id=session-test",
+        json={"text": "hello"},
+        headers=headers,
+    )
+    allowed = client.get("/api/plugins/workbench/profile-names", headers=headers)
+
+    assert blocked.status_code == 503
+    assert blocked.headers["retry-after"] == "5"
+    assert "Workbench is updating" in blocked.json()["detail"]
+    assert allowed.status_code == 200
+
+
 def test_thin_manifest_keeps_cached_asset_paths_without_an_in_process_api() -> None:
     """Initial migration works before Hermes naturally refreshes its plugin cache."""
 
@@ -470,7 +490,9 @@ def test_pending_managed_update_blocks_mutations_but_keeps_status_and_auth(sidec
     (root/'update.json').write_text(json.dumps({'id':'job','phase':'queued'}))
     _module,client=sidecar
     headers={'X-Hermes-Proxy-Secret':'proxy-secret','Remote-User':'developer'}
-    assert client.post('/api/plugins/workbench/files',headers=headers,json={}).status_code == 409
+    blocked = client.post('/api/plugins/workbench/files', headers=headers, json={})
+    assert blocked.status_code == 503
+    assert blocked.headers['retry-after'] == '5'
     assert client.post('/api/plugins/workbench/files',json={}).status_code == 401
     assert client.get('/api/plugins/workbench/versions/update-status',headers=headers).json()['id'] == 'job'
 
