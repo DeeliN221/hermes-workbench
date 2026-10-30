@@ -1,6 +1,8 @@
 import { uiText as sourceText } from './ui-locale';
 import { layoutKanbanDrawer } from './kanban-drawer-layout';
 import { loadKanbanProfiles, populateKanbanAgentSelect } from './kanban-agent-picker';
+import { historyFromTasks, recommendAssignee, recommendationText } from './kanban-assignee-recommendation';
+import { fetchKanbanOverview } from './kanban-overview';
 /** Progressive disclosure and direct handoff actions for the native Kanban drawer. */
 import { listKanbanSessions } from './kanban-session-api';
 import { drawerConversationPath } from './kanban-session-bridge';
@@ -128,13 +130,72 @@ function installDrawerExecutionControl(drawer: HTMLElement, actions: HTMLElement
   const drawerBody = drawer.querySelector('.hermes-kanban-drawer-body');
   drawerBody?.insertBefore(control, drawerBody.firstChild);
 
-  void populateKanbanAgentSelect(agentSelect, [conversationButton, assignButton], control, installedProfiles, async () => {
-    const data = await fetchJson<{ task: { assignee?: string }; board_default_assignee?: string }>(api(`/tasks/${encodeURIComponent(taskId)}`));
+  const recommendationHint = document.createElement('div');
+  recommendationHint.className = 'hti-kanban-recommendation';
+  recommendationHint.hidden = true;
+  control.append(recommendationHint);
+
+  let detail: { task?: { assignee?: string; title?: string; body?: string }; board_default_assignee?: string } = {};
+  const preferred = async () => {
+    const data = await fetchJson<{ task: { assignee?: string; title?: string; body?: string }; board_default_assignee?: string }>(
+      api(`/tasks/${encodeURIComponent(taskId)}`),
+    );
+    detail = data;
     return data.task.assignee || data.board_default_assignee || 'default';
-  }).then(() => {
+  };
+
+  void populateKanbanAgentSelect(agentSelect, [conversationButton, assignButton], control, installedProfiles, preferred).then(async () => {
+    await offerDrawerRecommendation(recommendationHint, agentSelect, detail);
     // The drawer observer refreshes the persisted assignee after the roster loads.
     classifyDrawerSections(drawer);
   });
+}
+
+/** Offer the ranked profile without overwriting an owner the card already has. */
+async function offerDrawerRecommendation(
+  host: HTMLElement,
+  select: HTMLSelectElement,
+  detail: { task?: { assignee?: string; title?: string; body?: string }; board_default_assignee?: string },
+): Promise<void> {
+  let profiles: string[] = [];
+  try {
+    profiles = await installedProfiles();
+  } catch {
+    return;
+  }
+  const board = boardFromLocation();
+  const overview = await fetchKanbanOverview(board).catch(() => null);
+  const recommendation = recommendAssignee({
+    title: detail?.task?.title,
+    body: detail?.task?.body,
+    board,
+    profiles,
+    history: historyFromTasks(overview?.tasks || []),
+  });
+  if (!recommendation) return;
+  const explicit = String(detail?.task?.assignee || detail?.board_default_assignee || '').trim();
+  if (explicit && explicit === recommendation.assignee) return;
+  host.hidden = false;
+  const text = document.createElement('span');
+  text.textContent = recommendationText(recommendation);
+  host.append(text);
+  if (explicit) {
+    const use = document.createElement('button');
+    use.type = 'button';
+    use.className = 'hti-kanban-action hti-kanban-use-recommendation';
+    use.textContent = sourceText("使用推荐", "Use suggestion");
+    use.addEventListener('click', () => {
+      select.value = recommendation.assignee;
+      select.dataset.userSelected = 'true';
+      host.hidden = true;
+    });
+    host.append(use);
+    return;
+  }
+  // No owner yet: preselect the suggestion so one click dispatches it.
+  if (Array.from(select.options).some(option => option.value === recommendation.assignee)) {
+    select.value = recommendation.assignee;
+  }
 }
 
 /** Preserve the exported integration point for native drawer refreshes. */
