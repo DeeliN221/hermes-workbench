@@ -471,9 +471,9 @@ try {
     title: node.querySelector('strong')?.textContent,
     description: node.querySelector('span')?.textContent,
   }))), [
-    { mode: 'compact', title: 'Compact', description: 'Fold completed work and keep only the latest line for quick scanning.' },
-    { mode: 'standard', title: 'Standard', description: 'Keep work folded after completion; expanded details show the latest ten lines.' },
-    { mode: 'detailed', title: 'Detailed', description: 'Expand process details and tool output with the complete content.' },
+    { mode: 'compact', title: 'Compact', description: 'Fold to one summary line; expand into the shortest scroll window.' },
+    { mode: 'standard', title: 'Standard', description: 'Fold to one summary line; expand into a medium-height scroll window.' },
+    { mode: 'detailed', title: 'Detailed', description: 'Fold to one summary line; expand into the tallest scroll window with tool output open.' },
   ]);
   assert.equal(await detailPage.locator('[data-detail-mode="standard"]').getAttribute('aria-checked'), 'true');
   await detailPage.locator('[data-detail-mode="compact"]').click();
@@ -483,9 +483,21 @@ try {
   const detailGroup = detailPage.locator('.codex-tool-group').first();
   await detailGroup.waitFor({ state: 'attached', timeout: 5000 });
   await detailPage.waitForFunction(() => !document.querySelector('.codex-tool-group')?.hasAttribute('open'));
-  await detailPage.locator('[data-testid="codex-tool-preview"]').waitFor({ state: 'visible', timeout: 3000 });
   assert.equal(await detailGroup.getAttribute('open'), null, 'Compact keeps work details folded');
-  assert.match(await detailPage.locator('[data-testid="codex-tool-preview"]').innerText(), /preview output line 12/);
+  assert.equal(await detailPage.locator('[data-testid="codex-tool-preview"]').count(), 0, 'Folded groups must not preview process text');
+  assert.equal(await detailPage.locator('[data-testid="codex-process-window"]').count(), 0, 'Folded groups must not mount a process window');
+  assert.doesNotMatch(await detailGroup.innerText(), /Reasoning check|preview output line/, 'Folded groups keep one summary line');
+  await detailGroup.locator('summary').first().click();
+  const compactWindow = detailPage.locator('[data-testid="codex-process-window"]').first();
+  await compactWindow.waitFor({ state: 'visible', timeout: 3000 });
+  const compactMetrics = await compactWindow.evaluate(node => ({
+    maxHeight: getComputedStyle(node).maxHeight,
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+  }));
+  assert.equal(compactMetrics.maxHeight, '132px', 'Compact uses the shortest window');
+  assert.ok(compactMetrics.clientHeight <= 132, 'Compact window height must stay capped');
+  assert.ok(compactMetrics.scrollHeight > compactMetrics.clientHeight, 'Compact window must scroll long work');
 
   await detailPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
   await detailPage.locator('[data-detail-mode="detailed"]').waitFor({ state: 'visible', timeout: 5000 });
@@ -494,7 +506,19 @@ try {
   await detailPage.locator('.codex-tool-group').first().waitFor({ state: 'attached', timeout: 5000 });
   await detailPage.waitForFunction(() => document.querySelector('.codex-tool-group')?.hasAttribute('open'));
   assert.match(await detailPage.locator('.codex-process-text').first().innerText(), /Reasoning check 1/);
-  assert.equal(await detailPage.locator('.codex-detail-more').count(), 0, 'Detailed must not truncate process text');
+  const detailedWindow = await detailPage.locator('[data-testid="codex-process-window"]').first().evaluate(node => ({
+    maxHeight: getComputedStyle(node).maxHeight,
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+    scrollTop: node.scrollTop,
+  }));
+  assert.equal(detailedWindow.maxHeight, '384px', 'Detailed uses the tallest window');
+  assert.ok(detailedWindow.clientHeight <= 384, 'Detailed window height must stay capped');
+  assert.ok(detailedWindow.scrollHeight > detailedWindow.clientHeight, 'Long work must scroll inside the window');
+  assert.ok(
+    detailedWindow.scrollHeight - detailedWindow.scrollTop - detailedWindow.clientHeight <= 8,
+    'An expanded window must open at the newest line',
+  );
 
   await detailPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
   await detailPage.locator('[data-detail-mode="standard"]').waitFor({ state: 'visible', timeout: 5000 });
@@ -528,11 +552,24 @@ try {
   await detailPage.locator('.codex-tool-group').first().waitFor({ state: 'attached', timeout: 5000 });
   await detailPage.waitForFunction(() => !document.querySelector('.codex-tool-group')?.hasAttribute('open'));
   await detailPage.locator('.codex-tool-group').first().locator('summary').first().click();
-  await detailPage.locator('.codex-detail-more').waitFor({ state: 'visible', timeout: 3000 });
+  const standardWindow = detailPage.locator('[data-testid="codex-process-window"]').first();
+  await standardWindow.waitFor({ state: 'visible', timeout: 3000 });
   const standardText = await detailPage.locator('.codex-process-text').first().innerText();
-  assert.match(standardText, /Reasoning check 6/);
-  assert.doesNotMatch(standardText, /Reasoning check 5/);
-  assert.match(await detailPage.locator('.codex-detail-more').innerText(), /Show 5 more lines/);
+  assert.match(standardText, /Reasoning check 1/, 'Expanded text starts at the first line');
+  assert.match(standardText, /Reasoning check 15/, 'Expanded text keeps every line; the window scrolls instead');
+  const standardMetrics = await standardWindow.evaluate(node => ({
+    maxHeight: getComputedStyle(node).maxHeight,
+    clientHeight: node.clientHeight,
+    scrollHeight: node.scrollHeight,
+  }));
+  assert.equal(standardMetrics.maxHeight, '240px', 'Standard uses the medium window');
+  assert.ok(standardMetrics.clientHeight <= 240, 'Standard window height must stay capped');
+  assert.ok(standardMetrics.scrollHeight > standardMetrics.clientHeight, 'Standard window must scroll long work');
+  assert.equal(
+    await standardWindow.evaluate(node => { node.scrollTop = 0; return node.scrollTop; }),
+    0,
+    'The window scrolls back to the first line',
+  );
   assert.deepEqual(detailErrors, [], `Browser errors in the message detail picker:\n${detailErrors.join('\n')}`);
   await detailPage.close();
 

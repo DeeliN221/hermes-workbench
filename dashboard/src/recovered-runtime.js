@@ -60,7 +60,8 @@ installChatFileLinks('/opt/data/workspace', openChatFilePreview);
 import { createChatComposerInput } from './chat-composer-input';
 import { processBlocks } from './chat-process-messages';
 import { visibleChatText } from './chat-line-output';
-import { clipChatText, lastChatLine, readChatDetailMode } from './chat-detail';
+import { chatDetailWindowPx, readChatDetailMode } from './chat-detail';
+import { createProcessWindowScroller } from './process-window';
 import { resolveSessionTitle } from './session-title';
 import { SESSION_COLORS, SESSION_COLOR_LABELS, primeSessionColors, saveSessionColor, sessionColor, subscribeSessionColors } from './session-colors';
 import { MAX_SESSION_TITLE_LENGTH, primeSessionTitles, rememberDerivedSessionTitle, renameSessionTitle, sessionTitleEntry, sessionTitleErrorMessage, subscribeSessionTitles } from './session-titles';
@@ -9760,11 +9761,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     if (e.subagent) return W(i, SubagentProgressCard, { React: i, message: e });
     const [t, r] = i.useState(""),
       [outputExpanded, setOutputExpanded] = i.useState(detail === "detailed"),
-      [showFullOutput, setShowFullOutput] = i.useState(false),
       n = e.error === !0 || e.status === "failed",
       s = v0(e) || Zn(e.input),
       o = ws({ ...e, content: k5(e) }).trim(),
-      clippedOutput = clipChatText(o, detail),
       a = y0(e.durationMs),
       l = [
         a !== void 0
@@ -9775,7 +9774,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         .filter(Boolean)
         .join(" · ");
     i.useEffect(() => {
-      setShowFullOutput(false);
       setOutputExpanded(detail === "detailed");
     }, [detail]);
     return W(
@@ -9846,47 +9844,19 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             ),
             outputExpanded
               ? W(i, "div", { className: "codex-tool-output-body" },
-                  W(i, "pre", { "data-testid": "codex-tool-output-text" }, n || showFullOutput ? o : clippedOutput.text),
-                  clippedOutput.hiddenLines > 0 && !n
-                    ? W(i, "button", {
-                        type: "button",
-                        className: "codex-detail-more",
-                        "aria-expanded": showFullOutput,
-                        onClick: () => setShowFullOutput(value => !value),
-                      }, showFullOutput
-                        ? runtimeText("收起", "Show less")
-                        : runtimeText(`显示其余 ${clippedOutput.hiddenLines} 行`, `Show ${clippedOutput.hiddenLines} more lines`))
-                    : null)
+                  W(i, "pre", { "data-testid": "codex-tool-output-text" }, o))
               : null,
           )
         : null,
     );
   }
-  /** Render the selected tail of one process message with a local full-text override. */
+  /** Render one process message in full; the surrounding window handles scrolling. */
   function ChatProcessText({ React: i, text, detail, streaming }) {
-    const clipped = clipChatText(text, detail);
-    const [showAll, setShowAll] = i.useState(false);
-    i.useEffect(() => setShowAll(false), [detail]);
     return W(
       i,
       "div",
       { className: `codex-process-text codex-detail-text is-${detail}` },
-      W(i, Ki, { React: i, content: showAll ? text : clipped.text, streaming }),
-      clipped.hiddenLines > 0
-        ? W(
-            i,
-            "button",
-            {
-              type: "button",
-              className: "codex-detail-more",
-              "aria-expanded": showAll,
-              onClick: () => setShowAll(value => !value),
-            },
-            showAll
-              ? runtimeText("收起", "Show less")
-              : runtimeText(`显示其余 ${clipped.hiddenLines} 行`, `Show ${clipped.hiddenLines} more lines`),
-          )
-        : null,
+      W(i, Ki, { React: i, content: text, streaming }),
     );
   }
 
@@ -9909,18 +9879,44 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     expanded ? W(i, "div", { className: "codex-tool-rows" },
       ...messages.map(message => W(i, C5, { key: message.id, React: i, message, detail }))) : null);
   }
+  /** Bounded scrolling window that keeps one expanded process group from stretching the page. */
+  function ProcessWindow({ React: i, detail, children }) {
+    const ref = i.useRef(null);
+    const scroller = i.useRef(null);
+    const items = Array.isArray(children) ? children : children == null ? [] : [children];
+    // Re-running after every render keeps streamed work pinned to the newest
+    // line until the reader scrolls away; returning to the bottom resumes it.
+    i.useEffect(() => {
+      const node = ref.current;
+      if (!node) return;
+      scroller.current = scroller.current || createProcessWindowScroller(node);
+      scroller.current.update();
+    });
+    return W(
+      i,
+      "div",
+      {
+        className: "codex-process-content codex-process-window",
+        ref,
+        "data-testid": "codex-process-window",
+        "data-detail": detail,
+        style: { maxHeight: `${chatDetailWindowPx(detail)}px` },
+        onScroll: () => scroller.current?.handleScroll(),
+      },
+      ...items,
+    );
+  }
   function Q5({ React: i, messages: e, hasFollowingBody = false, timing, detail = "standard" }) {
     const detailed = detail === "detailed",
       r = timing?.running ?? false,
+      manual = i.useRef(!1),
       [expanded, setExpanded] = i.useState(detailed || (detail !== "compact" && r && !hasFollowingBody));
     i.useEffect(() => {
+      if (manual.current) return;
       if (detailed) setExpanded(true);
       else if (detail === "compact") setExpanded(false);
       else setExpanded(r && !hasFollowingBody);
     }, [r, hasFollowingBody, detail, detailed]);
-    const preview = detail === "compact"
-      ? lastChatLine([...e].reverse().map(message => message.role === "tool" ? k5(message) : ws(message)).find(value => value.trim()) || "")
-      : "";
     const u = [];
     for (let h = 0; expanded && h < e.length; ) {
       const d = e[h];
@@ -9954,12 +9950,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       W(
         i,
         "summary",
-        { className: "codex-tool-heading" },
+        {
+          className: "codex-tool-heading",
+          // A reader who opens a folded group keeps it open for their own review.
+          onClick: () => { manual.current = true; },
+        },
         st(i, "right"),
         W(i, ProcessSummary, { React: i, timing: timing || { running: false } }),
-        preview ? W(i, "span", { className: "codex-tool-preview", "data-testid": "codex-tool-preview" }, preview) : null,
       ),
-      W(i, "div", { className: "codex-process-content" }, ...u),
+      expanded ? W(i, ProcessWindow, { React: i, detail }, ...u) : null,
     );
   }
   function P5(i, e, Process = Q5, Message = T5, detail = "standard") {

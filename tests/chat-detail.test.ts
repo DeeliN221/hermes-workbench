@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import {
   CHAT_DETAIL_STORAGE_KEY,
-  clipChatText,
-  lastChatLine,
+  CHAT_DETAIL_WINDOW_PX,
+  chatDetailWindowPx,
+  isProcessWindowAtLatest,
   normalizeChatDetailMode,
+  PROCESS_WINDOW_FOLLOW_THRESHOLD_PX,
   readChatDetailMode,
   writeChatDetailMode,
 } from '../dashboard/src/chat-detail';
@@ -41,52 +43,45 @@ describe('chat detail preference', () => {
   });
 });
 
-describe('clipChatText', () => {
-  const fifteen = Array.from({ length: 15 }, (_, index) => `line ${index + 1}`).join('\n');
-
-  it('keeps the latest line for compact mode', () => {
-    expect(clipChatText(fifteen, 'compact')).toEqual({ text: 'line 15', hiddenLines: 14 });
+describe('process window height', () => {
+  it('caps every level with a usable positive height', () => {
+    for (const height of Object.values(CHAT_DETAIL_WINDOW_PX)) {
+      expect(Number.isFinite(height)).toBe(true);
+      expect(height).toBeGreaterThan(0);
+    }
   });
 
-  it('keeps the latest ten lines for standard mode', () => {
-    const clipped = clipChatText(fifteen, 'standard');
-    expect(clipped.text.split('\n')).toEqual([
-      'line 6', 'line 7', 'line 8', 'line 9', 'line 10',
-      'line 11', 'line 12', 'line 13', 'line 14', 'line 15',
-    ]);
-    expect(clipped.hiddenLines).toBe(5);
+  it('orders compact, standard, and detailed from shortest to tallest', () => {
+    expect(CHAT_DETAIL_WINDOW_PX.compact).toBeLessThan(CHAT_DETAIL_WINDOW_PX.standard);
+    expect(CHAT_DETAIL_WINDOW_PX.standard).toBeLessThan(CHAT_DETAIL_WINDOW_PX.detailed);
   });
 
-  it('leaves detailed content untouched', () => {
-    expect(clipChatText(fifteen, 'detailed')).toEqual({ text: fifteen, hiddenLines: 0 });
-  });
-
-  it('does not trim content that already fits', () => {
-    const exactlyTen = Array.from({ length: 10 }, (_, index) => `line ${index + 1}`).join('\n');
-    expect(clipChatText(exactlyTen, 'standard')).toEqual({ text: exactlyTen, hiddenLines: 0 });
-  });
-
-  it('ignores trailing blank lines and counts only hidden text lines', () => {
-    const content = 'first\n\nsecond\nthird\n\n';
-    expect(clipChatText(content, 'compact')).toEqual({ text: 'third', hiddenLines: 2 });
-    expect(clipChatText(content, 'standard')).toEqual({ text: content, hiddenLines: 0 });
-  });
-
-  it('normalizes CRLF while clipping', () => {
-    expect(clipChatText('first\r\nsecond\r\nthird', 'compact')).toEqual({ text: 'third', hiddenLines: 2 });
-  });
-
-  it('returns an empty tail for blank-only content', () => {
-    expect(clipChatText('\n  \n', 'compact')).toEqual({ text: '', hiddenLines: 0 });
+  it('resolves the window height per mode and falls back for unknown input', () => {
+    expect(chatDetailWindowPx('compact')).toBe(CHAT_DETAIL_WINDOW_PX.compact);
+    expect(chatDetailWindowPx('detailed')).toBe(CHAT_DETAIL_WINDOW_PX.detailed);
+    expect(chatDetailWindowPx('verbose' as never)).toBe(CHAT_DETAIL_WINDOW_PX.standard);
   });
 });
 
-describe('lastChatLine', () => {
-  it('returns the newest non-empty line with surrounding whitespace removed', () => {
-    expect(lastChatLine('first\n\n  latest result  \n')).toBe('latest result');
+describe('isProcessWindowAtLatest', () => {
+  const window = { scrollHeight: 900, clientHeight: 240 };
+
+  it('keeps following when the newest line is visible', () => {
+    expect(isProcessWindowAtLatest({ ...window, scrollTop: 660 })).toBe(true);
   });
 
-  it('returns an empty string for blank content', () => {
-    expect(lastChatLine('\n \n')).toBe('');
+  it('stops following once the reader scrolls up', () => {
+    expect(isProcessWindowAtLatest({ ...window, scrollTop: 0 })).toBe(false);
+    expect(isProcessWindowAtLatest({ ...window, scrollTop: 400 })).toBe(false);
+  });
+
+  it('treats sub-pixel rounding as the bottom', () => {
+    const rounded = { ...window, scrollTop: 660 - PROCESS_WINDOW_FOLLOW_THRESHOLD_PX };
+    expect(isProcessWindowAtLatest(rounded)).toBe(true);
+    expect(isProcessWindowAtLatest({ ...rounded, scrollTop: rounded.scrollTop - 1 })).toBe(false);
+  });
+
+  it('keeps following when layout metrics are unavailable', () => {
+    expect(isProcessWindowAtLatest({ scrollHeight: Number.NaN, scrollTop: 0, clientHeight: 240 })).toBe(true);
   });
 });

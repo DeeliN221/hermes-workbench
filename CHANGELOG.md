@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Fold completed chat work to one summary line and open it as a bounded scroll window whose height follows the detail level, so long reasoning and tool output no longer stretch the transcript.
 - Answer the Codex runtime status check from cached metadata and move release lookups into the background, so a slow GitHub request no longer times out the health monitor or blocks the version page.
 - Let projects and temporary sessions share the sidebar with a draggable divider that remembers the chosen split.
 - Answer a Workbench update window with a retryable 503 and replay the rejected Codex submission, so a prompt sent mid-update no longer stays "待确认" forever.

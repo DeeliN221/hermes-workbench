@@ -23,15 +23,24 @@ function shellManagesSettings(): boolean {
 const MODE_COPY: Record<ChatDetailMode, { label: () => string; description: () => string }> = {
   compact: {
     label: () => sourceText('简洁', 'Compact'),
-    description: () => sourceText('折叠已完成的过程，只保留最新一行，适合快速浏览。', 'Fold completed work and keep only the latest line for quick scanning.'),
+    description: () => sourceText(
+      '折叠时只显示一行摘要；展开时使用最矮的滚动窗口。',
+      'Fold to one summary line; expand into the shortest scroll window.',
+    ),
   },
   standard: {
     label: () => sourceText('标准', 'Standard'),
-    description: () => sourceText('完成后保持折叠；展开时显示最近约 10 行。', 'Keep work folded after completion; expanded details show the latest ten lines.'),
+    description: () => sourceText(
+      '折叠时只显示一行摘要；展开时使用中等高度的滚动窗口。',
+      'Fold to one summary line; expand into a medium-height scroll window.',
+    ),
   },
   detailed: {
     label: () => sourceText('详细', 'Detailed'),
-    description: () => sourceText('展开过程详情和工具输出，显示完整内容。', 'Expand process details and tool output with the complete content.'),
+    description: () => sourceText(
+      '折叠时只显示一行摘要；展开时使用最高的滚动窗口，并打开工具输出。',
+      'Fold to one summary line; expand into the tallest scroll window with tool output open.',
+    ),
   },
 };
 
@@ -86,8 +95,8 @@ export function renderChatDisplayPanel(panel: HTMLElement): void {
   const description = document.createElement('p');
   description.className = 'workbench-chat-display-muted';
   description.textContent = sourceText(
-    '选择聊天中推理、过程和工具输出的详细程度。助手回复始终完整显示。',
-    'Choose how much reasoning, process, and tool detail appears in chat. Assistant replies always stay fully visible.',
+    '选择展开后过程窗口的高度上限。折叠时始终只显示一行摘要，助手回复始终完整显示。',
+    'Choose the height cap for an expanded process window. Folded groups always keep one summary line, and assistant replies always stay fully visible.',
   );
   header.append(heading, description);
   const group = document.createElement('div');
