@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Hide profile directories without profile identity from the agent roster, so a removed profile can no longer report that its sessions failed to load.
 - Share custom chat model display names across every profile instead of storing one alias set per profile, and migrate existing aliases into the shared set on first load.
 - Regroup the settings navigation into Preferences, Agent, Maintenance, and a collapsed More section instead of one flat sixteen-link list.
 - Search every Codex session by message content as well as title and id, and merge Hermes full-text history hits into the same session picker.
@@ -108,3 +109,4 @@ Versions follow SemVer. GitHub release notes summarize pull requests and commits
 - Improve session recovery, image paste, kanban context, and realtime connections.
 - Unify the version source and add CI, release PRs, archives, and SHA-256 verification.
 - Use AGPL-3.0-only for project code while retaining third-party licenses.
+- Hide profile directories without profile identity from the agent roster, so a removed profile can no longer report that its sessions failed to load.
