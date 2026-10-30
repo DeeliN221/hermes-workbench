@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
-import { renderModelVisibilityPanel, renderWorkbenchVersions } from '../dashboard/src/workbench-version-settings';
+import { renderModelVisibilityPanel, renderVersionSettingsPanel, renderWorkbenchVersions } from '../dashboard/src/workbench-version-settings';
 import { readModelAliases } from '../dashboard/src/model-aliases';
 
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); localStorage.clear(); });
@@ -165,4 +165,19 @@ it('shows byte progress while the switch request is still downloading', async ()
     await vi.advanceTimersByTimeAsync(1);
     expect(reload).toHaveBeenCalledOnce();
   } finally { vi.useRealTimers(); }
+});
+
+it('waits for the background release check instead of claiming the runtime is current', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes('/codex-runtime/status')) {
+      return new Response(JSON.stringify({ installed_version: '0.165.0', latest_version: null, update_available: false, busy: false, version_check_stale: true }));
+    }
+    return new Response(JSON.stringify(data));
+  }));
+  document.body.innerHTML = '<section></section>';
+  const target = document.querySelector('section')!;
+  await renderVersionSettingsPanel(target);
+  await vi.waitFor(() => expect(target.querySelector('[data-codex-runtime-status]')!.textContent)
+    .toContain('正在后台检查可更新版本'));
+  expect(target.querySelector<HTMLButtonElement>('[data-codex-runtime-update]')!.hidden).toBe(true);
 });
