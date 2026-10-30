@@ -63,6 +63,23 @@ def test_health_and_assets_are_ready_without_api_credentials(sidecar) -> None:
     assert script.headers["x-content-type-options"] == "nosniff"
 
 
+def test_healthz_reports_liveness_while_release_assets_are_missing(
+    sidecar, tmp_path: Path
+) -> None:
+    """Probes that only need liveness stay green when readiness cannot pass."""
+
+    _module, client = sidecar
+    (tmp_path / "dist" / "index.js").unlink()
+    (tmp_path / "dist" / "style.css").unlink()
+
+    liveness = client.get("/healthz")
+    readiness = client.get("/health")
+
+    assert liveness.status_code == 200
+    assert liveness.json() == {"ok": True}
+    assert readiness.status_code == 503
+
+
 def test_versioned_runtime_assets_are_immutable_and_reject_other_releases(sidecar) -> None:
     """Repeat visits can reuse the large runtime without serving a stale version."""
 

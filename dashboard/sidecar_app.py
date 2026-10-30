@@ -206,6 +206,12 @@ def create_app(release_root: Path | None = None, *, codex_service: Any = None) -
             raise HTTPException(status_code=503, detail="Workbench assets are missing")
         return {"status": "ok", "version": _release_version(root)}
 
+    @app.get("/healthz")
+    async def healthz() -> dict[str, bool]:
+        """Answer liveness probes without requiring release assets."""
+
+        return {"ok": True}
+
     @app.get("/workbench-sidecar/index.js")
     async def javascript() -> FileResponse:
         """Serve the immutable Workbench browser runtime through the Hermes origin."""
