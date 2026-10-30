@@ -19,7 +19,7 @@ import time
 import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException
 
@@ -34,13 +34,54 @@ STATE_FILE = CODEX_HOME / "version.json"
 RELEASE_API = "https://api.github.com/repos/openai/codex/releases/latest"
 ASSET_NAME = "codex-app-server-package-x86_64-unknown-linux-musl.tar.gz"
 MAX_PACKAGE_SIZE = 256 * 1024 * 1024
-CHECK_INTERVAL = 24 * 60 * 60
+REFRESH_INTERVAL = 6 * 60 * 60
+CACHE_TTL = 60 * 60
+LOCAL_TTL = 60
+RELEASE_DEADLINE = 25.0
+LOCAL_DEADLINE = 5.0
 
 
 def _now() -> str:
     """Return a UTC timestamp for persistent update status."""
 
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
+
+
+def _release_age(value: Any) -> float:
+    """Return seconds since the cached release check, or infinity when unreadable."""
+
+    try:
+        checked = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except ValueError:
+        return float("inf")
+    return max(0.0, time.time() - checked.timestamp())
+
+
+def _run_with_deadline(call: Callable[[], Any], seconds: float, label: str) -> Any:
+    """Run a blocking probe in a helper thread and fail once the deadline passes.
+
+    urllib timeouts bound socket reads but not name resolution, so a release
+    check can outlive its own timeout. Callers that must answer quickly wrap
+    the probe instead of trusting the transport.
+    """
+
+    outcome: dict[str, Any] = {}
+    finished = threading.Event()
+
+    def target() -> None:
+        try:
+            outcome["value"] = call()
+        except BaseException as exc:  # noqa: BLE001 - re-raised in the caller thread
+            outcome["error"] = exc
+        finally:
+            finished.set()
+
+    threading.Thread(target=target, name=f"codex-{label}", daemon=True).start()
+    if not finished.wait(seconds):
+        raise TimeoutError(f"{label} exceeded {seconds:.1f}s")
+    if "error" in outcome:
+        raise outcome["error"]
+    return outcome["value"]
 
 
 def _version_tuple(value: str) -> tuple[int, ...]:
@@ -117,7 +158,9 @@ class CodexUpdateManager:
         """Create a process lock; a file lock coordinates concurrent worker processes."""
 
         self._lock = threading.Lock()
+        self._cache_lock = threading.Lock()
         self._latest: dict[str, Any] | None = None
+        self._local: dict[str, Any] = {"at": 0.0, "package": "", "binary": "", "running": ""}
 
     def _latest_release(self) -> dict[str, Any]:
         """Fetch the latest stable release and require its official package digest."""
@@ -164,40 +207,68 @@ class CodexUpdateManager:
         except sqlite3.Error:
             return True
 
-    def status(self, *, refresh: bool = False) -> dict[str, Any]:
-        """Report active, installed, and latest Codex versions."""
+    def _local_versions(self, *, refresh: bool = False) -> tuple[str, str, str]:
+        """Return package, running binary, and running version from a short cache.
 
+        The values come from subprocesses, so they are reused for LOCAL_TTL and
+        capped by LOCAL_DEADLINE: a stalled binary must not hold the status
+        route open.
+        """
+
+        with self._cache_lock:
+            cached = dict(self._local)
+        if not refresh and cached["package"] and time.monotonic() - cached["at"] < LOCAL_TTL:
+            return cached["package"], cached["binary"], cached["running"]
+        try:
+            package = _run_with_deadline(_installed_version, LOCAL_DEADLINE, "version-read")
+            binary, running = _run_with_deadline(_running_codex, LOCAL_DEADLINE, "process-scan")
+        except (TimeoutError, OSError, subprocess.SubprocessError) as exc:
+            logger.warning("Codex version probe failed (%s); reporting cached values", exc)
+            return cached["package"] or "unknown", cached["binary"], cached["running"] or "unknown"
+        with self._cache_lock:
+            self._local = {"at": time.monotonic(), "package": package, "binary": binary, "running": running}
+        return package, binary, running
+
+    def refresh_release(self, *, deadline: float = RELEASE_DEADLINE) -> dict[str, Any]:
+        """Fetch and cache the latest release; only background work calls this."""
+
+        release = _run_with_deadline(self._latest_release, deadline, "release-check")
         state = _read_state()
-        checked = state.get("last_checked_at")
-        is_fresh = False
-        if not refresh and checked:
-            try:
-                checked_at = datetime.fromisoformat(str(checked).replace("Z", "+00:00"))
-                is_fresh = time.time() - checked_at.timestamp() < 3600
-            except ValueError:
-                pass
-        if self._latest is None and state.get("latest_version"):
-            self._latest = {"version": str(state["latest_version"]), "url": "", "digest": ""}
-        if refresh or not is_fresh or self._latest is None:
-            self._latest = self._latest_release()
-            state["latest_version"] = self._latest["version"]
-            state["last_checked_at"] = _now()
-            state.pop("last_error", None)
-            _write_state(state)
-        installed = _installed_version()
-        running_binary, running_version = _running_codex()
-        runtime_mismatch = running_binary != str(CODEX_BINARY) or running_version != installed
-        latest = str((self._latest or {}).get("version") or "unknown")
-        available = runtime_mismatch or (latest != "unknown" and _version_tuple(latest) > _version_tuple(installed))
+        state.update(latest_version=release["version"], last_checked_at=_now())
+        state.pop("last_error", None)
+        _write_state(state)
+        self._latest = release
+        return release
+
+    def status(self, *, refresh: bool = False) -> dict[str, Any]:
+        """Report cached Codex versions without touching the network.
+
+        This route doubles as a liveness probe, so it must answer in
+        milliseconds: release metadata comes from version.json and the local
+        version probes are cached. Only the updater sets refresh=True.
+        """
+
+        if refresh:
+            self.refresh_release()
+        state = _read_state()
+        installed, running_binary, running_version = self._local_versions()
+        runtime_mismatch = bool(running_binary) and (
+            running_binary != str(CODEX_BINARY) or running_version != installed
+        )
+        latest = str(state.get("latest_version") or "")
+        update_available = runtime_mismatch
+        if latest and installed != "unknown" and _version_tuple(latest) > _version_tuple(installed):
+            update_available = True
         return {
             "installed_version": running_version,
             "package_version": installed,
             "running_binary": running_binary,
             "runtime_mismatch": runtime_mismatch,
-            "latest_version": latest,
-            "update_available": available,
+            "latest_version": latest or None,
+            "update_available": update_available,
             "last_checked_at": state.get("last_checked_at"),
             "last_updated_at": state.get("last_updated_at"),
+            "version_check_stale": _release_age(state.get("last_checked_at")) >= CACHE_TTL,
             "busy": self.is_busy(),
             "error": state.get("last_error"),
         }
@@ -212,7 +283,7 @@ class CodexUpdateManager:
                 state = _read_state()
                 old_version = _installed_version()
                 try:
-                    release = self._latest_release()
+                    release = _run_with_deadline(self._latest_release, RELEASE_DEADLINE, "release-check")
                     self._latest = release
                     state.update(latest_version=release["version"], last_checked_at=_now(), last_error=None)
                     _write_state(state)
@@ -220,6 +291,7 @@ class CodexUpdateManager:
                         if _running_codex() != (str(CODEX_BINARY), old_version):
                             restart_codex_app_server()
                             _verify_running_codex(old_version)
+                            self._local = {"at": 0.0, "package": "", "binary": "", "running": ""}
                         return self.status()
                     if not release["url"]:
                         raise RuntimeError("Codex package download URL is missing")
@@ -279,6 +351,7 @@ class CodexUpdateManager:
                             raise
                     state.update(last_updated_at=_now(), last_error=None)
                     _write_state(state)
+                    self._local = {"at": 0.0, "package": "", "binary": "", "running": ""}
                     logger.info("Codex app-server updated from %s to %s and restarted", old_version, release["version"])
                     return self.status()
                 except Exception as exc:
@@ -295,7 +368,7 @@ def create_router(manager: CodexUpdateManager) -> APIRouter:
 
     @router.get("/status")
     async def status() -> dict[str, Any]:
-        """Show installed/latest versions and whether an update is available."""
+        """Show cached versions fast enough to double as a liveness probe."""
 
         try:
             return await asyncio.to_thread(manager.status)
@@ -315,13 +388,19 @@ def create_router(manager: CodexUpdateManager) -> APIRouter:
 
 
 async def run_auto_updates(manager: CodexUpdateManager) -> None:
-    """Check and apply stable Codex releases daily while Workbench is running."""
+    """Refresh release metadata and apply stable releases off the request path.
 
-    await asyncio.sleep(60)
+    Every network call lives here: a slow or unreachable GitHub keeps the
+    status route answering from cache instead of holding the probe open.
+    """
+
+    await asyncio.sleep(2)
     while os.environ.get("CODEX_AUTO_UPDATE_ENABLED", "1").strip().lower() not in {"0", "false", "off"}:
         try:
-            current = await asyncio.to_thread(manager.status, refresh=True)
-            if current["update_available"]:
+            if _release_age(_read_state().get("last_checked_at")) >= CACHE_TTL:
+                await asyncio.to_thread(manager.refresh_release)
+            current = await asyncio.to_thread(manager.status)
+            if current["update_available"] and current["latest_version"]:
                 busy = await asyncio.to_thread(manager.is_busy)
                 if busy:
                     logger.info("Automatic Codex update deferred while a Codex turn is active or uncertain")
@@ -329,4 +408,4 @@ async def run_auto_updates(manager: CodexUpdateManager) -> None:
                     await asyncio.to_thread(manager.update_latest)
         except Exception:
             logger.exception("Automatic Codex app-server update failed")
-        await asyncio.sleep(CHECK_INTERVAL)
+        await asyncio.sleep(REFRESH_INTERVAL)

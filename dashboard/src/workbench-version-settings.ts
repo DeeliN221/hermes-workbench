@@ -44,11 +44,16 @@ async function renderCodexRuntime(panel: HTMLElement): Promise<void> {
     const response = await fetch('/api/plugins/workbench/codex-runtime/status', { credentials: 'same-origin' });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     const data = await response.json() as {
-      installed_version: string; latest_version: string; update_available: boolean; busy: boolean; last_updated_at?: string | null;
+      installed_version: string; latest_version: string | null; update_available: boolean; busy: boolean;
+      version_check_stale?: boolean; last_updated_at?: string | null;
     };
-    status.textContent = data.update_available
-      ? sourceText(`当前 ${data.installed_version}，可更新至 ${data.latest_version}${data.busy ? sourceText("；自动更新会等当前任务结束", "; automatic updates wait for active tasks to finish") : ''}`, `Current ${data.installed_version}; update available: ${data.latest_version}${data.busy ? sourceText("；自动更新会等当前任务结束", "; automatic updates wait for active tasks to finish") : ''}`)
-      : sourceText(`当前版本 ${data.installed_version}，已是最新版本`, `Current version ${data.installed_version} is up to date`);
+    if (!data.latest_version) {
+      status.textContent = sourceText(`当前版本 ${data.installed_version}，正在后台检查可更新版本`, `Current version ${data.installed_version}; checking for updates in the background`);
+    } else {
+      status.textContent = data.update_available
+        ? sourceText(`当前 ${data.installed_version}，可更新至 ${data.latest_version}${data.busy ? sourceText("；自动更新会等当前任务结束", "; automatic updates wait for active tasks to finish") : ''}`, `Current ${data.installed_version}; update available: ${data.latest_version}${data.busy ? sourceText("；自动更新会等当前任务结束", "; automatic updates wait for active tasks to finish") : ''}`)
+        : sourceText(`当前版本 ${data.installed_version}，已是最新版本`, `Current version ${data.installed_version} is up to date`);
+    }
     button.hidden = !data.update_available;
     button.textContent = data.update_available ? sourceText("立即更新并重启", "Update and restart now") : sourceText("已是最新版本", "Up to date");
     button.onclick = async () => {
