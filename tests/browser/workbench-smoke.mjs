@@ -225,7 +225,8 @@ try {
   const paneProfiles = await panePage.locator('.codex-pane-slot [data-profile]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-profile')));
   assert.deepEqual(paneProfiles, ['default', 'default'], 'Panes must stay within one profile');
   await panePage.locator('.codex-pane-slot').nth(1).locator('.codex-pane-close').click();
-  await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 1);
+  await panePage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 1
+    && document.querySelectorAll('.codex-session-color-bar').length === 0);
   assert.equal(await panePage.locator('.codex-session-color-bar').count(), 0,
     'Closing the split pane must hide session accent bars');
   await panePage.evaluate(() => {
