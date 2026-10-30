@@ -4,7 +4,7 @@ import { reconcileMarkdownHtml } from './markdown-html';
 import { EditorView as Te, lineNumbers as aS, highlightActiveLine as iS, highlightActiveLineGutter as cS,
   syntaxHighlighting as Su, defaultHighlightStyle as mS, codeHighlightStyle as O2,
   codeLanguage as w2, fileLanguage as AL, fileLanguage as fM } from './editor-runtime';
-import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as yQ, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessage as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, uploadCodexFolder as eF, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
+import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as yQ, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessageRetry as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, uploadCodexFolder as eF, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
 import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
 import { applyMessagePreviews } from './message-previews';
@@ -11660,7 +11660,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               (cardShortcut
                 ? (ji.current.get(ze)?.requestId === ne && ji.current.delete(ze))
                 : Ge
-                ? Qd(Me)
+                ? Qd(Me) || Me instanceof t0
                   ? av(ze, ne, zt, L, Ie, $e)
                   : ji.current.get(ze)?.requestId === ne &&
                     ji.current.delete(ze)
@@ -11672,13 +11672,20 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               (ht((At) =>
                 At.map((jt) =>
                   jt.id === ne
-                    ? { ...jt, submissionError: String(Me), status: Ge && !Qd(Me) ? "pending" : "failed" }
+                    ? {
+                        ...jt,
+                        submissionError: String(Me),
+                        // Any server response proves the turn was not accepted. Keeping
+                        // that as "pending" strands the bubble as 待确认 forever; only a
+                        // transport failure (no response at all) is genuinely unknown.
+                        status: Ge && !Qd(Me) && !(Me instanceof t0) ? "pending" : "failed",
+                      }
                     : jt,
                 ),
               ),
               Ge)
             ) {
-              if (Qd(Me)) {
+              if (Qd(Me) || Me instanceof t0) {
                 (!steeringTurnId && Nt(!1), Pt(String(Me)));
                 return;
               }

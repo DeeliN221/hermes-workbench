@@ -99,7 +99,15 @@ class TrustedProxyGate:
                 if scope.get('type') == 'websocket':
                     await send({'type': 'websocket.close', 'code': 1013, 'reason': 'Workbench updating'})
                 else:
-                    await JSONResponse({'detail': 'Workbench is updating. Please retry later.'}, status_code=409)(scope, receive, send)
+                    # 503 + Retry-After: an update window is a transient, retryable
+                    # condition. A 4xx here makes browser clients treat the rejected
+                    # submission as a permanent client error, which is how a prompt
+                    # sent mid-update ends up as a forever-"待确认" message.
+                    await JSONResponse(
+                        {'detail': 'Workbench is updating. Please retry later.'},
+                        status_code=503,
+                        headers={'Retry-After': '5'},
+                    )(scope, receive, send)
                 return
             try:
                 await self.app(scope, receive, send)
