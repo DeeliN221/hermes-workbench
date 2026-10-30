@@ -10612,7 +10612,7 @@ html.dark .hti-rich-text {
 .codex-weekly-quota { justify-self: end; text-align: right; white-space: nowrap; }
 @media (max-width: 520px) { .codex-process-summary { gap: .35rem; font-size: .75rem; } }
 
-/* Session accent colours: one store feeds Codex pane headers and session cards. */
+/* Session accent colours: one store feeds Codex pane headers and split-view cards. */
 .codex-center-header { position: relative; }
 .codex-pane-color-bar {
   position: absolute;

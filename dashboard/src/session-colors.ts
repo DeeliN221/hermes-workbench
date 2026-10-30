@@ -1,7 +1,7 @@
 /**
- * Shared accent colours for Codex sessions. The pane header and the temporary
- * session card read one profile-scoped store so a change on either side shows
- * up immediately in the other without waiting for the next list poll.
+ * Shared accent colours for Codex sessions. The pane header and a session card
+ * in a split view read one profile-scoped store so a change on either side
+ * shows up immediately in the other without waiting for the next list poll.
  */
 import { organizeCodexSession, type CodexSession } from './codex-api';
 import type { FetchJSON } from './workbench-api';

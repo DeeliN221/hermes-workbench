@@ -41,7 +41,7 @@ import { subscribeChatLists, stableChatList, createChatEventBatch } from './chat
 import { useSelectableMarkdown } from './selectable-markdown';
 import { cronSortOptions, cronSections, readCronSidebarPrefs } from './cron-sidebar';
 import { clearNewSessionRoute, isNewSessionRoute, paneInitialSession, paneTargetUrl, temporarySessionTarget } from './codex-pane-route';
-import { dropPaneIds, paneLayoutStorage, resolvePaneLayout, savePaneLayout, verifyPaneTargets } from './codex-pane-layout';
+import { dropPaneIds, paneLayoutStorage, resolvePaneLayout, savePaneLayout, splitViewSessionIds, verifyPaneTargets } from './codex-pane-layout';
 import { version as workbenchVersion } from '../../package.json';
 import { observeTerminalTheme } from './terminal-theme';
 import { craftingIcon } from './crafting-icons';
@@ -10325,6 +10325,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       onNavigationDragEnd,
       navigationActiveSessionId: E,
       navigationActiveHermesSessionId: D,
+      navigationSplitSessionIds = [],
       onTargetChange: A,
       profile,
     }) {
@@ -12112,7 +12113,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         ic = (L, U = !1) => {
           const ee = $5(L),
             ne = sessionDisplayTitle(M, L),
-            xe = ae === L.id;
+            xe = ae === L.id,
+            showColorBar = !U && navigationSplitSessionIds.includes(L.id);
           return W(
             e,
             "div",
@@ -12135,11 +12137,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             L.favorite
               ? W(e, "span", { className: "codex-session-favorite", 'aria-label': runtimeText("已收藏", "Favorite"), title: runtimeText("已收藏", "Favorite") }, "★")
               : null,
-            W(e, "span", {
-              className: "codex-session-color-bar",
-              style: { background: sessionColor(M, L.id, L.color) },
-              "aria-hidden": "true",
-            }),
+            showColorBar
+              ? W(e, "span", {
+                  className: "codex-session-color-bar",
+                  style: { background: sessionColor(M, L.id, L.color) },
+                  "aria-hidden": "true",
+                })
+              : null,
             W(e, "span", { className: "codex-session-title" }, ne),
               L.updatedAt
                 ? W(e, "time", { className: "codex-session-time" }, L.updatedAt)
@@ -13717,6 +13721,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           ? runtimeText(`最多同时打开三个窗格，${skipped} 个会话未打开；关闭窗格后可继续拖入`, `Up to three panes can be open. ${skipped} sessions were not opened; close a pane to drag in more.`)
           : !opened ? runtimeText("会话已打开，已切换到对应窗格", "Session already open; switched to its pane") : "");
       };
+      const splitSessionIds = splitViewSessionIds(m, w);
       return W(
         e,
         "div",
@@ -13775,6 +13780,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 j === 0 ? w[g]?.sessionId || "" : void 0,
               navigationActiveHermesSessionId:
                 j === 0 ? w[g]?.hermesSessionId || "" : void 0,
+              navigationSplitSessionIds:
+                j === 0 ? splitSessionIds : void 0,
               onTargetChange: P,
               profile: paneProfile,
             }),

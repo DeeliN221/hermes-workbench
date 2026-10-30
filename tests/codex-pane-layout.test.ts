@@ -7,6 +7,7 @@ import {
   readPaneLayout,
   resolvePaneLayout,
   savePaneLayout,
+  splitViewSessionIds,
   verifyPaneTargets,
   type LayoutStorage,
   type PaneSpec,
@@ -213,6 +214,30 @@ describe('pruning panes whose session disappeared', () => {
     const next = dropPaneIds(panes, targets, 'pane-2', []);
     expect(next.panes).toBe(panes);
     expect(next.activePaneId).toBe('pane-2');
+  });
+});
+
+describe('split view session accents', () => {
+  it('hides bars in a single pane and lists only Codex sessions when split', () => {
+    expect(splitViewSessionIds(
+      [pane('pane-1', 'run-a')],
+      { 'pane-1': target('run-a') },
+    )).toEqual([]);
+    expect(splitViewSessionIds(
+      [pane('pane-1', 'run-a'), pane('pane-2', 'run-b'), pane('pane-3', '', 'hermes-c')],
+      { 'pane-1': target('run-a'), 'pane-2': target('run-b'), 'pane-3': target('', 'hermes-c') },
+    )).toEqual(['run-a', 'run-b']);
+  });
+
+  it('skips empty, missing, and duplicate pane targets', () => {
+    expect(splitViewSessionIds(
+      [pane('pane-1', 'run-a'), pane('pane-2', 'run-a'), pane('pane-3')],
+      { 'pane-1': target('run-a'), 'pane-2': target('run-a'), 'pane-3': target() },
+    )).toEqual(['run-a']);
+    expect(splitViewSessionIds(
+      [pane('pane-1', 'run-a'), pane('pane-2', 'run-b')],
+      { 'pane-1': target('run-a') },
+    )).toEqual(['run-a']);
   });
 });
 

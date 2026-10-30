@@ -278,6 +278,23 @@ export function dropPaneIds(
   return { panes: remaining, targets: nextTargets, activePaneId: nextActive };
 }
 
+/**
+ * Codex session ids that are open beside another pane. A single pane already
+ * marks its row as active, so accent bars only appear in a split view.
+ */
+export function splitViewSessionIds(
+  panes: readonly PaneSpec[],
+  targets: Record<string, PaneTarget | undefined>,
+): string[] {
+  if (panes.length < 2) return [];
+  const ids = new Set<string>();
+  for (const pane of panes) {
+    const sessionId = text(targets[pane.id]?.sessionId);
+    if (sessionId) ids.add(sessionId);
+  }
+  return [...ids];
+}
+
 type HermesSessionPage = { sessions?: Record<string, unknown>[]; total?: number };
 
 /** Hermes history ids on the profile, or null while the first page is not the whole list. */
