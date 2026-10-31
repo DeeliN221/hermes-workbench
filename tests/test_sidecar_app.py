@@ -514,6 +514,7 @@ def test_pending_managed_update_blocks_mutations_but_keeps_status_and_auth(sidec
     assert client.get('/api/plugins/workbench/versions/update-status',headers=headers).json()['id'] == 'job'
 
 
+
 def test_idle_event_subscription_does_not_reserve_mutation_slot(monkeypatch):
     import asyncio
     import sidecar_app
@@ -531,3 +532,12 @@ def test_idle_event_subscription_does_not_reserve_mutation_slot(monkeypatch):
     call('/api/plugins/workbench/terminal')
     assert observed == [0, 1]
     assert versions._active_mutations == 0
+
+def test_quotas_require_trusted_proxy_and_do_not_cache_in_browser(sidecar):
+    _module, client = sidecar
+    assert client.get('/api/plugins/workbench/quotas').status_code == 401
+    response = client.get('/api/plugins/workbench/quotas', headers={
+        'x-hermes-proxy-secret': 'proxy-secret', 'remote-user': 'alice'})
+    assert response.status_code == 200
+    assert response.headers['cache-control'] == 'no-store'
+    assert len(response.json()['providers']) == 3

@@ -53,3 +53,6 @@ installDiagramLightbox();
 
 import { installMobileSettings } from './mobile-settings';
 installMobileSettings();
+
+import { installQuotaDashboard } from './quota-dashboard';
+installQuotaDashboard();

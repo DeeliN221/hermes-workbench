@@ -353,6 +353,9 @@ class JsonRpcConnection:
             raise UnknownAcceptance(f"could not send {method}") from exc
         try:
             response = await asyncio.wait_for(future, timeout=self.timeout)
+        except asyncio.CancelledError:
+            self._pending.pop(request_id, None)
+            raise
         except asyncio.TimeoutError as exc:
             self._pending.pop(request_id, None)
             raise UnknownAcceptance(f"no response for {method}") from exc
@@ -2979,6 +2982,10 @@ class CodexBridge:
             })
         except Exception:
             logging.getLogger(__name__).warning('Response quota snapshot unavailable; preserving unknown quota')
+
+    async def read_quota(self, user: str, profile: str) -> dict[str, Any]:
+        """Read the existing identity-scoped app-server quota without model work."""
+        return await (await self._connection(user, profile)).request("account/rateLimits/read", {})
 
     async def models(self, user: str, profile: str) -> dict[str, Any]:
         """Read model choices from the connected Codex service."""

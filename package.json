@@ -24,7 +24,8 @@
     "history:check": "python3 scripts/check-history.py",
     "deploy:dev": "python3 scripts/deploy-dev.py",
     "prebuild": "python3 scripts/check-dev-source.py",
-    "release:smoke": "python3 scripts/smoke-test-release.py"
+    "release:smoke": "python3 scripts/smoke-test-release.py",
+    "test:quotas:e2e": "playwright test --config tests/quota-playwright.config.ts"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
@@ -51,6 +52,7 @@
     "pele": "^1.12.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
     "happy-dom": "^21.0.4",
     "playwright": "1.64.1",

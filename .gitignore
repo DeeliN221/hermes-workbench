@@ -22,3 +22,6 @@ __pycache__/
 /deploy/compose.yaml
 /deploy/Caddyfile
 /deploy/*.local.*
+
+/test-results/
+/playwright-report/
