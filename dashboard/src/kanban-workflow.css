@@ -107,6 +107,20 @@
 
 /* Native drawer must sit above the Workbench mobile navigation toggle. */
 .hermes-kanban-drawer-shade:has(.hti-kanban-v4) { z-index: 110; }
+
+/* The host ConfirmDialog portals to body at z-50, below both the floating
+   board (82) and the standalone drawer (110). Radix still locks background
+   interaction while that invisible confirmation waits for an answer.
+   Raise its backdrop and content together; leave focus, pointer locking,
+   cancellation and the pending native action owned by the host. The SDK's
+   confirmation backdrop has no data-slot, so identify the fixed sibling of
+   the body-level alertdialog rather than changing every z-50 element. */
+:root[data-workbench-shell="true"]:is([data-workbench-accessory="kanban"], :has(.hermes-kanban-drawer)) body > .fixed.inset-0[data-state]:has(~ [role="alertdialog"]) {
+  z-index: 121;
+}
+:root[data-workbench-shell="true"]:is([data-workbench-accessory="kanban"], :has(.hermes-kanban-drawer)) body > [role="alertdialog"] {
+  z-index: 122;
+}
 .hti-kanban-v4 .wb-action-error { grid-column: 1 / -1; color: var(--color-destructive, #de7369); font-size: 12px; overflow-wrap: anywhere; }
 
 /* Keep native handlers and disabled semantics; icons are decorative masks. */
