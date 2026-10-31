@@ -186,6 +186,9 @@ def create_app(release_root: Path | None = None, *, codex_service: Any = None) -
         app.include_router(create_router(service), prefix=f"{_API_PREFIX}/codex")
         app.include_router(create_files_router(service), prefix=f"{_API_PREFIX}/codex")
 
+    from quota_dashboard import create_router as create_quota_router
+    app.include_router(create_quota_router(getattr(app.state, "codex_bridge", None)), prefix=_API_PREFIX)
+
     @app.get(f"{_API_PREFIX}/capabilities")
     async def capabilities() -> dict[str, Any]:
         """Declare chat ownership without probing or launching a model connection."""
