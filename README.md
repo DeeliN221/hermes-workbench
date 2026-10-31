@@ -95,4 +95,52 @@ Workbench's web chat creates Codex conversations only. Existing Claude Code or
 Pi sessions are history-only; continue them from their native terminal. See
 [the chat provider policy](docs/codex-only-chat.md).
 
+## Troubleshooting
+
+### 1. Source dependency installation or build fails
+
+- **Symptom:** `pnpm install` or `pnpm build` fails with a runtime/version error.
+- **Cause:** The source toolchain requires Node.js 22.12+, pnpm 11.22.0
+  (see `package.json`), and Python 3.13; older or missing runtimes cannot
+  satisfy the documented development prerequisites.
+- **Solution:** Install/select those versions, then run from the checkout root:
+  ```sh
+  node --version
+  pnpm --version
+  python3 --version
+  pnpm install --frozen-lockfile
+  pnpm build
+  ```
+  Prebuilt releases need no Node.js, pnpm, or frontend build; follow the
+  [installation guide](docs/installation.md#quick-start-existing-hermes-host) instead.
+
+### 2. Source changes do not appear, or browser assets are missing
+
+- **Symptom:** Editing `dashboard/src/` leaves the interface unchanged, or a
+  source checkout has no usable `dashboard/dist/` assets.
+- **Cause:** The browser loads generated assets; editing source does not rebuild
+  them or publish them to a separately installed plugin.
+- **Solution:** From the checkout root, run `pnpm build`, then
+  `pnpm preview:local` to inspect the rebuilt interface at
+  `http://127.0.0.1:9130/sessions?profile=default` with mock data.
+  For a separately installed developer plugin, use the publisher and explicit
+  destination paths in [Development and forks](deploy/README.md#development-and-forks).
+  For managed installations, use **Settings → Version switching** to install a
+  matching frontend/backend release; do not copy the source `dist/index.js`
+  over the installed plugin's thin loader.
+
+### 3. The Workbench tab is missing or the URL shows no interface
+
+- **Symptom:** Hermes has no Workbench tab, or opening the sidecar URL does not
+  display the workspace.
+- **Cause:** The serving Hermes profile has not enabled `workbench`, or the
+  browser is pointed at the API sidecar instead of the Dashboard plugin route.
+- **Solution:** In the serving profile's `config.yaml`, add `workbench` to
+  `plugins.enabled` (preserve other entries), as shown in the
+  [installation guide](docs/installation.md#quick-start-existing-hermes-host).
+  Open `/workbench` on the authenticated Dashboard origin. For the documented
+  [local test setup](deploy/README.md#local-test-environment), the configuration
+  is `$HERMES_HOME/config.yaml` and the browser URL is
+  `http://localhost:9120/workbench`; port `9451` serves the sidecar API.
+
 Licensed under [AGPL-3.0-only](LICENSE). See [third-party notices](THIRD_PARTY_NOTICES.md).
