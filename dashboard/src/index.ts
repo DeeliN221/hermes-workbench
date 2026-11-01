@@ -58,3 +58,6 @@ import { installQuotaDashboard } from './quota-dashboard';
 installQuotaDashboard();
 
 import './task-control-tower.css';
+
+import { installMobileTabShell } from './mobile-tab-shell';
+installMobileTabShell();
