@@ -65,8 +65,11 @@ def input_text(value: Any) -> str:
     return ""
 
 
-def fingerprint(value: Any) -> str:
-    return "".join(input_text(value).split())
+def content_keys(value: Any) -> set[str]:
+    """Match native block joining without collapsing authored whitespace."""
+    if isinstance(value, list):
+        return {separator.join(input_text(part) for part in value) for separator in ("", "\n", "\n\n")}
+    return {input_text(value)}
 
 
 def needs_attachment_projection(value: Any) -> bool:
@@ -88,6 +91,8 @@ class MessageProjection:
     def __init__(self, requests: list[dict]):
         self.by_client = {}
         self.by_content = {}
+        self.by_turn = {}
+        self.unbound = {}
         self.has_context = False
         for request in requests:
             payload = decode(request.get("payload"))
@@ -99,20 +104,32 @@ class MessageProjection:
             self.has_context = True
             record = {"content": visible, "attachments": payload.get(_ATTACHMENTS, [])}
             self.by_client[str(request.get("client_request_id", ""))] = record
-            self.by_content[fingerprint(visible + hidden)] = record
+            turn_id = str(request.get("turn_id") or "")
+            for key in content_keys(visible + hidden):
+                self.by_content[key] = record
+                if turn_id:
+                    self.by_turn[(turn_id, key)] = record
+                else:
+                    self.unbound[key] = record
 
-    def public(self, value: Any) -> Any:
+    def public(self, value: Any, turn_id: str = "") -> Any:
         if isinstance(value, list):
-            return [self.public(item) for item in value if not isinstance(item, dict) or item.get("hidden") is not True]
+            return [self.public(item, turn_id) for item in value if not isinstance(item, dict) or item.get("hidden") is not True]
         if not isinstance(value, dict):
             return value
         if value.get("hidden") is True:
             return {"hidden": True}
+        turn_id = str(value.get("turnId") or value.get("turn_id") or
+                      (value.get("id") if isinstance(value.get("items"), list) else "") or turn_id)
         result = dict(value)
         if value.get("type") == "userMessage" or value.get("role") == "user":
             projection = self.by_client.get(str(value.get("clientId") or value.get("clientRequestId") or ""))
             if projection is None:
-                projection = self.by_content.get(fingerprint(value.get("content", value.get("text", ""))))
+                for key in content_keys(value.get("content", value.get("text", ""))):
+                    projection = self.by_turn.get((turn_id, key)) if turn_id else self.by_content.get(key)
+                    projection = projection or self.unbound.get(key)
+                    if projection is not None:
+                        break
             if projection is not None:
                 result.update(projection)
                 result.pop("text", None)
@@ -128,7 +145,7 @@ class MessageProjection:
             # API shape while projecting their nested messages too.
             if key in {"payload", "result"} and isinstance(item, str) and ("client_request_id" in value or "clientRequestId" in value):
                 parsed = decode(item)
-                output[key] = json.dumps(self.public(parsed)) if isinstance(parsed, (dict, list)) else item
+                output[key] = json.dumps(self.public(parsed, turn_id)) if isinstance(parsed, (dict, list)) else item
             else:
-                output[key] = self.public(item)
+                output[key] = self.public(item, turn_id)
         return output

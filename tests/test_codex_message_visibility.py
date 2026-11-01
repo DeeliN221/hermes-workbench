@@ -201,3 +201,18 @@ def test_streaming_deltas_do_not_scan_history_and_preserve_raw_tool_json(tmp_pat
             assert bridge.store.public_messages('qa', 'default', 'session', event) == event
     finally:
         bridge.store.close()
+
+
+def test_reusing_attachments_never_merges_authored_spacing_between_turns():
+    hint = {'type': 'text', 'text': 'private image context'}
+    originals = ['a b', 'ab', 'a b\n', '  a b  ']
+    requests = [{'client_request_id': f'r-{index}', 'turn_id': f't-{index}', 'payload': json.dumps({
+        'input': [{'type': 'text', 'text': original}],
+        '_attachmentContext': {'hidden': True, 'content': [hint]},
+    })} for index, original in enumerate(originals)]
+    projection = MessageProjection(requests)
+    for index, original in enumerate(originals):
+        turn = {'id': f't-{index}', 'items': [{'type': 'userMessage', 'content': [{'type': 'text', 'text': original + '\n\n' + hint['text']}]}]}
+        assert projection.public(turn)['items'][0]['content'] == [{'type': 'text', 'text': original}]
+    unrelated = {'id': 'other-turn', 'items': [{'type': 'userMessage', 'content': 'a b\n\nprivate image context'}]}
+    assert projection.public(unrelated) == unrelated

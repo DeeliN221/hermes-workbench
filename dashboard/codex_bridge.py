@@ -1268,7 +1268,7 @@ class BridgeStore:
         """Load private context only within its authenticated session scope."""
         with self.lock:
             rows = self.connection.execute(
-                "SELECT client_request_id,payload FROM codex_requests WHERE user_id=? AND profile=? AND session_id=?",
+                "SELECT client_request_id,turn_id,payload FROM codex_requests WHERE user_id=? AND profile=? AND session_id=?",
                 (user, profile, session_id),
             ).fetchall()
         requests = [dict(row) for row in rows]
