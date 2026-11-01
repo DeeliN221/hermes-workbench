@@ -8,7 +8,7 @@ const MORE_OPEN_KEY = 'hermes.workbench.settings-more-open';
 
 /**
  * Settings are grouped by intent: everyday Workbench preferences first, then
- * agent setup, then maintenance. Integrations and diagnostics that are rarely
+ * agent setup. Maintenance, integrations and diagnostics that are rarely
  * touched stay reachable under a collapsed "More" section.
  */
 export function settingsNavSections(): SettingsNavSection[] {
@@ -29,15 +29,7 @@ export function settingsNavSections(): SettingsNavSection[] {
       items: [
         ['/profiles', uiText('配置档案', 'Profiles')],
         ['/models', uiText('模型', 'Models')],
-        ['/env', uiText('凭据', 'Credentials')],
-      ],
-    },
-    {
-      id: 'maintenance',
-      title: uiText('维护', 'Maintenance'),
-      items: [
-        ['/config?workbench=versions', uiText('版本切换', 'Version switching'), 'data-workbench-version-link'],
-        ['/logs', uiText('日志', 'Logs')],
+        ['/config?workbench=allowances', uiText('订阅额度', 'Subscription allowances')],
       ],
     },
     {
@@ -45,6 +37,9 @@ export function settingsNavSections(): SettingsNavSection[] {
       title: uiText('更多', 'More'),
       collapsible: true,
       items: [
+        ['/env', uiText('凭据', 'Credentials')],
+        ['/config?workbench=versions', uiText('版本切换', 'Version switching'), 'data-workbench-version-link'],
+        ['/logs', uiText('日志', 'Logs')],
         ['/plugins', uiText('插件', 'Plugins')],
         ['/mcp', uiText('外部工具', 'External tools')],
         ['/channels', uiText('消息渠道', 'Channels')],

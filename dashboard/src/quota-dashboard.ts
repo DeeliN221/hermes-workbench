@@ -89,28 +89,17 @@ export function mountQuotaDashboard(container: HTMLElement, fetcher: typeof fetc
   return () => { disposed = true; controller?.abort(); };
 }
 
-export function installQuotaDashboard(): void {
-  let scheduled = false;
-  const mount = () => {
-    scheduled = false;
-    const header = document.querySelector('.workbench-home-actions');
-    if (!header || header.querySelector('[data-quota-open]')) return;
-    const button = element('button', 'Allowances');
-    button.type = 'button'; button.dataset.quotaOpen = 'true'; button.className = 'quota-open';
-    button.onclick = () => {
-      if (document.querySelector('.quota-dialog')) return;
-      const dialog = element('dialog'); dialog.className = 'quota-dialog';
-      dialog.setAttribute('aria-label', 'Subscription allowances');
-      const close = element('button', 'Close'); close.type = 'button'; close.className = 'quota-close';
-      close.onclick = () => dialog.close();
-      const content = element('div'); dialog.append(close, content); document.body.append(dialog);
-      const dispose = mountQuotaDashboard(content);
-      dialog.addEventListener('close', () => { dispose(); dialog.remove(); button.focus(); }, { once: true });
-      dialog.showModal();
-    };
-    header.append(button);
+/** Use the existing settings route lifecycle to abort requests when leaving the page. */
+export function createQuotaSettings(sdk: any) {
+  const { useEffect, useRef } = sdk.hooks;
+  return function QuotaSettings() {
+    const ref = useRef(null as HTMLElement | null);
+    useEffect(() => {
+      const node = ref.current;
+      if (!node) return;
+      const dispose = mountQuotaDashboard(node);
+      return () => { dispose(); node.replaceChildren(); };
+    }, []);
+    return sdk.React.createElement('section', { ref, className: 'workbench-settings-subpage quota-settings' });
   };
-  const schedule = () => { if (!scheduled) { scheduled = true; requestAnimationFrame(mount); } };
-  new MutationObserver(schedule).observe(document.documentElement, { childList: true, subtree: true });
-  schedule();
 }

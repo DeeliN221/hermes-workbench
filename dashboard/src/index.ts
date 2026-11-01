@@ -54,8 +54,8 @@ installDiagramLightbox();
 import { installMobileSettings } from './mobile-settings';
 installMobileSettings();
 
-import { installQuotaDashboard } from './quota-dashboard';
-installQuotaDashboard();
+import { installModelAnalyticsNotice } from './model-analytics-notice';
+installModelAnalyticsNotice();
 
 import './task-control-tower.css';
 

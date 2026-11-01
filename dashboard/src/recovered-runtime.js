@@ -25,6 +25,7 @@ import { uiText as runtimeText } from './ui-locale';
 import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
 import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-aliases';
+import { createQuotaSettings } from './quota-dashboard';
 import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
 installModelAliasSync();
 import { createRecentHome } from './recent-home';
@@ -2573,6 +2574,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ChatDisplaySettings = createChatDisplaySettings(i),
       ModelVisibilitySettings = createModelVisibilitySettings(i),
       VersionSettings = createVersionSettings(i),
+      QuotaSettings = createQuotaSettings(i),
       RecentHome = createRecentHome(i, Kp),
       TaskControlTower = createTaskControlTower(i, Kp, RecentHome),
       l = t.createElement;
@@ -2603,7 +2605,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         isChatDisplay = u.path === "/config" && u.settingsTab === "display",
         isModelVisibility = u.path === "/config" && u.settingsTab === "models",
         isVersionSettings = u.path === "/config" && (u.settingsTab === "versions" || u.settingsTab === "settings"),
-        isConfigSubpage = isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
+        isQuotaSettings = u.path === "/config" && u.settingsTab === "allowances",
+        isConfigSubpage = isQuotaSettings || isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
         M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
         H = Cx(u.path),
         F = yx(u.profile, da),
@@ -3093,9 +3096,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 ref: D,
                 className: `dashboard-owned-page${isProfiles ? " dashboard-profile-page" : isConfigSubpage ? " dashboard-shortcuts-page" : ""}`,
                 tabIndex: -1,
-                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
+                "aria-label": isQuotaSettings ? runtimeText("订阅额度", "Subscription allowances") : isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isQuotaSettings ? l(QuotaSettings) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )

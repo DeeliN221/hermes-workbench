@@ -12,30 +12,30 @@ afterEach(() => {
   localStorage.clear();
 });
 
-it('groups settings into preferences, agent, maintenance, and one collapsed more section', () => {
+it('groups settings into preferences, agent, and one collapsed more section', () => {
   const sections = settingsNavSections();
   expect(sections.map(section => [section.id, section.collapsible === true])).toEqual([
     ['preferences', false],
     ['agent', false],
-    ['maintenance', false],
     ['more', true],
   ]);
   const hrefs = sections.flatMap(section => section.items).map(([href]) => href);
-  expect(hrefs).toHaveLength(16);
-  expect(new Set(hrefs).size).toBe(16);
+  expect(hrefs).toHaveLength(17);
+  expect(new Set(hrefs).size).toBe(17);
   // Every settings page from the flat navigation stays reachable after regrouping.
   expect(hrefs).toEqual(expect.arrayContaining([
     '/config', '/config?workbench=display', '/config?workbench=models', '/config?workbench=shortcuts',
-    '/profiles', '/models', '/env', '/config?workbench=versions',
+    '/profiles', '/models', '/config?workbench=allowances', '/env', '/config?workbench=versions',
     '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/logs', '/docs',
   ]));
   expect(sections[0].items.map(([, label]) => label)).toEqual(['General', 'Chat display', 'Model visibility', 'Keyboard shortcuts']);
-  expect(sections[3].items.map(([href]) => href)).toEqual([
-    '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/docs',
+  expect(sections[2].items.map(([href]) => href)).toEqual([
+    '/env', '/config?workbench=versions', '/logs', '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/docs',
   ]);
 });
 
 it('marks only one Workbench settings tab as current', () => {
+  expect(settingsLinkActive('/config?workbench=allowances', { path: '/config', settingsTab: 'allowances' })).toBe(true);
   expect(settingsLinkActive('/config', { path: '/config', settingsTab: '' })).toBe(true);
   expect(settingsLinkActive('/config', { path: '/config', settingsTab: 'models' })).toBe(false);
   expect(settingsLinkActive('/config?workbench=models', { path: '/config', settingsTab: 'models' })).toBe(true);

@@ -144,6 +144,12 @@ const configFixture = fixture.replace(
   </style><div class="host-shell"><aside id="app-sidebar"><div role="group"><h2 id="hermes-sidebar-plugin-nav-heading">Plugins</h2><a href="/sample-plugin">Sample plugin</a></div></aside><div class="host-page"><header class="host-banner" role="banner"><h1>Configuration</h1><input type="search" placeholder="Search..." aria-label="Search configuration"></header><main class="host-main"><div class="host-route-column z-2" data-testid="host-config-form"><div class="host-config-path">/workspace/profiles/default/config.yaml</div><div class="host-config-toolbar"><button type="button">&lt;/&gt; YAML</button><button type="button" class="is-save">Save</button></div><div class="host-config-tabs"><span>General 27</span><span>Terminal 34</span><span>Display 9</span></div><div class="host-config-card"><strong>General · 27 fields</strong><label><span>Default model (e.g. anthropic/claude-sonnet-4-6)</span><input type="text" value="gpt-6.1-sol" readonly></label><label><span>MODEL CONTEXT LENGTH</span><input type="text" value="0" readonly></label><label><span>FALLBACK PROVIDERS</span><input type="text" value="comma-separated values" readonly></label></div></div></main></div></div><div id="root"></div>`,
 );
 
+// Match the host ModelsPage summary contract without vendoring its runtime.
+const modelsFixture = configFixture.replace('<h1>Configuration</h1>', '<h1>Models</h1>').replace(
+  /<div class="host-route-column z-2"[\s\S]*?<\/main>/,
+  `<div class="host-route-column z-2" data-testid="host-models"><section class="host-config-card"><h2>Model settings</h2><button>Configure models</button></section><section class="host-config-card"><dl><dt>Models used</dt><dd>3</dd><dt>Total sessions</dt><dd>12</dd></dl><p class="mt-4 text-xs text-text-tertiary leading-relaxed">Token &amp; cost analytics are hidden because the local counts exclude auxiliary calls (compression, vision, web extract, …) and provider retries, so they diverge from your provider bill. Enable <span class="font-mono">dashboard.show_token_analytics</span> in <a href="/config" class="underline">Config</a> to show the local debug estimate anyway.</p></section></div></main>`,
+);
+
 /** Titles renamed through the fixture API, keyed by profile and session. */
 const titleOverrides = new Map();
 
@@ -375,9 +381,9 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
       response.end(html.replace('</body>', '<script>document.getElementById("preview-open").onclick=()=>document.getElementById("preview-dialog").showModal()</script></body>'));
       return;
     }
-    if (url.pathname === '/config' || url.pathname === '/models') {
+    if (['/config', '/models', '/env', '/logs'].includes(url.pathname)) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-      response.end(configFixture);
+      response.end(url.pathname === "/models" ? modelsFixture : configFixture);
       return;
     }
     if (url.pathname === '/loader-preview' || (url.pathname === '/chat' && url.searchParams.get('loader') === '1')) {
