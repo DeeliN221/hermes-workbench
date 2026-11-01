@@ -1,6 +1,7 @@
 import { uiText } from './ui-locale';
 import { isMobileTabRoute, readMobileChat, rememberMobileChat } from './mobile-tab-route';
 import './mobile-tab-shell.css';
+import { findTabContent } from './tab-content';
 
 /** A page header, not a modal: keep host forms, scroll containers and dialogs mounted. */
 export function installMobileTabShell(): void {
@@ -12,6 +13,7 @@ export function installMobileTabShell(): void {
   chat.className = 'workbench-mobile-tab-chat';
   header.append(chat);
   let frame = 0;
+  let content: HTMLElement | null = null;
   const remember = () => {
     try { rememberMobileChat(location.pathname + location.search + location.hash, sessionStorage); } catch { /* optional */ }
   };
@@ -23,6 +25,12 @@ export function installMobileTabShell(): void {
     remember();
     const active = media.matches && root.dataset.workbenchShell === 'true' && isMobileTabRoute(location.href);
     if (root.dataset.mobileTab !== String(active)) root.dataset.mobileTab = String(active);
+    const next = active ? findTabContent() : null;
+    if (next !== content) {
+      content?.classList.remove('workbench-mobile-tab-content');
+      content = next;
+      content?.classList.add('workbench-mobile-tab-content');
+    }
     if (!active) { header.remove(); return; }
     if (!header.isConnected) document.body.append(header);
     chat.href = destination();

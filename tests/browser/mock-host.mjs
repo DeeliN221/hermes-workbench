@@ -364,11 +364,13 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
       response.end(body);
       return;
     }
-    if (['/achievements', '/files', '/sample-plugin'].includes(url.pathname)) {
-      const title = url.pathname === '/achievements' ? 'Achievements' : url.pathname === '/files' ? 'Files' : 'Sample plugin';
+    if (['/achievements', '/files', '/kanban', '/sample-plugin'].includes(url.pathname)) {
+      const title = url.pathname === '/achievements' ? 'Achievements' : url.pathname === '/files' ? 'Files' : url.pathname === '/kanban' ? 'Kanban' : 'Sample plugin';
       // Native pages are host-owned: exercise their container contract without vendoring Hermes.
       const content = '<section data-testid="native-tab-fixture"><h2>' + title + '</h2><p>Host page fixture</p><label>Filter <input aria-label="Filter" /></label><button id="preview-open">Preview</button><dialog id="preview-dialog"><p>Temporary preview</p><button onclick="this.closest(\'dialog\').close()">Close preview</button></dialog><div style="height:1000px">Scrollable content</div></section>';
-      const html = configFixture.replace(/<h1>Configuration<\/h1>/, '<h1>' + title + '</h1>').replace(/<div class="host-route-column z-2"[\s\S]*?<\/main>/, content + '</main>');
+      let html = configFixture.replace(/<h1>Configuration<\/h1>/, '<h1>' + title + '</h1>').replace(/<div class="host-route-column z-2"[\s\S]*?<\/main>/, content + '</main>');
+      if (url.pathname === '/achievements') html = html.replace('<div class="host-page">', '<section class="host-page relative z-2">').replace('</main></div></div>', '</main></section></div>');
+      if (url.pathname === '/files') html = html.replace('<div class="host-page">', '<span hidden data-plugin-slot></span><div class="host-page relative z-2">');
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(html.replace('</body>', '<script>document.getElementById("preview-open").onclick=()=>document.getElementById("preview-dialog").showModal()</script></body>'));
       return;

@@ -5,12 +5,22 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 import { createMockHost } from './mock-host.mjs';
 
+async function assertContentGutter(page, target, label) {
+  const rail = await page.locator('.dashboard-action-rail').boundingBox();
+  const minimum = rail.x + rail.width + 8;
+  const bounds = await page.locator(target).evaluate(el => [el, ...el.querySelectorAll('h1, h2, h3, form, input, select, textarea, ul, ol, label, [role="list"], .dashboard-cron-job-row')]
+    .filter(node => node.getClientRects().length && !node.closest('dialog'))
+    .map(node => ({ tag: node.tagName, left: node.getBoundingClientRect().left })));
+  assert.ok(bounds.length);
+  for (const bound of bounds) assert.ok(bound.left >= minimum, `${label} ${bound.tag} left ${bound.left} < ${minimum}`);
+}
+
 const host = await createMockHost();
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined, args: ['--no-sandbox'] });
 const evidence = process.env.WORKBENCH_SCREENSHOT_DIR;
 if (evidence) await fs.mkdir(evidence, { recursive: true });
 const conversation = '/chat?session=codex-preview&profile=writer';
-const routes = ['/achievements', '/cron', '/skills', '/files', '/config', '/sample-plugin'];
+const routes = ['/achievements', '/cron', '/skills', '/files', '/config', '/kanban', '/sample-plugin'];
 try {
   for (const theme of ['light', 'dark']) {
     const page = await browser.newPage({ viewport: { width: 390, height: 844 }, colorScheme: theme });
@@ -37,18 +47,23 @@ try {
       const railBox = await rail.boundingBox();
       assert.equal(railBox.x, 0);
       assert.equal(railBox.width, 48);
-      const target = route === '/config' ? '.dashboard-settings-nav' : ['/cron', '/skills'].includes(route) ? '.dashboard-owned-page' : '#app-sidebar + div';
+      const target = route === '/config' ? '.dashboard-settings-nav' : '.workbench-mobile-tab-content';
+      await page.locator(target).waitFor();
       const box = await page.locator(target).boundingBox();
       assert.ok(box, `${route} content visible`);
       assert.ok((await page.locator(target).innerText()).trim().length > 0);
-      assert.equal(box.x, 48, `${route} starts at rail edge`);
-      assert.equal(Math.round(box.width), 342, `${route} fills remaining width`);
+      assert.ok(box.x >= railBox.x + railBox.width + 8, `${route} content clears rail by 8px: ${box.x}`);
+      await assertContentGutter(page, target, route);
+      assert.equal(Math.round(box.width), 334, `${route} fills remaining width`);
       assert.ok(box.y >= 48, `${route} below shared header`);
       assert.ok(Math.abs(box.y + box.height - 844) <= 1, `${route} fills available height`);
       assert.ok((await back.boundingBox()).height >= 44);
       assert.equal(await page.locator('.dashboard-accessory-close:visible, .dashboard-accessory-backdrop:visible').count(), 0);
       assert.equal(await rail.evaluate(el => el.inert || el.getAttribute('aria-hidden') === 'true'), false);
-      assert.ok(await rail.locator('[aria-current="page"]').count());
+      assert.equal(await rail.locator('a[href^="/skills"], a[href^="/sample-plugin"]').count(), 0);
+      assert.deepEqual(await rail.locator('.dashboard-rail-actions a').evaluateAll(links => links.map(a => { const url = new URL(a.href); url.searchParams.delete('profile'); return url.pathname + url.search; }).sort()),
+        ['/config', '/kanban', '/cron', '/chat?workbench=terminal', '/achievements'].sort(), 'Rail links match main');
+      if (!['/skills', '/sample-plugin'].includes(route)) assert.ok(await rail.locator('[aria-current="page"]').count());
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       if (evidence) await page.screenshot({ path: path.join(evidence, `${route.slice(1)}-${theme}.png`) });
       if (route === '/cron') {
@@ -81,8 +96,9 @@ try {
         assert.equal((await rail.boundingBox()).x, 0);
         await page.locator('.workbench-mobile-settings-back').waitFor();
         const detailBox = await page.locator('.workbench-mobile-settings-panel').boundingBox();
-        assert.equal(detailBox.x, 48);
-        assert.equal(detailBox.width, 342);
+        assert.ok(detailBox.x >= railBox.x + railBox.width + 8);
+        await assertContentGutter(page, '.workbench-mobile-settings-panel', 'settings detail');
+        assert.equal(detailBox.width, 334);
         assert.equal(detailBox.y, 96);
         assert.equal(await back.isVisible(), true);
         assert.equal(await back.evaluate(el => { const r = el.getBoundingClientRect(); return el.contains(document.elementFromPoint(r.x + r.width / 2, r.y + r.height / 2)); }), true, 'Chat link is not covered by settings');
@@ -91,11 +107,30 @@ try {
         await page.keyboard.press('Escape');
         await page.locator('.dashboard-settings-nav').waitFor();
       }
+      await page.setViewportSize({ width: 800, height: 844 });
+      await assertContentGutter(page, target, `${route} at 800px`);
+      await page.setViewportSize({ width: 801, height: 844 });
+      await back.waitFor({ state: 'detached' });
+      assert.equal(await page.locator('.workbench-mobile-tab-content').count(), 0, `${route} desktop canvas restored`);
+      await page.setViewportSize({ width: 1440, height: 900 });
+      assert.equal(await page.locator('.workbench-mobile-tab-chat').count(), 0);
+      await page.setViewportSize({ width: 390, height: 844 });
+      await back.waitFor();
       await back.click();
       await page.waitForURL(host.origin + conversation);
       await page.goBack();
       await page.waitForURL(url => url.pathname === route);
       await page.getByRole('link', { name: 'Back to chat', exact: true }).waitFor();
+    }
+    for (const tab of ['display', 'models', 'shortcuts', 'versions']) {
+      await page.goto(host.origin + '/config?workbench=' + tab);
+      const detail = page.locator('.workbench-mobile-settings-panel');
+      await detail.waitFor();
+      await page.evaluate(theme => document.documentElement.dataset.workbenchTheme = theme, theme);
+      await page.addStyleTag({ content: '#preview-banner { display: none; }' });
+      await assertContentGutter(page, '.workbench-mobile-settings-panel', `settings ${tab}`);
+      assert.equal((await detail.boundingBox()).y, 96, `${tab} clears both headers`);
+      if (evidence) await page.screenshot({ path: path.join(evidence, `config-${tab}-${theme}.png`) });
     }
     assert.deepEqual(errors, []);
     await page.close();
@@ -115,12 +150,14 @@ try {
   assert.ok(await page.locator('.dashboard-action-rail').evaluate(el => { el.scrollTop = 200; return el.scrollTop > 0; }), 'Rail remains scrollable');
   await page.setViewportSize({ width: 800, height: 844 });
   await back.waitFor();
+  await assertContentGutter(page, '.workbench-mobile-tab-content', '800px');
   await page.setViewportSize({ width: 801, height: 844 });
   await back.waitFor({ state: 'detached' });
+  assert.equal(await page.locator('.workbench-mobile-tab-content').count(), 0);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(host.origin + '/cron?panel=1');
   await page.locator('.dashboard-accessory-close').waitFor();
   assert.equal(await page.locator('.workbench-mobile-tab-chat').count(), 0);
   await page.close();
-  console.log('PASS mobile tabs: light/dark 390x844, six routes, storage/fallback, settings, preview Escape, browser back, 800/801 and desktop overlay');
+  console.log('PASS mobile tabs: light/dark 390x844, seven routes, storage/fallback, settings, preview Escape, browser back, 800/801 and desktop overlay');
 } finally { await browser.close(); await host.close(); }

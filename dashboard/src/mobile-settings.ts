@@ -1,5 +1,6 @@
 import { uiText } from './ui-locale';
 import './mobile-settings.css';
+import { findTabContent } from './tab-content';
 
 /** Keep host-owned forms mounted; only their mobile presentation changes. */
 export function installMobileSettings(): void {
@@ -29,7 +30,7 @@ export function installMobileSettings(): void {
     const show = active && opened;
     const mode = active ? (show ? 'detail' : 'list') : '';
     if (root.dataset.mobileSettings !== mode) root.dataset.mobileSettings = mode;
-    const next = show ? document.querySelector<HTMLElement>('.dashboard-owned-page') || document.querySelector<HTMLElement>('#app-sidebar + div') : null;
+    const next = show ? findTabContent() : null;
     if (panel !== next) {
       if (panel) { panel.classList.remove('workbench-mobile-settings-panel'); panel.removeAttribute('role'); panel.removeAttribute('aria-modal'); panel.removeAttribute('aria-labelledby'); panel.removeAttribute('aria-owns'); }
       panel = next;
