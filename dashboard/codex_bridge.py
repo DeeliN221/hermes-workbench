@@ -34,6 +34,7 @@ from pathlib import Path
 from typing import Any, Protocol
 
 from codex_attachments import AttachmentStore
+from codex_message_visibility import MessageProjection, split_payload, wire_payload, input_text, needs_attachment_projection
 from hermes_profile_transfer import hide_projection, transfer_projection
 from memory_context import build_codex_memory_instructions
 from session_scope import normalize_session_scope, policy_for_scope
@@ -646,7 +647,7 @@ class BridgeStore:
                 identity = (row["user_id"], row["profile"], row["session_id"])
                 for request in self.connection.execute("SELECT payload FROM codex_requests WHERE user_id=? AND profile=? AND session_id=? ORDER BY rowid", identity).fetchall():
                     try:
-                        inputs = json.loads(request["payload"]).get("input", [])
+                        inputs, _ = split_payload(json.loads(request["payload"]))
                         title = " ".join(item.get("text", "") for item in inputs if isinstance(item, dict) and item.get("type") == "text").strip()
                     except (TypeError, ValueError, AttributeError):
                         continue
@@ -1262,6 +1263,40 @@ class BridgeStore:
                 "SELECT * FROM codex_requests WHERE user_id=? AND profile=? AND session_id=? AND client_request_id=?",
                 (user, profile, session_id, client_id),
             ).fetchone())
+
+    def message_projection(self, user: str, profile: str, session_id: str) -> MessageProjection:
+        """Load private context only within its authenticated session scope."""
+        with self.lock:
+            rows = self.connection.execute(
+                "SELECT client_request_id,payload FROM codex_requests WHERE user_id=? AND profile=? AND session_id=?",
+                (user, profile, session_id),
+            ).fetchall()
+        requests = [dict(row) for row in rows]
+        for request in requests:
+            try:
+                payload = json.loads(request["payload"])
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            _, hidden = split_payload(payload)
+            if hidden and "_attachmentContext" not in payload:
+                # Read-only legacy enrichment: never rewrite old requests/events.
+                ids = []
+                for block in hidden:
+                    path = next((line[6:] for line in block["text"].splitlines() if line.startswith("Path: ")), "")
+                    identifier = Path(path).parent.name
+                    if re.fullmatch(r"[0-9a-f]{32}", identifier):
+                        ids.append(identifier)
+                session = self.session(user, profile, session_id)
+                if session and ids:
+                    payload["_attachments"] = AttachmentStore().previews(Path(session["workspace_path"]), user, profile, session_id, ids)
+                    request["payload"] = json.dumps(payload)
+        return MessageProjection(requests)
+
+    def public_messages(self, user: str, profile: str, session_id: str, value: Any) -> Any:
+        projection = self.message_projection(user, profile, session_id) if needs_attachment_projection(value) else MessageProjection([])
+        return projection.public(value)
 
     def request_for_turn(self, user: str, profile: str, session_id: str, turn_id: str) -> dict[str, Any] | None:
         """Find the bridge request that produced one native turn."""
@@ -2159,9 +2194,11 @@ class CodexBridge:
         elif method == "turn/started":
             if session.get("status") != "running":
                 await asyncio.to_thread(self.store.upsert_session, user, profile, {**session, "status": "running"})
-        for queue in tuple(self._subscribers.get((user, profile, session_id), ())):
+        subscribers = tuple(self._subscribers.get((user, profile, session_id), ()))
+        public_event = await asyncio.to_thread(self.store.public_messages, user, profile, session_id, event) if subscribers else event
+        for queue in subscribers:
             try:
-                queue.put_nowait(event)
+                queue.put_nowait(public_event)
             except asyncio.QueueFull:
                 # A lagging client must re-read the authoritative snapshot;
                 # dropping an event would make its cursor unverifiable.
@@ -2309,9 +2346,11 @@ class CodexBridge:
         event = await asyncio.to_thread(
             self.store.append_event, user, profile, session_id, method, {"params": params}
         )
-        for queue in tuple(self._subscribers.get((user, profile, session_id), ())):
+        subscribers = tuple(self._subscribers.get((user, profile, session_id), ()))
+        public_event = await asyncio.to_thread(self.store.public_messages, user, profile, session_id, event) if subscribers else event
+        for queue in subscribers:
             try:
-                queue.put_nowait(event)
+                queue.put_nowait(public_event)
             except asyncio.QueueFull:
                 while not queue.empty():
                     with contextlib.suppress(asyncio.QueueEmpty):
@@ -2368,7 +2407,7 @@ class CodexBridge:
             method = "turn/steer" if payload.get("expectedTurnId") is not None else "turn/start"
             try:
                 connection = await self._connection(user, profile)
-                response = await connection.request(method, retry_payload)
+                response = await connection.request(method, wire_payload(retry_payload))
             except UnknownAcceptance:
                 await asyncio.to_thread(self.store.save_request, user, profile, session_id, client_id, status="unknown")
                 return
@@ -2535,7 +2574,8 @@ class CodexBridge:
             client_id = _safe(str(values.get("clientRequestId") or ""), "clientRequestId")
             lock = self._request_locks.setdefault((user, profile, session_id, client_id), asyncio.Lock())
             async with lock:
-                return await self._submit_once(user, profile, session_id, values)
+                result = await self._submit_once(user, profile, session_id, values)
+                return await asyncio.to_thread(self.store.public_messages, user, profile, session_id, result)
 
     async def _submit_once(self, user: str, profile: str, session_id: str, values: dict[str, Any]) -> dict[str, Any]:
         """Submit one turn exactly once per client request id when acceptance is known."""
@@ -2578,9 +2618,14 @@ class CodexBridge:
                 for item in input_items
             ):
                 raise HTTPException(status_code=400, detail="localImage input must come from an uploaded attachment")
-            input_items.extend(attachment_input)
+
         self.store.set_title_if_empty(user, profile, session_id, title_text)
-        payload = {"input": input_items, "threadId": session["thread_id"], "clientUserMessageId": client_id}
+        payload = {"input": input_items, "threadId": session["thread_id"], "clientUserMessageId": client_id, "_messageVisibility": 1}
+        if attachment_input:
+            payload["_attachmentContext"] = {"role": "user", "hidden": True, "content": attachment_input}
+            payload["_attachments"] = self.attachments.previews(
+                Path(str(session["workspace_path"])), user, profile, session_id, attachment_ids,
+            )
         expected_turn_id = values.get("expectedTurnId")
         method = "turn/steer" if expected_turn_id is not None else "turn/start"
         if expected_turn_id is not None:
@@ -2595,7 +2640,7 @@ class CodexBridge:
         connection = await self._connection(user, profile)
         try:
             try:
-                response = await connection.request(method, payload)
+                response = await connection.request(method, wire_payload(payload))
             except RpcFailure as exc:
                 # Reading persisted history does not load a thread after a
                 # runtime restart. Retry only this explicit pre-acceptance
@@ -2610,7 +2655,7 @@ class CodexBridge:
                 resume_params = {"threadId": session["thread_id"], "includeTurns": False}
                 resume_params.update(_thread_permission_params(self.permission_mode))
                 await connection.request("thread/resume", resume_params)
-                response = await connection.request(method, payload)
+                response = await connection.request(method, wire_payload(payload))
         except UnknownAcceptance:
             return self.store.save_request(user, profile, session_id, client_id, status="unknown")
         except RpcFailure as exc:
@@ -2685,9 +2730,14 @@ class CodexBridge:
                 if not done.cancelled():
                     done.exception()
             task.add_done_callback(finished)
-        return await asyncio.shield(task)
+        value = await asyncio.shield(task)
+        return await asyncio.to_thread(self.store.public_messages, user, profile, session_id, value)
 
     async def history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT) -> dict[str, Any]:
+        value = await self._history_preview(user, profile, session_id, limit)
+        return await asyncio.to_thread(self.store.public_messages, user, profile, session_id, value)
+
+    async def _history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT) -> dict[str, Any]:
         """Return a local recent-turn preview without contacting Codex upstream."""
 
         session = self.store.session(user, profile, session_id)
@@ -3082,7 +3132,23 @@ class CodexBridge:
                     session = mapped.get(thread_id)
                     if session is None:
                         continue
+                    if item.get("hidden") is True:
+                        continue
                     snippet = str(item.get("snippet") or "").strip()[:400]
+                    projection = await asyncio.to_thread(self.store.message_projection, user, profile, session["session_id"])
+                    if projection.has_context:
+                        # Native search snippets have no block visibility and may
+                        # begin midway through a private path. Rebuild from the
+                        # visible transcript instead of trying to redact fragments.
+                        history = await self.history(user, profile, session["session_id"], 0, _MAX_PAGE)
+                        texts = [input_text(message.get("content", message.get("text", "")))
+                                 for turn in history.get("turns", []) for message in turn.get("items", [])
+                                 if message.get("hidden") is not True and message.get("type") in {"userMessage", "agentMessage"}]
+                        match = next((text for text in texts if term.casefold() in text.casefold()), None)
+                        if match is None:
+                            continue
+                        start = max(0, match.casefold().find(term.casefold()) - 80)
+                        snippet = match[start:start + 400]
                     existing = results.get(str(session["session_id"]))
                     if existing is None:
                         results[str(session["session_id"])] = {**session, "matched": "content", "snippet": snippet}

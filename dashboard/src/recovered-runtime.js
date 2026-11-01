@@ -8,6 +8,8 @@ import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as
 import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
 import { applyMessagePreviews } from './message-previews';
+import { MessageAttachment } from './message-attachment';
+import { visibleHermesRecord } from './hermes-transcript';
 import { optionalNumber as pn, firstDefined as oi, timestamp as El, record as mt, text as Ae } from './api-values';
 import { cronList as Sn, cronSchedule as I5, cronTimezone as $0, cronForm as N5, cronPayload as Td, nativeCronPayload as B5, needsExtendedCron as z5, cronSessionId as T0, cronSessionProfiles, isCronSessionNotFound, mergeCronHistory as E0, cronTimestamp as A0, listCronJobs as q5, listCronRuns as Z5, listCronExecutions as j5, createNativeCronJob as F5, createExtendedCronJob as H5, updateCronJob as V5, changeCronJobState as U5, deleteCronJob as Y5 } from './cron-api';
 import { listSkills as iM, readSkillDescription as rM, listSkillEntries as B0, readSkillFile as nM, saveSkillFile as sM, mutateSkillFile as Md, skillPreviewUrl as oM, skillArchiveUrl as aM, isSkillTextPath as zl, skillPreviewKind as z0, downloadSkillFile as lM, uploadSkillArchive as cM, uploadSkillFile as hM } from './skills-api';
@@ -3709,7 +3711,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     try {
       const e = JSON.parse(i.slice(6));
       return Array.isArray(e)
-        ? e
+        ? e.filter(t => t?.hidden !== true)
             .map((t) =>
               typeof t == "string"
                 ? t
@@ -3862,7 +3864,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       r = [],
       n = new Map();
     let s, o;
-    for (const { row: a, inputIndex: l } of t) {
+    for (const { row: sourceRow, inputIndex: l } of t) {
+      const a = visibleHermesRecord(sourceRow);
+      if (!a) continue;
       const c = hm(ma(a.content), `${String(a.role || "message")} content`);
       if (a.role === "user") {
         if (o && Hx(o, a, e)) {
@@ -4005,7 +4009,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const r = await i(
       `/api/sessions/search?q=${ci(t)}&limit=100&profile=${ci(e)}&exclude_sources=cron`,
     );
-    return Array.isArray(r.results) ? r.results : [];
+    return Array.isArray(r.results) ? r.results.filter(row => row.hidden !== true) : [];
   }
   function searchStamp(i) {
     const e = Number(i);
@@ -8420,7 +8424,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         (n = insertRequest(n, {
           id: h,
           role: "user",
-          content: Wn(u.input) || runtimeText("待确认的消息", "Message awaiting confirmation"),
+          content: Wn(u.input),
+          attachments: u.attachments,
           status: c.status === "failed" ? "failed" : "pending",
           submissionError: runtimeErrorText(c.result),
           turnStartedAt: El(c.updated_at),
@@ -9467,7 +9472,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const s = i[r + 1] || i[r - 1];
     return { panes: n, activePaneId: s.id };
   }
-  const S5 = runtimeText("请查看附件。", "Please review the attachment.");
   function On(i, e) {
     return `${i}:${e}`;
   }
@@ -10030,20 +10034,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               i,
               "article",
               { className: "codex-message is-user", "data-message-id": e.id },
-              W(i, "div", { className: "codex-message-body" }, e.content),
+              e.content ? W(i, "div", { className: "codex-message-body" }, e.content) : null,
               e.attachments?.length
                 ? W(
                     i,
                     "div",
                     { className: "codex-message-attachments" },
                     ...e.attachments.map((attachment) =>
-                      W(i, "img", {
-                        key: attachment.id,
-                        className: "codex-message-attachment",
-                        src: attachment.src,
-                        alt: attachment.name,
-                        loading: "lazy",
-                      }),
+                      W(i, MessageAttachment, { key: attachment.id, React: i, attachment }),
                     ),
                   )
                 : null,
@@ -11486,10 +11484,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const writeback = action === "kanban-writeback";
           const cardShortcut = writeback || questionAnswer;
           if (writeback && (!Y.current || !kanbanChatContext.current.matches(Y.current) || yr)) return;
-          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : Ji.current.trim(),
+          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : Ji.current,
             U = cardShortcut ? [] : [...Zi.current],
-            ee = L || (U.length ? S5 : "");
-          if (!ee || submittingRef.current || Ls || (yr && !qr) || yn) return;
+            ee = L;
+          if ((!ee.trim() && !U.length) || submittingRef.current || Ls || (yr && !qr) || yn) return;
           if (!(await shouldSubmitComposerMessage(L, cv))) return;
           const steeringTurnId = yr ? qr : "";
           if (!ai.length) {
@@ -11517,9 +11515,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             zt = [];
           ji.current.set(ze, { requestId: ne, content: L });
           const Ke = () => Hi.current && Ie === X.current && Y.current === $e;
-          const previews = U.flatMap((item) =>
-            item.preview ? [{ id: item.localId, name: item.file.name, src: item.preview }] : [],
-          );
+          const previews = U.map((item) => ({
+            id: item.localId, name: item.file.name, src: item.preview || undefined,
+            kind: item.folder ? "folder" : "file", fileCount: item.folder?.entries.length,
+          }));
           (!cardShortcut && ((Ji.current = ""), Ot("")),
             Nt(!0),
             Pt(""),

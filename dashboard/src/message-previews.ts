@@ -23,6 +23,6 @@ export function applyMessagePreviews<T extends PreviewCarrier>(
     const key = [message.id, message.clientRequestId, message.clientId]
       .map((value) => (value ? String(value) : ''))
       .find((value) => value && previews.has(value));
-    return key ? { ...message, attachments: previews.get(key) } as T : message;
+    return key && !message.attachments?.length ? { ...message, attachments: previews.get(key) } as T : message;
   });
 }

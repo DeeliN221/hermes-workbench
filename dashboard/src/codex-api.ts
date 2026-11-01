@@ -89,7 +89,7 @@ export async function searchCodexSessions(read: FetchJSON, profile: string, quer
   const response = record(await read(`${API}/search?profile=${encode(profile)}&q=${encode(query)}&limit=${Math.max(1, Math.min(limit, 100))}`));
   return rows(response, 'results').flatMap(value => {
     const row = record(value), id = text(row.session_id ?? row.sessionId ?? row.id).trim();
-    if (!id) return [];
+    if (!id || row.hidden === true) return [];
     const matched = text(row.matched), rawUpdated = Number(row.updated_at ?? row.updatedAt);
     return [{
       id, threadId: text(row.thread_id ?? row.threadId), title: text(row.title, id), snippet: text(row.snippet),

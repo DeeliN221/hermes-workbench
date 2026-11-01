@@ -8,7 +8,8 @@ export type CodexSnapshotPreview = {
   turnId: string;
 };
 
-const PREFIX = 'hermes-workbench.codex-snapshot.v1';
+// v1 could contain native echoes with private attachment hints. Reload from the server.
+const PREFIX = 'hermes-workbench.codex-snapshot.v2';
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_SERIALIZED_CHARS = 450_000;
 const MESSAGE_COUNTS = [48, 24, 12, 6, 3, 1];
@@ -28,7 +29,7 @@ function storageKey(key: string): string {
 /** Save only the newest messages, shrinking until localStorage accepts the snapshot. */
 export function saveCodexSnapshot(key: string, snapshot: { messages?: any[]; turnId?: string }): void {
   const target = storage();
-  const messages = Array.isArray(snapshot.messages) ? snapshot.messages : [];
+  const messages = Array.isArray(snapshot.messages) ? snapshot.messages.filter(message => message?.hidden !== true) : [];
   if (!target || !key || messages.length === 0) return;
   const turnId = String(snapshot.turnId || '');
   for (const count of MESSAGE_COUNTS) {
@@ -56,7 +57,7 @@ export function loadCodexSnapshot(key: string): CodexSnapshotPreview | null {
     if (!raw) return null;
     const value = JSON.parse(raw) as { cachedAt?: number; messages?: unknown; turnId?: unknown };
     if (Date.now() - Number(value.cachedAt || 0) > MAX_AGE_MS || !Array.isArray(value.messages)) return null;
-    return { messages: value.messages, turnId: String(value.turnId || '') };
+    return { messages: value.messages.filter(message => message?.hidden !== true), turnId: String(value.turnId || '') };
   } catch {
     return null;
   }
@@ -66,7 +67,7 @@ function messageText(message: any): string {
   const content = message?.content ?? message?.text ?? '';
   if (typeof content === 'string') return content;
   if (!Array.isArray(content)) return '';
-  return content.map(part => typeof part === 'string' ? part : String(part?.text || '')).join('\n');
+  return content.filter(part => part?.hidden !== true).map(part => typeof part === 'string' ? part : String(part?.text || '')).join('\n');
 }
 
 /** Return the latest user/assistant text for the thin loader's pre-runtime preview. */
