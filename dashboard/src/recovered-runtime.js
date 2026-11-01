@@ -2604,12 +2604,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         isModelVisibility = u.path === "/config" && u.settingsTab === "models",
         isVersionSettings = u.path === "/config" && (u.settingsTab === "versions" || u.settingsTab === "settings"),
         isConfigSubpage = isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
-        M = isHome || isTaskBoard || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
+        M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
         H = Cx(u.path),
         F = yx(u.profile, da),
         j = u.path === "/chat" && !u.terminal,
         accessory = mobileActions || isTaskBoard ? "" : accessoryKind(u.path, u.search),
-        navIsCollapsed = !mobileActions && navCollapsed;
+        navIsCollapsed = !mobileActions && navCollapsed,
+        ownsPage = M || isTaskBoard;
       r(() => {
         const media = window.matchMedia('(max-width: 800px)');
         const resize = () => { setMobileActions(media.matches); setActionsOpen(false); };
@@ -2701,7 +2702,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, []),
         r(() => {
           ((document.documentElement.dataset.workbenchShell = "true"),
-            (document.documentElement.dataset.workbenchPage = M
+            (document.documentElement.dataset.workbenchPage = ownsPage
               ? "custom"
               : H
                 ? "settings"
@@ -2718,15 +2719,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             ae = z?.getAttribute("aria-hidden");
           if (
             (z &&
-              ((z.inert = M),
-              M
+              ((z.inert = ownsPage),
+              ownsPage
                 ? z.setAttribute("aria-hidden", "true")
                 : z.removeAttribute("aria-hidden")),
-            M &&
+            ownsPage &&
               (z?.contains(document.activeElement) ||
                 document.activeElement === document.body) &&
               D.current?.focus({ preventScroll: !0 }),
-            !M && document.activeElement === document.body)
+            !ownsPage && document.activeElement === document.body)
           ) {
             const Ce = z?.querySelector('main, [role="main"], h1');
             Ce &&
@@ -2745,7 +2746,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               delete document.documentElement.dataset.workbenchAccessory,
               delete document.documentElement.dataset.workbenchAccessorySettings);
           };
-        }, [M, H, u.path, accessory]));
+        }, [ownsPage, H, u.path, accessory]));
       const activateAccessory = (z) => {
           const source = window.location.href;
           if (!u.panel) {
@@ -3080,16 +3081,21 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 : null,
             )
           : null,
-        M
+        isTaskBoard
+          ? l("main", {
+              ref: D, className: "dashboard-owned-page", tabIndex: -1,
+              "aria-label": runtimeText("看板", "Kanban"),
+            }, l(TaskControlTower, { key: "kanban", profile: F }))
+          : M
           ? l(
               "main",
               {
                 ref: D,
                 className: `dashboard-owned-page${isProfiles ? " dashboard-profile-page" : isConfigSubpage ? " dashboard-shortcuts-page" : ""}`,
                 tabIndex: -1,
-                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isTaskBoard ? runtimeText("看板", "Kanban") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
+                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome || isTaskBoard ? l(TaskControlTower, { key: isTaskBoard ? "kanban" : "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )
