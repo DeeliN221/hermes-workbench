@@ -60,3 +60,31 @@
 .workbench-home-read-button { position: absolute; right: 16px; top: 14px; border: 0; border-radius: 4px; background: transparent; color: var(--mc-muted, #70776b); font: inherit; font-size: 12px; padding: 6px 4px; cursor: pointer; }
 .workbench-home-read-button:is(:hover, :focus-visible) { background: var(--mc-raised, #eef0e8); color: var(--mc-ink, #30352c); }
 .workbench-home-read-error { position: relative; margin: 0; padding: 8px 20px; background: var(--mc-surface, #f4f1e6); color: var(--mc-danger, #a32727); }
+
+.workbench-home-compose { display: grid; gap: 10px; margin: 16px 0; }
+.workbench-home-compose textarea { width: 100%; min-width: 0; box-sizing: border-box; resize: vertical; padding: 12px; font: inherit; color: inherit; background: var(--mc-surface, #fff); border: 1px solid var(--mc-line-soft, #c7c7ba); border-radius: 10px; }
+.workbench-home-compose button { justify-self: end; }
+.workbench-home-projects { margin: 16px 0; }
+.workbench-home-projects > summary { margin-bottom: 12px; }
+.workbench-home-project { min-width: 0; padding: 12px; border: 1px solid var(--mc-line-soft, #c7c7ba); border-radius: 10px; overflow-wrap: anywhere; }
+.workbench-home-project a { display: block; padding: 8px 0; color: inherit; }
+.workbench-home-card-meta span { overflow-wrap: anywhere; }
+.workbench-profile-display { display: grid; gap: 8px; }
+.workbench-profile-display label { display: grid; gap: 4px; }
+.workbench-profile-display input { min-width: 0; width: 100%; box-sizing: border-box; }
+
+.workbench-home-compose, .workbench-home-projects { max-width: 1120px; margin: 16px auto; }
+.workbench-home-compose button { border: 1px solid var(--mc-line-soft, #c7c7ba); border-radius: 6px; background: var(--mc-raised, #eef0e8); color: inherit; padding: 8px 16px; }
+.workbench-home-projects > .workbench-home-grid { grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); max-height: 240px; overflow-y: auto; padding: 2px; }
+.workbench-home-project { background: var(--mc-surface, #fff); }
+.workbench-home-project summary { cursor: pointer; }
+.workbench-home-actions { flex-wrap: wrap; align-items: center; }
+.workbench-recent-home > .workbench-home-actions { max-width: 1120px; margin: 16px auto; }
+.workbench-home-actions [aria-pressed="true"] { outline: 2px solid var(--mc-accent, #466d2b); }
+.workbench-home-nav { padding: 16px; color: var(--mc-muted, #70776b); font-size: 13px; line-height: 1.6; }
+.workbench-home-nav a { color: inherit; }
+@media (max-width: 800px) {
+  .workbench-home-header { gap: 12px; margin-bottom: 16px; }
+  .workbench-home-header .workbench-home-actions { width: 100%; }
+  .workbench-home-header .workbench-home-actions a { flex-basis: 100%; }
+}

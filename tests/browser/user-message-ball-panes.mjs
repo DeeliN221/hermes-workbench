@@ -146,6 +146,7 @@ try {
 
 /** Clone extra user messages into one pane so the transcript can scroll. */
 async function injectMessages(page, paneIndex, ids) {
+  await page.locator('.codex-pane-slot').nth(paneIndex).locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 8000 });
   await page.evaluate(({ paneIndex: index, ids: messages }) => {
     const list = document.querySelectorAll('.codex-pane-slot')[index].querySelector('.codex-message-list');
     const template = list.querySelector('.codex-message.is-user');

@@ -1,14 +1,17 @@
+import { useProfileDisplay } from './profile-display';
+import { homeSubmission } from './home-compose';
+import type { HomeProject } from './home-profiles';
 import { uiText } from './ui-locale';
 import { loadHomeProfiles } from './home-profiles';
 import { openHomeConversation } from './home-navigation';
-import { agentDisplayName } from './kanban-agent-picker';
+import { agentDisplayName, profileTabName } from './kanban-agent-picker';
 import { createHomeSwipeCard } from './home-swipe-card';
-import { readMarkers, fetchReadMarkers, cardWasRead, markCardRead, saveReadMarker, cardIdentity, activityVersion, type ReadMarkers } from './home-read-state';
+import { readMarkers, fetchReadMarkers, cardWasRead, markCardRead, cardIdentity, activityVersion, type ReadMarkers } from './home-read-state';
 import type { FetchJSON } from './workbench-api';
 import { sessionDisplayTitle } from './session-organization';
 import { decodeHermesStructuredContent, type HermesRecord } from './hermes-transcript';
 
-export type RecentSession = { id: string; title: string; source: 'Codex' | 'Hermes'; updated: number; status: string; workspace: string; profile: string; completedSeq: number; readSeq?: number; messageCount: number; historyId?: string };
+export type RecentSession = { groupId?: string; id: string; title: string; source: 'Codex' | 'Hermes'; updated: number; status: string; workspace: string; profile: string; completedSeq: number; readSeq?: number; messageCount: number; historyId?: string };
 /** Keep the home card list focused on current work; older chats stay in the session browser. */
 export const RECENT_WINDOW_DAYS = 30;
 const RECENT_WINDOW_MS = RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
@@ -54,7 +57,7 @@ export function recentSessions(codex: HermesRecord[], hermes: HermesRecord[], pr
     // The chat reader rejects Codex projections; only mapped Codex sessions are openable.
     if (source === 'Hermes' && row.source === 'codex') return [];
     seen.add(key);
-    return [{ id, source, historyId: source === 'Codex' && mirrors.has(`${owner}:${id}`) ? id : undefined, profile: owner, completedSeq: Number(row.lastCompletedSeq || 0), readSeq: Number(row.readSeq || 0), messageCount: Number(row.message_count || 0), title: sessionDisplayTitle(row), updated: activityTime(row),
+    return [{ id, source, groupId: String(row.groupId || row.group_id || ''), historyId: source === 'Codex' && mirrors.has(`${owner}:${id}`) ? id : undefined, profile: owner, completedSeq: Number(row.lastCompletedSeq || 0), readSeq: Number(row.readSeq || 0), messageCount: Number(row.message_count || 0), title: sessionDisplayTitle(row), updated: activityTime(row),
       status: String(row.status || ''), workspace: String(row.workspacePath ?? row.workspace_path ?? row.model ?? '') }];
   })).sort((a, b) => b.updated - a.updated || a.id.localeCompare(b.id)).slice(0, 24);
 }
@@ -124,6 +127,24 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
   const markersFor = (rows: RecentSession[], server = savedServerMarkers) => Object.assign({},
     ...[...new Set(rows.map(row => row.profile))].map(readMarkers), server);
   return function RecentHome({ profile }: { profile: string }) {
+    useProfileDisplay(sdk);
+    const [projects, setProjects] = useState([] as HomeProject[]);
+    const [view, setView] = useState('all');
+    const [draft, setDraft] = useState('');
+    const [sending, setSending] = useState(false);
+    const [sendError, setSendError] = useState('');
+    const submission = useRef(null as null | { text: string; send: () => Promise<string> });
+    const send = async () => {
+      if (sending || !draft.trim()) return;
+      setSending(true); setSendError('');
+      submission.current ||= { text: draft, send: homeSubmission(sdk.fetchJSON, draft) };
+      try {
+        const id = await submission.current.send();
+        submission.current = null; setDraft('');
+        openHomeConversation(`/chat?session=${encodeURIComponent(id)}`, 'default', navigate);
+      } catch (error) { setSendError(String(error)); }
+      finally { setSending(false); }
+    };
     const [rows, setRows] = useState(() => savedRows);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
@@ -164,19 +185,6 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
           if (controller.signal.aborted) return;
           // Keep the last server snapshot; local markers remain a fallback.
         }
-        const syncLocalReadMarkers = async (rows: RecentSession[]) => {
-          const local = Object.assign({}, ...[...new Set(rows.map(row => row.profile))].map(readMarkers));
-          const pending = rows.filter(row => {
-            const key = cardIdentity(row);
-            return local[key] && local[key] !== savedServerMarkers[key] && cardWasRead(row, local);
-          });
-          await Promise.all(pending.map(async row => {
-            try {
-              await saveReadMarker(sdk.fetchJSON, row);
-              savedServerMarkers[cardIdentity(row)] = activityVersion(row);
-            } catch { /* Retry on the next refresh. */ }
-          }));
-        };
         const pending: RecentSession[] = [];
         const scheduled = new Set<string>();
         const workers: Promise<void>[] = [];
@@ -205,7 +213,7 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
           const markers = markersFor(rows);
           for (const row of rows) {
             const key = `${cardIdentity(row)}:${row.updated}:${row.historyId || ""}`;
-            if (!withinRecentWindow(row) || scheduled.has(key) || cardWasRead(row, markers)) continue;
+            if (!withinRecentWindow(row) || scheduled.has(key)) continue;
             scheduled.add(key); pending.push(row);
           }
           while (pending.length && activeWorkers < 3) workers.push(worker());
@@ -213,11 +221,12 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
 
         try {
           const result = await loadHomeProfiles(sdk.fetchJSON, controller.signal, {
-            initialProfile: profile, initialRows: savedRows,
+            initialProfile: 'default', initialRows: savedRows,
             onProgress: result => {
               if (controller.signal.aborted) return;
               savedRows = result.rows;
               setRows(result.rows);
+              setProjects(result.projects);
               setMarkers(markersFor(result.rows));
               enqueuePreviews(result.rows);
             },
@@ -229,7 +238,6 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
           for (const key of cache.current.keys()) if (!retained.has(key)) cache.current.delete(key);
           setRows(nextRows);
           setMarkers(markersFor(nextRows));
-          void syncLocalReadMarkers(nextRows);
           setError(result.failed.length ? uiText(`部分智能体的会话未能加载：${result.failed.map(agentDisplayName).join('、')}。请重试。`, `Some agent sessions failed to load: ${result.failed.map(agentDisplayName).join(", ")}. Please retry.`) : '');
         } catch {
           if (!controller.signal.aborted) { setError(uiText("智能体列表加载失败，请重试。", "Failed to load agents. Please retry.")); setLoading(false); }
@@ -246,13 +254,6 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
       return () => { controller.abort(); clearTimeout(previewTimer); window.clearInterval(timer); window.removeEventListener('focus', refresh); };
     }, [epoch]);
     const refreshNow = () => { cache.current.clear(); setEpoch((n: number) => n + 1); };
-    const link = (path: string, label: any, props: Record<string, unknown> = {}) => h('a', {
-      ...props, href: `${path}${path.includes('?') ? '&' : '?'}profile=${encodeURIComponent(profile)}`,
-      onClick: (event: MouseEvent) => {
-        if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
-        event.preventDefault(); navigate(path, profile);
-      },
-    }, label);
     const renderPrompts = (row: RecentSession) => {
       const pair = previews[cardIdentity(row)];
       if (!pair) return h('p', { key: 'requests', className: 'workbench-home-request-status' }, uiText("正在读取提问…", "Loading requests\u2026"));
@@ -268,7 +269,7 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
         pair.error ? h('p', { key: 'error', className: 'workbench-home-request-error', role: 'status' }, pair.error) : null);
     };
     const recentRows = rows.filter((row: RecentSession) => withinRecentWindow(row));
-    const visibleRows = recentRows.filter((row: RecentSession) => !cardWasRead(row, markers));
+    const visibleRows = recentRows.filter((row: RecentSession) => view === 'all' || !cardWasRead(row, markers));
     const acknowledge = async (row: RecentSession) => {
       const next = await markCardRead(sdk.fetchJSON, row);
       setMarkers((current: ReadMarkers) => ({ ...current, ...next }));
@@ -289,11 +290,32 @@ export function createRecentHome(sdk: { React: any; hooks: any; fetchJSON: Fetch
     };
     return h('section', { className: 'workbench-recent-home', 'aria-label': uiText("最近活跃的会话", "Recently active sessions"), 'aria-busy': loading },
       h('header', { className: 'workbench-home-header' }, h('div', null,
-        h('h1', null, uiText("最近会话", "Recent sessions")), h('p', null, uiText("所有 profile · 近 " + RECENT_WINDOW_DAYS + " 天", "All profiles · Last " + RECENT_WINDOW_DAYS + " days"))),
+        h('h1', null, uiText("最近会话", "Recent sessions")), h('p', null, uiText("全部档案 · 近 " + RECENT_WINDOW_DAYS + " 天", "All profiles · Last " + RECENT_WINDOW_DAYS + " days"))),
         h('div', { className: 'workbench-home-actions' },
           h('button', { type: 'button', onClick: handleAll, disabled: loading || handlingAll || !visibleRows.length }, handlingAll ? uiText("正在处理…", "Processing\u2026") : uiText("全部处理完成", "Mark all handled")),
           h('button', { type: 'button', onClick: refreshNow }, uiText("刷新", "Refresh")),
-          link('/chat', uiText("＋ 新会话", "\uff0b New session")))),
+          h('a', { href: '/chat?new=1&profile=default', onClick: (event: MouseEvent) => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openHomeConversation('/chat?new=1', 'default', navigate); } }, uiText('＋ 新会话', '+ New session') + ' · ' + profileTabName('default')))),
+      h('form', { className: 'workbench-home-compose', onSubmit: (event: Event) => { event.preventDefault(); void send(); } },
+        h('label', { htmlFor: 'home-message' }, uiText('发送给 ', 'Send to ') + agentDisplayName('default')),
+        h('textarea', { id: 'home-message', value: draft, disabled: sending || !!submission.current, rows: 2,
+          placeholder: uiText('吩咐一个任务…', 'Describe a task…'), onChange: (event: any) => setDraft(event.target.value) }),
+        h('button', { type: 'submit', disabled: sending || !draft.trim() }, sending ? uiText('发送中…', 'Sending…') : uiText('发送', 'Send')),
+        sendError ? h('p', { role: 'alert' }, sendError, uiText('；可重试同一消息。', '; retry the same message.')) : null),
+      h('details', { className: 'workbench-home-projects', open: true },
+        h('summary', null, uiText('全部档案 · 项目', 'All profiles · Projects')),
+        h('div', { className: 'workbench-home-grid' }, ...projects.map((project: HomeProject) => {
+          const members = recentRows.filter((row: RecentSession) => row.source === 'Codex' && row.profile === project.profile && row.groupId === project.id);
+          return h('details', { key: JSON.stringify([project.profile, project.id]), className: 'workbench-home-project' },
+            h('summary', null, h('span', { className: 'workbench-home-card-meta' }, agentDisplayName(project.profile)), project.name),
+            members.length ? members.map((row: RecentSession) => {
+              const path = `/chat?session=${encodeURIComponent(row.id)}`;
+              return h('a', { key: row.id, href: `${path}&profile=${encodeURIComponent(row.profile)}`,
+                onClick: (event: MouseEvent) => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openHomeConversation(path, row.profile, navigate); } }, row.title);
+            }) : h('p', null, uiText('暂无最近会话', 'No recent sessions')));
+        })), !loading && !projects.length ? h('p', null, uiText('暂无项目', 'No projects')) : null),
+      h('div', { className: 'workbench-home-actions', 'aria-label': uiText('会话视图', 'Session view') },
+        h('button', { type: 'button', 'aria-pressed': view === 'all', onClick: () => setView('all') }, uiText('全部档案', 'All profiles')),
+        h('button', { type: 'button', 'aria-pressed': view === 'unread', onClick: () => setView('unread') }, uiText('未读', 'Unread'))),
       error ? h('p', { role: 'alert' }, error, h('button', { type: 'button', onClick: refreshNow }, uiText("重试", "Retry"))) : null,
       notice ? h('p', { role: 'status' }, notice) : null,
       loading ? h('p', { role: 'status' }, rows.length ? uiText("正在更新其余会话…", "Updating remaining sessions\u2026") : uiText("正在读取最近会话…", "Loading recent sessions\u2026")) : null,

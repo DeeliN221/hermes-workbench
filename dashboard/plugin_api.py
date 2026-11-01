@@ -1590,3 +1590,44 @@ def put_model_display(request: Request, body: ModelDisplayBody, profile: str = "
 @router.post("/model-display/migrate")
 def migrate_model_display(request: Request, body: ModelDisplayBody, profile: str = "default"):
     return _model_display(_model_display_owner(request), profile, body, migrate=True)
+
+
+class ProfileDisplayBody(BaseModel):
+    display_name: str = Field(max_length=64)
+
+
+def _profile_display(owner: str, profile: str | None = None, body: ProfileDisplayBody | None = None):
+    """Display-only aliases in plugin storage; Hermes IDs and homes never change."""
+    if body is not None:
+        from skill_files import _profile_home, _profile_has_identity
+        profile, home = _profile_home(profile)
+        if profile != 'default' and not _profile_has_identity(home):
+            raise HTTPException(404, 'Profile not found')
+        alias = ' '.join(body.display_name.split())
+        if any(ord(c) < 32 for c in alias):
+            raise HTTPException(422, 'Invalid display name')
+    connection = _open_organization_db()
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        connection.execute('CREATE TABLE IF NOT EXISTS profile_display_names (owner TEXT NOT NULL, profile TEXT NOT NULL, display_name TEXT NOT NULL, PRIMARY KEY(owner, profile))')
+        if body is not None:
+            if alias:
+                connection.execute('INSERT INTO profile_display_names VALUES (?, ?, ?) ON CONFLICT(owner, profile) DO UPDATE SET display_name=excluded.display_name', (owner, profile, alias))
+            else:
+                connection.execute('DELETE FROM profile_display_names WHERE owner=? AND profile=?', (owner, profile))
+        rows = connection.execute('SELECT profile, display_name FROM profile_display_names WHERE owner=?', (owner,)).fetchall()
+        connection.commit()
+        return {'aliases': {row['profile']: row['display_name'] for row in rows}}
+    finally:
+        connection.close()
+
+
+@router.get('/profile-display')
+def get_profile_display(request: Request):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(_profile_display(_model_display_owner(request)), headers={'Cache-Control': 'no-store'})
+
+
+@router.put('/profile-display')
+def put_profile_display(request: Request, body: ProfileDisplayBody, profile: str = 'default'):
+    return _profile_display(_model_display_owner(request), profile, body)

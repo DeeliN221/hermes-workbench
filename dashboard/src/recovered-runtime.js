@@ -28,7 +28,7 @@ import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-alias
 import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
 installModelAliasSync();
 import { createRecentHome } from './recent-home';
-import { installHomeChatNavigation } from './home-navigation';
+import { installHomeChatNavigation, openHomeConversation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
 import { currentProfile, rememberProfile, rememberChat, profileDrafts, profileAttachments } from './profile-scope';
 import { createProfileControls } from './profile-controls';
@@ -2841,7 +2841,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               .finally(() => C(!1)));
         },
         B = v === "dark" ? runtimeText("切换到亮色主题", "Switch to light theme") : runtimeText("切换到暗色主题", "Switch to dark theme"),
-        Y = _?.toolbar ?? l("div", { className: "codex-navigation-create-actions" },
+        Y = isHome ? l("div", { className: "codex-navigation-create-actions" }, l("button", { type: "button", className: "codex-new-chat", "aria-label": runtimeText("新会话", "New session"), onClick: () => openHomeConversation("/chat?new=1", "default", Kp) }, craftingIcon(t, "compose"), l("span", null, runtimeText("新会话", "New session")))) : _?.toolbar ?? l("div", { className: "codex-navigation-create-actions" },
           l("button", { type: "button", disabled: true, "aria-label": runtimeText("搜索", "Search"), title: runtimeText("会话列表加载后可搜索", "Search is available after sessions load") },
             craftingIcon(t, "search"), l("span", null, runtimeText("搜索", "Search")))),
         te = Bc(window.innerWidth),
@@ -2980,7 +2980,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             "nav",
             { className: "dashboard-nav-primary", "aria-label": runtimeText("主要功能", "Main features") },
             l("div", { className: "dashboard-nav-toolbar" },
-              l(ProfileAction, { profile: F, label: profileTabName(F), className: "dashboard-nav-profile" }),
+              l(ProfileAction, { profile: F, className: "dashboard-nav-profile" }),
               l("button", {
                 type: "button", className: "dashboard-nav-collapse",
                 "aria-label": navIsCollapsed ? runtimeText("展开左侧导航", "Expand navigation") : runtimeText("折叠左侧导航", "Collapse navigation"),
@@ -3011,7 +3011,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   },
                   hidden: false,
                 },
-                _?.element ?? l("div", { className: "project-section-heading workbench-project-placeholder" }, l("span", null, runtimeText("项目", "Projects"))),
+                isHome ? l("div", { className: "workbench-home-nav" },
+                  l("p", null, runtimeText("首页展示全部档案；新会话发送给默认 Agent。", "Home shows all profiles. New sessions go to the default agent.")),
+                  l("a", { href: "/profiles?profile=default", onClick: (event) => { event.preventDefault(); Kp("/profiles", "default"); } }, runtimeText("管理档案与显示名", "Manage profiles and display names"))) : _?.element ?? l("div", { className: "project-section-heading workbench-project-placeholder" }, l("span", null, runtimeText("项目", "Projects"))),
               ),
             ),
           ),

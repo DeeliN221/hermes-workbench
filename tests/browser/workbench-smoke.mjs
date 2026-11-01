@@ -310,6 +310,7 @@ try {
   await messageNavigatorPage.waitForFunction(() => document.querySelectorAll('.codex-message.is-user[data-message-id]').length === 7);
   const messageBall = messageNavigatorPage.locator('[data-workbench-user-message-ball]');
   await messageBall.waitFor({ state: 'visible', timeout: 5000 });
+  await messageNavigatorPage.waitForFunction(() => /7/.test(document.querySelector('[data-workbench-user-message-ball]')?.getAttribute('aria-label') || ''));
   assert.match(await messageBall.getAttribute('aria-label'), /7/);
   await messageBall.click();
   const messagePanel = messageNavigatorPage.locator('[data-workbench-user-message-panel]');
