@@ -169,12 +169,12 @@ try {
     await page.locator('#action-status').filter({ hasText: /^Archived$/ }).waitFor();
     assert.equal(patches, 1, 'a repeated confirmation must not duplicate the mutation');
     assert.equal(await page.locator('#task-status').textContent(), 'archived');
-    await page.getByRole('button', { name: 'Close task' }).click(); await open();
+    await page.getByRole('button', { name: '关闭', exact: true }).click(); await open();
     fail = true; await archive(); await page.locator('#confirm').click();
     await page.locator('#action-status').filter({ hasText: 'Archive failed' }).waitFor();
     await page.getByRole('textbox', { name: 'Dependency note' }).fill('interactive after failure');
     assert.equal(await page.evaluate(() => document.body.style.pointerEvents), '');
-    await page.getByRole('button', { name: 'Close task' }).click(); await open();
+    await page.getByRole('button', { name: '关闭', exact: true }).click(); await open();
     fail = false; await archive(); await assertPaintedAboveBoard(page); await page.locator('#confirm').click();
     await page.locator('#action-status').filter({ hasText: /^Archived$/ }).waitFor();
     assert.equal(patches, 3);

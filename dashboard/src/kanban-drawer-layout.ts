@@ -307,6 +307,10 @@ function commentsDock(drawer: HTMLElement, source: HTMLElement | undefined) {
 }
 /** Called after native React updates; never reparent or replace its editable nodes. */
 export function layoutKanbanDrawer(drawer: HTMLElement) {
+  drawer.classList.add('hti-kanban-v4');
+  // Label the existing native control without replacing its click/Escape lifecycle.
+  const close = drawer.querySelector<HTMLButtonElement>('.hermes-kanban-drawer-head > button');
+  if (close?.getAttribute('aria-label') !== '关闭') close?.setAttribute('aria-label', '关闭');
   const body = drawer.querySelector<HTMLElement>('.hermes-kanban-drawer-body');
   const task = drawer.querySelector('.hermes-kanban-drawer-head span')?.textContent?.trim() || '';
   if (!body || !task) return;
@@ -316,7 +320,7 @@ export function layoutKanbanDrawer(drawer: HTMLElement) {
     clearTimeout(state.timer); state.request++; drawer.querySelectorAll('[data-wb-owned]').forEach(n => n.remove()); states.delete(drawer); state = undefined;
     delete drawer.dataset.wbHistoryLoaded; delete drawer.dataset.wbLog;
   }
-  drawer.classList.add('hti-kanban-v4'); body.classList.add('hti-kanban-prioritized-body');
+  body.classList.add('hti-kanban-prioritized-body');
   if (!state) {
     const tabs = own(el('nav', 'wb-drawer-tabs')); tabs.setAttribute('role', 'tablist'); tabs.setAttribute('aria-label', uiText('卡片详情', 'Card details'));
     state = { task, board, tab: 'overview', tabs, sessions: own(el('section', 'wb-sessions')), runs: own(el('section', 'wb-runs')), alert: own(el('section', 'wb-task-alert')), fingerprint: '', request: 0, linksLoaded: false };

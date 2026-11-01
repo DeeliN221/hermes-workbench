@@ -36,6 +36,24 @@ describe('V4 native drawer progressive disclosure', () => {
   d.querySelector<HTMLButtonElement>('[data-tab=sessions]')!.click(); await Promise.resolve(); await Promise.resolve();
   expect(d.querySelector('.wb-session-link')?.getAttribute('href')).toContain('session=s1');
  });
+ it('labels the existing close control without replacing its handler across refreshes', () => {
+  vi.useFakeTimers(); vi.stubGlobal('__HERMES_PLUGIN_SDK__', { fetchJSON: vi.fn(async () => detail) });
+  const d = fixture(); const header = d.querySelector('.hermes-kanban-drawer-head')!;
+  const close = document.createElement('button'); close.textContent = '×';
+  const onClose = vi.fn(); close.addEventListener('click', onClose); header.append(close);
+  layoutKanbanDrawer(d); layoutKanbanDrawer(d);
+  expect(header.querySelector('button')).toBe(close);
+  expect(close.getAttribute('aria-label')).toBe('关闭');
+  close.click(); expect(onClose).toHaveBeenCalledOnce();
+ });
+ it('keeps the header styled and labelled while the native body is loading', () => {
+  const d = document.createElement('section'); d.className = 'hermes-kanban-drawer';
+  d.innerHTML = '<header class="hermes-kanban-drawer-head"><span>t1</span><button>×</button></header><div>Loading…</div>';
+  layoutKanbanDrawer(d);
+  expect(d.classList.contains('hti-kanban-v4')).toBe(true);
+  expect(d.querySelector('button')?.getAttribute('aria-label')).toBe('关闭');
+  expect(d.querySelector('.wb-drawer-tabs')).toBeNull();
+ });
  it('retains native history when source loading fails and recovers with retry without mutating task data', async () => {
   vi.useFakeTimers(); const fetch = vi.fn().mockRejectedValueOnce(Error('503')).mockResolvedValue(detail); vi.stubGlobal('__HERMES_PLUGIN_SDK__', { fetchJSON: fetch });
   const d = fixture(); layoutKanbanDrawer(d); await vi.advanceTimersByTimeAsync(200);
