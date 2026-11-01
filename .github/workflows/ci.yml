@@ -29,6 +29,11 @@ jobs:
       - run: pnpm test
       - run: pnpm build
       - run: pnpm exec playwright install --with-deps chromium
+      # The task tower browser harness runs the authenticated Python proxy.
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+          enable-cache: true
       - run: pnpm test:browser
       - run: pnpm history:check
       - run: pnpm privacy:check
