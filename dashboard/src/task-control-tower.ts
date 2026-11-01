@@ -1230,7 +1230,7 @@ export function createTaskControlTower(
     );
   }
   return function TaskControlHome(props: { profile: string }) {
-    if (new URLSearchParams(location.search).get("view") === "recent") {
+    if (location.pathname !== "/kanban" && new URLSearchParams(location.search).get("view") === "recent") {
       return h(
         "section",
         { className: "tower-recent-secondary" },

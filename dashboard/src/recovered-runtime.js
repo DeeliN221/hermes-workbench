@@ -54,7 +54,6 @@ import { runtimeErrorText, sameMessage, insertRequest, withTurnError } from './c
 import { installChatFileLinks, openChatFilePreview } from './chat-file-links';
 import { readManagedFile } from './files-preview';
 import { openFilePreview, showFilePreviewLoading } from './file-preview';
-import { prepareProfileKanban } from './profile-kanban';
 
 // Capture local file references before the host router treats them as app routes.
 installChatFileLinks('/opt/data/workspace', openChatFilePreview);
@@ -2598,17 +2597,18 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         R = n(null);
       A.current = p;
       const isHome = u.path === "/" || u.path === "/home" || u.path === "/sessions",
+        isTaskBoard = u.path === "/kanban" && new URLSearchParams(u.search).get("view") !== "legacy",
         isProfiles = u.path === "/profiles" && !u.profileManager,
         isShortcuts = u.path === "/config" && u.settingsTab === "shortcuts",
         isChatDisplay = u.path === "/config" && u.settingsTab === "display",
         isModelVisibility = u.path === "/config" && u.settingsTab === "models",
         isVersionSettings = u.path === "/config" && (u.settingsTab === "versions" || u.settingsTab === "settings"),
         isConfigSubpage = isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
-        M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
+        M = isHome || isTaskBoard || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
         H = Cx(u.path),
         F = yx(u.profile, da),
         j = u.path === "/chat" && !u.terminal,
-        accessory = mobileActions ? "" : accessoryKind(u.path, u.search),
+        accessory = mobileActions || isTaskBoard ? "" : accessoryKind(u.path, u.search),
         navIsCollapsed = !mobileActions && navCollapsed;
       r(() => {
         const media = window.matchMedia('(max-width: 800px)');
@@ -2753,15 +2753,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             catch { /* Storage can be unavailable in private browsing. */ }
           }
           E("");
-          if (z === "/kanban") {
-            prepareProfileKanban(i.fetchJSON, u.profile, () => window.location.href === source)
-              .then(board => {
-                if (!board) return;
-                Kp(withAccessoryPanel(z), u.profile);
-                f(false);
-              }).catch(error => E(error instanceof Error ? error.message : String(error)));
-            return;
-          }
           Kp(withAccessoryPanel(z), u.profile);
           f(false);
         },
@@ -2792,21 +2783,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         Q = (z, G, keepPanel = true) => {
           const target = keepPanel && u.panel ? withAccessoryPanel(G) : withoutAccessoryPanel(G);
-          if (new URL(target, "http://localhost").pathname === "/kanban"
-            && !z.metaKey && !z.ctrlKey && !z.shiftKey && !z.altKey && z.button === 0) {
-            z.preventDefault();
-            const source = window.location.href;
-            E("");
-            prepareProfileKanban(i.fetchJSON, u.profile, () => window.location.href === source)
-              .then(board => {
-                if (!board) return;
-                // An already-mounted native board keeps its own React selection.
-                if (u.path === "/kanban" && !u.panel) window.location.assign(Cn(target, u.profile));
-                else Kp(target, u.profile);
-                f(false);
-              }).catch(error => E(error instanceof Error ? error.message : String(error)));
-            return;
-          }
           z.metaKey ||
             z.ctrlKey ||
             z.shiftKey ||
@@ -2926,7 +2902,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             onClickCapture: (event) => { const action = event.target.closest("a, button"); if (!mobile && action && !action.closest(".workbench-theme-action, .workbench-profile-action")) setActionsOpen(false); } },
             l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
             l("div", { className: "dashboard-nav-pair" },
-              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban", undefined, true),
+              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban"),
               k("/cron", runtimeText("定时", "Scheduled jobs"), "cron", u.path === "/cron", undefined, true),
               k("/chat?workbench=terminal", runtimeText("终端", "Terminal"), "terminal", u.terminal, "hti-dashboard-terminal-trigger", true),
             ),
@@ -3111,9 +3087,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 ref: D,
                 className: `dashboard-owned-page${isProfiles ? " dashboard-profile-page" : isConfigSubpage ? " dashboard-shortcuts-page" : ""}`,
                 tabIndex: -1,
-                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
+                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isTaskBoard ? runtimeText("看板", "Kanban") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome || isTaskBoard ? l(TaskControlTower, { key: isTaskBoard ? "kanban" : "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )

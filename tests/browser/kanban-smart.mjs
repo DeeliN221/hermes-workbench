@@ -165,7 +165,7 @@ async function newPage(browser, host, viewport) {
       document.head.append(style);
     });
   }, themeStyles);
-  await page.goto(host.origin + '/kanban?board=workbench', { waitUntil: 'domcontentloaded' });
+  await page.goto(host.origin + '/kanban?view=legacy&board=workbench', { waitUntil: 'domcontentloaded' });
   await page.evaluate(markup => {
     document.body.insertAdjacentHTML('beforeend', markup);
     // The host serves /kanban as a full page; the chat shell is not mounted there.

@@ -1,11 +1,21 @@
 # Task control tower
 
-The Workbench home routes (`/`, `/home`, `/sessions`) now open an operator task
-console. RecentHome remains intact at `/sessions?view=recent`; the main console
+The Workbench home routes (`/`, `/home`, `/sessions`) and the Kanban tab
+(`/kanban`) open the same four-column operator task console. RecentHome remains intact at `/sessions?view=recent`; the main console
 uses a narrow right rail for up to two user-pinned conversations and three recent
 conversations. Pins and manual card order are versioned browser preferences.
-Hermes' native Kanban remains available and unchanged. This feature does not
-modify Hermes or Fleet source.
+The desktop Workbench menu and mobile action rail link directly to `/kanban`,
+preserving the selected profile without requiring a native board assignment.
+The Kanban tab has its own active navigation state and opens as a full page.
+Existing `/kanban?board=...&panel=1` bookmarks also show the tower; those legacy
+parameters do not select a Fleet board or open a floating panel. Refresh and
+browser history retain the URL and profile. `view=recent` remains home-only.
+
+Hermes' native Kanban remains available explicitly at `/kanban?view=legacy`
+(with optional `board`, `profile`, and `panel=1` parameters). It is no longer
+the navigation default. Native compatibility tests use this escape hatch.
+This feature does not modify Hermes or Fleet source, the v2 proxy, or the
+server-side live/demo selection and credential boundary.
 
 ## Operator flow
 
