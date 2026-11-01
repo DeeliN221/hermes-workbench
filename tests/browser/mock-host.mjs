@@ -141,7 +141,7 @@ const configFixture = fixture.replace(
     .host-config-card label{display:grid;gap:6px;font-size:13px}
     .host-config-card input{height:36px;padding:0 10px;border:1px solid color-mix(in srgb,currentColor 24%,transparent);border-radius:6px;background:transparent;color:inherit;font:12px ui-monospace,monospace}
     .fixed{position:fixed}.inset-0{inset:0}[class~="z-[100]"]{z-index:100}[class~="z-[200]"]{z-index:200}.z-2{z-index:2}
-  </style><div class="host-shell"><aside id="app-sidebar"></aside><div class="host-page"><header class="host-banner" role="banner"><h1>Configuration</h1><input type="search" placeholder="Search..." aria-label="Search configuration"></header><main class="host-main"><div class="host-route-column z-2" data-testid="host-config-form"><div class="host-config-path">/workspace/profiles/default/config.yaml</div><div class="host-config-toolbar"><button type="button">&lt;/&gt; YAML</button><button type="button" class="is-save">Save</button></div><div class="host-config-tabs"><span>General 27</span><span>Terminal 34</span><span>Display 9</span></div><div class="host-config-card"><strong>General · 27 fields</strong><label><span>Default model (e.g. anthropic/claude-sonnet-4-6)</span><input type="text" value="gpt-6.1-sol" readonly></label><label><span>MODEL CONTEXT LENGTH</span><input type="text" value="0" readonly></label><label><span>FALLBACK PROVIDERS</span><input type="text" value="comma-separated values" readonly></label></div></div></main></div></div><div id="root"></div>`,
+  </style><div class="host-shell"><aside id="app-sidebar"><div role="group"><h2 id="hermes-sidebar-plugin-nav-heading">Plugins</h2><a href="/sample-plugin">Sample plugin</a></div></aside><div class="host-page"><header class="host-banner" role="banner"><h1>Configuration</h1><input type="search" placeholder="Search..." aria-label="Search configuration"></header><main class="host-main"><div class="host-route-column z-2" data-testid="host-config-form"><div class="host-config-path">/workspace/profiles/default/config.yaml</div><div class="host-config-toolbar"><button type="button">&lt;/&gt; YAML</button><button type="button" class="is-save">Save</button></div><div class="host-config-tabs"><span>General 27</span><span>Terminal 34</span><span>Display 9</span></div><div class="host-config-card"><strong>General · 27 fields</strong><label><span>Default model (e.g. anthropic/claude-sonnet-4-6)</span><input type="text" value="gpt-6.1-sol" readonly></label><label><span>MODEL CONTEXT LENGTH</span><input type="text" value="0" readonly></label><label><span>FALLBACK PROVIDERS</span><input type="text" value="comma-separated values" readonly></label></div></div></main></div></div><div id="root"></div>`,
 );
 
 /** Titles renamed through the fixture API, keyed by profile and session. */
@@ -364,6 +364,17 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
       response.end(body);
       return;
     }
+    if (['/achievements', '/files', '/kanban', '/sample-plugin'].includes(url.pathname)) {
+      const title = url.pathname === '/achievements' ? 'Achievements' : url.pathname === '/files' ? 'Files' : url.pathname === '/kanban' ? 'Kanban' : 'Sample plugin';
+      // Native pages are host-owned: exercise their container contract without vendoring Hermes.
+      const content = '<section data-testid="native-tab-fixture"><h2>' + title + '</h2><p>Host page fixture</p><label>Filter <input aria-label="Filter" /></label><button id="preview-open">Preview</button><dialog id="preview-dialog"><p>Temporary preview</p><button onclick="this.closest(\'dialog\').close()">Close preview</button></dialog><div style="height:1000px">Scrollable content</div></section>';
+      let html = configFixture.replace(/<h1>Configuration<\/h1>/, '<h1>' + title + '</h1>').replace(/<div class="host-route-column z-2"[\s\S]*?<\/main>/, content + '</main>');
+      if (url.pathname === '/achievements') html = html.replace('<div class="host-page">', '<section class="host-page relative z-2">').replace('</main></div></div>', '</main></section></div>');
+      if (url.pathname === '/files') html = html.replace('<div class="host-page">', '<span hidden data-plugin-slot></span><div class="host-page relative z-2">');
+      response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+      response.end(html.replace('</body>', '<script>document.getElementById("preview-open").onclick=()=>document.getElementById("preview-dialog").showModal()</script></body>'));
+      return;
+    }
     if (url.pathname === '/config' || url.pathname === '/models') {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(configFixture);
@@ -394,7 +405,7 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
       }
       return;
     }
-    if (['/', '/sessions', '/chat', '/workbench', '/profiles', '/cron'].includes(url.pathname)) {
+    if (['/', '/sessions', '/chat', '/workbench', '/profiles', '/cron', '/skills'].includes(url.pathname)) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
       response.end(fixture);
       return;

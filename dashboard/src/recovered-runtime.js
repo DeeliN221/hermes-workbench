@@ -2931,7 +2931,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               k("/chat?workbench=terminal", runtimeText("终端", "Terminal"), "terminal", u.terminal, "hti-dashboard-terminal-trigger", true),
             ),
             l("div", { className: "dashboard-nav-pair" },
-              l("button", { type: "button", className: "dashboard-workspace-button", "aria-label": runtimeText("文件", "Files"), onClick: () => { f(false); if (u.path === "/chat" && !u.terminal) window.dispatchEvent(new Event("workbench:open-workspace")); else Kp("/chat?workbench=files", u.profile); } }, craftingIcon(t, "files"), l("span", null, runtimeText("文件", "Files"))),
+              l("button", { type: "button", className: "dashboard-workspace-button", "aria-label": runtimeText("文件", "Files"), "aria-current": mobile && u.path === "/files" ? "page" : undefined, onClick: () => { f(false); if (mobile) Kp("/files", u.profile); else if (u.path === "/chat" && !u.terminal) window.dispatchEvent(new Event("workbench:open-workspace")); else Kp("/chat?workbench=files", u.profile); } }, craftingIcon(t, "files"), l("span", null, runtimeText("文件", "Files"))),
               l("button", { type: "button", className: "dashboard-workspace-button workbench-theme-action", "aria-label": B, title: B, "aria-pressed": v === "dark", disabled: y, onClick: N }, craftingIcon(t, v === "dark" ? "sun" : "moon"), l("span", null, runtimeText("主题", "Theme"))),
               k("/achievements", runtimeText("成就", "Achievements"), "achievements", u.path === "/achievements", undefined, true),
             ),

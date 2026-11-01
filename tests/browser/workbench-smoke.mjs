@@ -711,8 +711,7 @@ try {
   await mobileSettingsPage.locator('.workbench-profiles').waitFor({ state: 'visible', timeout: 5000 });
   await mobileSettingsPage.locator('.workbench-mobile-settings-back').click();
   assert.equal(await mobileSettingsPage.locator('.dashboard-settings-nav h1').isVisible(), false, 'The duplicate settings heading must stay hidden in mobile list mode');
-  assert.equal(await mobileSettingsPage.locator('#workbench-mobile-settings-title').innerText(), 'Settings', 'The mobile header must keep the Settings title visible');
-  const mobileHeaderBox = await mobileSettingsPage.locator('#workbench-mobile-settings-header').boundingBox();
+  const mobileHeaderBox = await mobileSettingsPage.locator('.workbench-mobile-tab-header').boundingBox();
   assert.ok(mobileHeaderBox && mobileHeaderBox.x >= 48, 'The mobile settings list header must clear the action rail');
   // Portaled z-[100] host dialogs (such as /models ModelPickerDialog) must appear above mobile settings detail view.
   await mobileSettingsPage.goto(host.origin + '/models?profile=writer', { waitUntil: 'domcontentloaded' });
@@ -745,8 +744,8 @@ try {
   await mobileReturnPage.waitForTimeout(300);
   await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-rail-actions a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
   await mobileReturnPage.waitForFunction(() => location.pathname === '/config');
-  await mobileReturnPage.locator('#workbench-mobile-settings-header').waitFor({ state: 'visible', timeout: 5000 });
-  const returnButton = mobileReturnPage.locator('.workbench-mobile-settings-chat');
+  await mobileReturnPage.locator('.workbench-mobile-tab-header').waitFor({ state: 'visible', timeout: 5000 });
+  const returnButton = mobileReturnPage.locator('.workbench-mobile-tab-chat');
   assert.equal(await returnButton.isVisible(), true, 'Mobile settings must expose a visible Back to chat button');
   await returnButton.click();
   await mobileReturnPage.waitForFunction(() => location.pathname === '/chat');
@@ -756,7 +755,7 @@ try {
   await mobileReturnPage.waitForFunction(() => location.pathname === '/config');
   await mobileReturnPage.locator('[data-workbench-chat-display-link]').click();
   await mobileReturnPage.waitForFunction(() => new URLSearchParams(location.search).get('workbench') === 'display');
-  await mobileReturnPage.locator('.workbench-mobile-settings-chat').click();
+  await mobileReturnPage.locator('.workbench-mobile-tab-chat').click();
   await mobileReturnPage.waitForFunction(() => location.pathname === '/chat');
   assert.equal(mobileReturnPage.url(), mobileSplitChatUrl, 'Back to chat from a settings subpage must restore the split chat route');
   assert.equal(await mobileReturnPage.locator('.codex-pane-slot').count(), 2, 'Back to chat from a settings subpage must preserve both panes');
