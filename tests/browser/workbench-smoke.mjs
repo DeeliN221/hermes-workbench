@@ -589,7 +589,7 @@ try {
   await deepseekAlias.waitFor({ state: 'visible', timeout: 5000 });
   await deepseekAlias.fill(' ds-flash ');
   await deepseekAlias.press('Enter');
-  await aliasPage.waitForFunction(() => localStorage.getItem('workbench.model-aliases.v2')?.includes('ds-flash'));
+  await aliasPage.waitForFunction(() => document.querySelector('[data-model-visibility-status]')?.textContent?.includes('ds-flash'));
   assert.equal(await deepseekAlias.inputValue(), 'ds-flash', 'Alias input must trim before saving');
 
   await aliasPage.evaluate(() => history.back());
@@ -604,16 +604,17 @@ try {
   await aliasPage.waitForFunction(() => document.querySelector('.codex-model-summary')?.textContent?.includes('ds-flash'));
   assert.match(await aliasPage.locator('.codex-model-summary').innerText(), /ds-flash/);
 
-  // The same alias must show up in another profile's chat without re-entering it.
+  // Another profile keeps its own server-owned alias.
   await aliasPage.goto(host.origin + '/chat?session=codex-preview&profile=writer', { waitUntil: 'domcontentloaded' });
   await aliasPage.locator('.codex-option-toggle').waitFor({ state: 'visible', timeout: 5000 });
   await aliasPage.evaluate(() => document.getElementById('preview-banner')?.remove());
   await aliasPage.locator('.codex-option-toggle').click();
   await aliasPage.locator('.codex-setting-row').first().click();
-  const writerAliasChoice = aliasPage.locator('.codex-setting-choice', { hasText: 'ds-flash' });
+  const writerAliasChoice = aliasPage.locator('.codex-setting-choice').filter({ has: aliasPage.locator('span[title="deepseek/deepseek-flash"]') });
   await writerAliasChoice.waitFor({ state: 'visible', timeout: 5000 });
   assert.equal(await writerAliasChoice.locator('span').first().getAttribute('title'), 'deepseek/deepseek-flash',
-    'A chat display name must apply to every profile');
+    'The model ID stays stable across profiles');
+  assert.doesNotMatch(await writerAliasChoice.innerText(), /ds-flash/, 'Profile aliases must remain isolated');
   await writerAliasChoice.click();
 
   await aliasPage.goto(host.origin + '/config?workbench=models&profile=default', { waitUntil: 'domcontentloaded' });

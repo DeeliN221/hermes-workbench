@@ -113,6 +113,7 @@ describe('chat model aliases', () => {
   it('uses the same custom alias in every profile chat model selector', async () => {
     writeModelAliases([['deepseek/deepseek-flash', 'ds-flash']], localStorage);
     const read = (async (url: string) => {
+      if (url.includes('/model-display')) return { preferences: { mode: 'hidden', visible: [], hidden: [], aliases: { 'deepseek/deepseek-flash': 'ds-flash' }, revision: 1 } };
       if (url.includes('/codex/models')) {
         return {
           data: [

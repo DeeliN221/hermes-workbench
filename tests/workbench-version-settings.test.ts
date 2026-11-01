@@ -1,7 +1,12 @@
 // @vitest-environment happy-dom
 import { beforeEach, afterEach, expect, it, vi } from 'vitest';
 import { renderModelVisibilityPanel, renderVersionSettingsPanel, renderWorkbenchVersions } from '../dashboard/src/workbench-version-settings';
-import { readModelAliases } from '../dashboard/src/model-aliases';
+import type { ModelDisplay } from '../dashboard/src/model-display';
+let saved: ModelDisplay;
+function preferencesResponse(init?: RequestInit) {
+  if (init?.body) saved = { ...JSON.parse(String(init.body)), revision: saved.revision + 1 };
+  return new Response(JSON.stringify({ preferences: saved }));
+}
 
 afterEach(() => { vi.unstubAllGlobals(); document.body.replaceChildren(); localStorage.clear(); });
 function panel() {
@@ -66,7 +71,8 @@ it('waits through backend restart and reloads only after full activation', async
 });
 
 it('renders grouped model visibility cards, updates counts, and disables Show all when none are hidden', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes('/model-display')) return preferencesResponse(init);
     if (url.includes('/codex/models')) {
       return new Response(JSON.stringify({
         data: [
@@ -87,14 +93,16 @@ it('renders grouped model visibility cards, updates counts, and disables Show al
   secondCheckbox.checked = false;
   secondCheckbox.dispatchEvent(new Event('change'));
   expect(secondCheckbox.closest('.workbench-model-option')?.getAttribute('data-visible')).toBe('false');
-  expect(showAll.disabled).toBe(false);
+  await vi.waitFor(() => expect(showAll.disabled).toBe(false));
   showAll.click();
+  await vi.waitFor(() => expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('已恢复显示全部'));
   expect(showAll.disabled).toBe(true);
   expect(target.querySelector('input[value="deepseek/deepseek-flash"]')?.closest('.workbench-model-option')?.getAttribute('data-visible')).toBe('true');
 });
 
-it('saves a shared chat display alias per model and rejects duplicate aliases', async () => {
-  vi.stubGlobal('fetch', vi.fn(async (url: string) => {
+it('saves a server chat display alias per profile and rejects duplicate aliases', async () => {
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes('/model-display')) return preferencesResponse(init);
     if (url.includes('/codex/models')) {
       return new Response(JSON.stringify({
         data: [
@@ -108,11 +116,12 @@ it('saves a shared chat display alias per model and rejects duplicate aliases', 
   const target = document.createElement('section');
   document.body.append(target);
   await renderModelVisibilityPanel(target, 'writer');
-  const deepseekAlias = target.querySelector<HTMLInputElement>('[data-model-alias="deepseek/deepseek-flash"]')!;
+  let deepseekAlias = target.querySelector<HTMLInputElement>('[data-model-alias="deepseek/deepseek-flash"]')!;
   deepseekAlias.value = '  ds   flash  ';
   deepseekAlias.dispatchEvent(new Event('change'));
   expect(deepseekAlias.value).toBe('ds flash');
-  expect([...readModelAliases()]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
+  await vi.waitFor(() => expect(saved.aliases).toEqual({ 'deepseek/deepseek-flash': 'ds flash' }));
+  await vi.waitFor(() => expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('ds flash'));
   expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('ds flash');
 
   const gptAlias = target.querySelector<HTMLInputElement>('[data-model-alias="gpt-6.1-sol"]')!;
@@ -120,11 +129,14 @@ it('saves a shared chat display alias per model and rejects duplicate aliases', 
   gptAlias.dispatchEvent(new Event('change'));
   expect(gptAlias.dataset.invalid).toBe('true');
   expect(target.querySelector('.workbench-model-alias-error')?.textContent).toContain('deepseek/deepseek-flash');
-  expect([...readModelAliases()]).toEqual([['deepseek/deepseek-flash', 'ds flash']]);
+  await vi.waitFor(() => expect(saved.aliases).toEqual({ 'deepseek/deepseek-flash': 'ds flash' }));
 
+
+  deepseekAlias = target.querySelector<HTMLInputElement>('[data-model-alias="deepseek/deepseek-flash"]')!;
   deepseekAlias.value = '';
   deepseekAlias.dispatchEvent(new Event('change'));
-  expect([...readModelAliases()]).toEqual([]);
+  await vi.waitFor(() => expect(saved.aliases).toEqual({}));
+  await vi.waitFor(() => expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('已恢复原名'));
   expect(target.querySelector('[data-model-visibility-status]')?.textContent).toContain('已恢复原名');
 });
 
@@ -143,7 +155,7 @@ it('shows rollback and re-enables controls without claiming success', async () =
   } finally { vi.useRealTimers(); }
 });
 
-beforeEach(() => { document.documentElement.lang = 'zh-CN'; });
+beforeEach(() => { document.documentElement.lang = 'zh-CN'; saved = { mode: 'hidden', visible: [], hidden: [], aliases: {}, revision: 1 }; });
 
 it('shows byte progress while the switch request is still downloading', async () => {
   vi.useFakeTimers();
@@ -180,4 +192,32 @@ it('waits for the background release check instead of claiming the runtime is cu
   await vi.waitFor(() => expect(target.querySelector('[data-codex-runtime-status]')!.textContent)
     .toContain('正在后台检查可更新版本'));
   expect(target.querySelector<HTMLButtonElement>('[data-codex-runtime-update]')!.hidden).toBe(true);
+});
+
+it.each(['alias', 'visibility', 'show-all'])('rolls back %s after a failed server save and enables retry', async kind => {
+  saved = { mode: 'visible', visible: ['gpt-6-astra', 'gpt-6-luna'], hidden: [], aliases: { 'gpt-6-astra': 'astra' }, revision: 1 };
+  vi.stubGlobal('fetch', vi.fn(async (url: string, init?: RequestInit) => {
+    if (url.includes('/model-display')) {
+      if (init?.method === 'PUT') return new Response('unavailable', { status: 503 });
+      return preferencesResponse();
+    }
+    if (url.includes('/models')) return new Response(JSON.stringify({ data: [{ model: 'gpt-6-astra' }, { model: 'gpt-6-luna' }, { model: 'gpt-hidden' }] }));
+    return new Response('{}');
+  }));
+  const target = document.createElement('section');
+  document.body.append(target);
+  await renderModelVisibilityPanel(target, 'default');
+  if (kind === 'alias') {
+    const input = target.querySelector<HTMLInputElement>('[data-model-alias="gpt-6-astra"]')!;
+    input.value = 'changed'; input.dispatchEvent(new Event('change'));
+  } else if (kind === 'visibility') {
+    const input = target.querySelector<HTMLInputElement>('input[type=checkbox]')!;
+    input.checked = false; input.dispatchEvent(new Event('change'));
+  } else target.querySelector<HTMLButtonElement>('[data-model-show-all]')!.click();
+  await vi.waitFor(() => expect(target.querySelector('[role=status]')?.textContent).toContain('保存失败'));
+  expect(target.querySelector<HTMLInputElement>('[data-model-alias="gpt-6-astra"]')!.value).toBe('astra');
+  expect(target.querySelector<HTMLInputElement>('input[value="gpt-6-astra"]')!.checked).toBe(true);
+  expect(target.querySelector<HTMLInputElement>('input[value="gpt-hidden"]')!.checked).toBe(false);
+  expect(target.querySelector<HTMLInputElement>('input')!.disabled).toBe(false);
+  expect(localStorage.length).toBe(0);
 });

@@ -27,7 +27,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
@@ -1524,3 +1524,69 @@ async def recover_migrated_sessions() -> dict:
 async def home_session_prompts(profile: str = 'default', session_id: str = Query(min_length=1, max_length=256)) -> dict:
     from home_prompts import session_prompts
     return await asyncio.to_thread(session_prompts, profile, session_id)
+
+
+class ModelDisplayBody(BaseModel):
+    visible: list[str] = Field(max_length=4096)
+    hidden: list[str] = Field(default_factory=list, max_length=4096)
+    mode: str = "visible"
+    aliases: dict[str, str] = Field(max_length=4096)
+    revision: int = Field(default=0, ge=0)
+
+
+def _model_display(user: str, profile: str, body: ModelDisplayBody | None = None, migrate: bool = False):
+    """Reuse plugin-owned durable storage; initialize atomically, never overwrite on migration."""
+    profile = _clean_identifier(profile, label="Profile", maximum=_MAX_PROFILE_LENGTH)
+    payload = None
+    if body is not None:
+        if body.mode not in {"visible", "hidden"}:
+            raise HTTPException(422, "Invalid visibility mode")
+        for value in [*body.visible, *body.hidden, *body.aliases]:
+            _clean_identifier(value, label="Model", maximum=256)
+        aliases = {}
+        for key, value in body.aliases.items():
+            alias = " ".join(value.split())
+            if not alias or len(alias) > 32:
+                raise HTTPException(422, "Invalid model alias")
+            aliases[key] = alias
+        if len({value.casefold() for value in aliases.values()}) != len(aliases):
+            raise HTTPException(422, "Duplicate model alias")
+        payload = {"mode": body.mode, "visible": sorted(set(body.visible)), "hidden": sorted(set(body.hidden)), "aliases": aliases}
+    connection = _open_organization_db()
+    try:
+        connection.execute("BEGIN IMMEDIATE")
+        connection.execute("CREATE TABLE IF NOT EXISTS model_display_preferences (owner TEXT NOT NULL, profile TEXT NOT NULL, payload TEXT NOT NULL, revision INTEGER NOT NULL, PRIMARY KEY(owner, profile))")
+        row = connection.execute("SELECT payload, revision FROM model_display_preferences WHERE owner=? AND profile=?", (user, profile)).fetchone()
+        if payload is not None and not (migrate and row):
+            revision = row["revision"] if row else 0
+            if not migrate and body.revision != revision:
+                raise HTTPException(409, "Preferences changed elsewhere; reload before saving")
+            revision += 1
+            connection.execute("INSERT INTO model_display_preferences VALUES (?, ?, ?, ?) ON CONFLICT(owner, profile) DO UPDATE SET payload=excluded.payload, revision=excluded.revision", (user, profile, json.dumps(payload), revision))
+            row = {"payload": json.dumps(payload), "revision": revision}
+        connection.commit()
+        return {"preferences": {**json.loads(row["payload"]), "revision": row["revision"]} if row else None}
+    finally:
+        connection.close()
+
+
+def _model_display_owner(request: Request) -> str:
+    # Only the verified proxy gate sets this state. Never trust a raw user header.
+    user = getattr(request.state, "workbench_user", None)
+    return "user:" + user if user else "instance-owner"
+
+
+@router.get("/model-display")
+def get_model_display(request: Request, profile: str = "default"):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(_model_display(_model_display_owner(request), profile), headers={"Cache-Control": "no-store"})
+
+
+@router.put("/model-display")
+def put_model_display(request: Request, body: ModelDisplayBody, profile: str = "default"):
+    return _model_display(_model_display_owner(request), profile, body)
+
+
+@router.post("/model-display/migrate")
+def migrate_model_display(request: Request, body: ModelDisplayBody, profile: str = "default"):
+    return _model_display(_model_display_owner(request), profile, body, migrate=True)
