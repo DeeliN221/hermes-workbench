@@ -1,3 +1,4 @@
+import { profileAlias } from './profile-display';
 import { chineseUI, uiText as sourceText } from './ui-locale';
 /** Load the actual installed roster; never disguise API failure as a default-only roster. */
 import type { FetchJSON } from './workbench-api';
@@ -16,11 +17,11 @@ const AGENT_CHINESE_NAMES: Record<string, string> = {
 
 /** Compact localized name for browser tabs. Custom profiles retain their name. */
 export function profileTabName(name: string): string {
-  return (chineseUI() ? AGENT_CHINESE_NAMES[name] : undefined) || name;
+  return profileAlias(name) || (chineseUI() ? AGENT_CHINESE_NAMES[name] : undefined) || name;
 }
 
 export function agentDisplayName(name: string): string {
-  const label = chineseUI() ? AGENT_CHINESE_NAMES[name] : undefined;
+  const label = profileAlias(name) || (chineseUI() ? AGENT_CHINESE_NAMES[name] : undefined);
   return label ? `${name}（${label}）` : name;
 }
 

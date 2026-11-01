@@ -1,3 +1,4 @@
+import { useProfileDisplay, saveProfileDisplay, profileAlias } from './profile-display';
 import { uiText } from './ui-locale';
 import { agentDisplayName, profileTabName } from './kanban-agent-picker';
 import { rememberChat, switchProfile } from './profile-scope';
@@ -18,6 +19,7 @@ export function createProfileControls(sdk: SDK) {
     const [rows, setRows] = useState(null as Profile[] | null);
     const [error, setError] = useState('');
     const [epoch, setEpoch] = useState(0);
+    useProfileDisplay(sdk);
     useEffect(() => {
       let live = true;
       setError('');
@@ -104,6 +106,22 @@ export function createProfileControls(sdk: SDK) {
           failedProfile ? h('button', { type: 'button', onClick: () => choose(failedProfile) }, uiText("重试", "Retry")) : null) : null,
         error ? h('div', { className: 'workbench-profile-menu-error', role: 'alert' }, uiText("档案加载失败 ", "Failed to load profiles "),
           h('button', { type: 'button', onClick: retry }, uiText("重试", "Retry"))) : null) : null);
+  }
+  function DisplayName({ name }: { name: string }) {
+    const [value, setValue] = useState(() => profileAlias(name));
+    const [busy, setBusy] = useState(false);
+    const [error, setError] = useState('');
+    return h('form', { className: 'workbench-profile-display', onSubmit: async (event: Event) => {
+      event.preventDefault(); if (busy) return; setBusy(true); setError('');
+      try { await saveProfileDisplay(sdk.fetchJSON, name, value); }
+      catch (error) { setError(String(error)); }
+      finally { setBusy(false); }
+    } }, h('label', null, uiText('显示名', 'Display name'), h('input', {
+      value, maxLength: 64, disabled: busy, placeholder: profileTabName(name),
+      onChange: (event: any) => setValue(event.target.value),
+    })), h('button', { type: 'submit', disabled: busy }, uiText('保存显示名', 'Save display name')),
+      h('small', null, uiText('留空恢复默认；内部 ID：', 'Leave empty to reset; internal ID: ') + name),
+      error ? h('p', { role: 'alert' }, error) : null);
   }
   function ProfilesPage({ profile }: { profile: string }) {
     const mounted = useRef(true);
@@ -193,6 +211,7 @@ export function createProfileControls(sdk: SDK) {
       h('div', { className: 'workbench-profile-grid' }, rows?.map((row: Profile) => h('article', {
         key: row.name, className: 'workbench-profile-card', 'data-current': row.name === profile, 'data-profile': row.name,
       }, h('header', null, h('h2', null, agentDisplayName(row.name)), row.name === profile ? h('span', { className: 'workbench-profile-badge' }, uiText("当前", "Current")) : null),
+        h(DisplayName, { key: `${row.name}:${profileAlias(row.name)}`, name: row.name }),
         h('p', null, row.description || uiText("暂无说明", "No description")),
         h('small', null, row.model || uiText("使用档案默认模型", "Use the profile default model")),
         h('div', { className: 'workbench-profile-actions' },
