@@ -111,7 +111,9 @@ try {
       await assertContentGutter(page, target, `${route} at 800px`);
       await page.setViewportSize({ width: 801, height: 844 });
       await back.waitFor({ state: 'detached' });
-      assert.equal(await page.locator('.workbench-mobile-tab-content').count(), 0, `${route} desktop canvas restored`);
+      // Media-query listeners reconcile the canvas on the next animation frame.
+      await page.locator('.workbench-mobile-tab-content').waitFor({ state: 'detached' });
+      assert.equal(await page.locator('html').getAttribute('data-mobile-tab'), 'false', `${route} desktop canvas restored`);
       await page.setViewportSize({ width: 1440, height: 900 });
       assert.equal(await page.locator('.workbench-mobile-tab-chat').count(), 0);
       await page.setViewportSize({ width: 390, height: 844 });
@@ -153,7 +155,8 @@ try {
   await assertContentGutter(page, '.workbench-mobile-tab-content', '800px');
   await page.setViewportSize({ width: 801, height: 844 });
   await back.waitFor({ state: 'detached' });
-  assert.equal(await page.locator('.workbench-mobile-tab-content').count(), 0);
+  await page.locator('.workbench-mobile-tab-content').waitFor({ state: 'detached' });
+  assert.equal(await page.locator('html').getAttribute('data-mobile-tab'), 'false');
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(host.origin + '/cron?panel=1');
   await page.locator('.dashboard-accessory-close').waitFor();
