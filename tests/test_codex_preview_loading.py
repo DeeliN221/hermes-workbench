@@ -54,6 +54,30 @@ class PreviewLoadingContract(unittest.IsolatedAsyncioTestCase):
             await self.bridge.history_preview('qa', 'writer', 'session')
         self.assertEqual(raised.exception.status_code, 404)
 
+    async def test_full_search_preview_preserves_tools_and_is_read_only_for_active_and_archived(self):
+        for n in range(10):
+            self.append('history/item', {'turnId': str(n), 'item': {
+                'id': f'tool-{n}', 'type': 'commandExecution',
+                'command': 'echo test', 'aggregatedOutput': 'x' * 10000,
+            }})
+            self.append('history/turn', {'turn': {'id': str(n), 'status': 'completed'}})
+        app = FastAPI()
+        app.include_router(create_router(self.bridge))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
+                                    headers={'remote-user': 'qa'}) as client:
+            for archived in (False, True):
+                self.store.update_organization('qa', 'default', 'session', {'deleted': archived})
+                before = self.store.connection.total_changes
+                with patch.object(self.bridge, '_connection', side_effect=AssertionError('Must stay local')):
+                    response = await client.get('/session/preview?profile=default&session_id=session&turns=200&full=true')
+                self.assertEqual(response.status_code, 200)
+                turns = response.json()['turns']
+                self.assertEqual(len(turns), 8)
+                self.assertEqual(turns[0]['id'], '2')
+                self.assertEqual(turns[-1]['items'][0]['aggregatedOutput'], 'x' * 10000)
+                self.assertEqual(self.store.connection.total_changes, before)
+                self.assertEqual(bool(self.store.session('qa', 'default', 'session')['deleted']), archived)
+
     async def test_empty_preview_returns_the_terminal_turn_error(self):
         self.append('turn/completed', {'turn': {
             'id': 'failed-turn', 'status': 'failed',

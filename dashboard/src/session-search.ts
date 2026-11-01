@@ -3,8 +3,8 @@ import type { FetchJSON } from './workbench-api';
 import { searchCodexSessions, organizeCodexSession } from './codex-api';
 import { loadSessionOrganization } from './session-organization-api';
 import { searchSessions, loadRecentTranscript } from './session-api';
-import { messagesFromTurns, normalizeMessage, type ChatMessage } from './codex-messages';
-import { renderMarkdownSource } from './markdown-source';
+import { messagesFromTurns, type ChatMessage } from './codex-messages';
+import type { WorkbenchTranscript } from './session-api';
 import { openHomeConversation } from './home-navigation';
 import { uiText as text } from './ui-locale';
 import './session-search.css';
@@ -63,27 +63,21 @@ export async function searchAllProfiles(read: FetchJSON, current: string, query:
 }
 
 export async function readSearchPreview(read: FetchJSON, row: SearchResult): Promise<ChatMessage[]> {
-  if (row.kind === 'hermes') {
-    const transcript = await loadRecentTranscript(read, row.profile, row.id, 160);
-    return transcript.rows.flatMap((message, index) => {
-      const normalized = normalizeMessage(message, `hermes-${index}`);
-      const reasoning = message.reasoning_content;
-      const calls = Array.isArray(message.tool_calls) ? message.tool_calls : [];
-      return [reasoning ? { id: `reasoning-${index}`, role: 'reasoning', content: String(reasoning) } : null,
-        normalized, ...calls.map((call, callIndex) => ({ id: `tool-${index}-${callIndex}`, role: 'tool', content: JSON.stringify(call, null, 2) }))]
-        .filter((item): item is ChatMessage => item !== null);
-    });
-  }
   const scope = `profile=${encodeURIComponent(row.profile)}&session_id=${encodeURIComponent(row.id)}`;
-  const response = await read<{ turns?: any[]; cached?: boolean }>(row.kind === 'archived'
-    ? `/api/plugins/workbench/codex/session/preview?${scope}&turns=8`
-    : `/api/plugins/workbench/codex/session?${scope}&after=0&limit=200&defer_persistence=true`);
-  if (response.cached === false) throw new Error(text('暂无存档预览', 'No archived preview available'));
+  const response = await read<{ turns?: any[]; cached?: boolean }>(`/api/plugins/workbench/codex/session/preview?${scope}&turns=8&full=true`);
+  if (response.cached === false) throw new Error(text('暂无本地预览', 'No local preview available'));
   if (!Array.isArray(response.turns)) throw new Error(text('无法读取会话正文', 'Session content is unavailable'));
   return messagesFromTurns(response.turns, row.id);
 }
 
-export function createSessionSearch(sdk: any, localResults: (props: any) => SearchResult[]) {
+// In-memory search context survives profile navigation without writing session data.
+const searchContext: { query: string; selected: SearchResult | null; index: number } = {
+  query: '', selected: null, index: 0,
+};
+
+export function createSessionSearch(sdk: any, localResults: (props: any) => SearchResult[], renderers: {
+  Transcript: any; HermesHistoryTimeline: any;
+}) {
   const h = sdk.React.createElement;
   const { useState, useEffect, useRef, useMemo } = sdk.hooks;
   return function SessionSearch(props: any) {
@@ -91,20 +85,21 @@ export function createSessionSearch(sdk: any, localResults: (props: any) => Sear
     const input = useRef(null as HTMLInputElement | null);
     const previewHeader = useRef(null as HTMLElement | null);
     const lifecycle = useRef(0);
-    const [query, setQuery] = useState('');
+    const [query, setQuery] = useState(searchContext.query);
     const [remote, setRemote] = useState([] as SearchResult[]);
     const [notice, setNotice] = useState('');
     const [loading, setLoading] = useState(false);
-    const [selected, setSelected] = useState(null as SearchResult | null);
+    const [selected, setSelected] = useState(searchContext.selected);
+    const [transcript, setTranscript] = useState(null as WorkbenchTranscript | null);
     const [messages, setMessages] = useState([] as ChatMessage[]);
     const [previewLoading, setPreviewLoading] = useState(false);
     const [previewError, setPreviewError] = useState('');
     const [opening, setOpening] = useState(false);
     const [retry, setRetry] = useState(0);
-    const [index, setIndex] = useState(0);
+    const [index, setIndex] = useState(searchContext.index);
+    useEffect(() => { Object.assign(searchContext, { query, selected, index }); }, [query, selected, index]);
     useEffect(() => {
       if (!props.open) return;
-      setQuery(''); setRemote([]); setSelected(null); setNotice(''); setIndex(0);
       dialog.current?.showModal(); input.current?.focus();
       return () => dialog.current?.close();
     }, [props.open]);
@@ -125,12 +120,14 @@ export function createSessionSearch(sdk: any, localResults: (props: any) => Sear
     useEffect(() => {
       lifecycle.current += 1; setOpening(false);
       if (selected && window.innerWidth <= 700) previewHeader.current?.focus();
-      setMessages([]); setPreviewError('');
+      setMessages([]); setTranscript(null); setPreviewError('');
       if (!props.open || !selected) { setPreviewLoading(false); return; }
       let live = true;
       setPreviewLoading(true);
-      readSearchPreview(props.fetchJSON, selected).then(rows => { if (live) setMessages(rows); })
-        .catch(() => { if (live) setPreviewError(text('无法加载预览。请重试；已归档会话需恢复后才能读取。', 'Preview unavailable. Retry, or restore an archived session to read it.')); })
+      (selected.kind === 'hermes'
+        ? loadRecentTranscript(props.fetchJSON, selected.profile, selected.id, 160).then(value => { if (live) setTranscript(value); })
+        : readSearchPreview(props.fetchJSON, selected).then(rows => { if (live) setMessages(rows); }))
+        .catch(() => { if (live) setPreviewError(text('无法加载本地预览。请重试，或打开会话读取完整历史。', 'Local preview unavailable. Retry, or open the session to read its full history.')); })
         .finally(() => { if (live) setPreviewLoading(false); });
       return () => { live = false; };
     }, [props.open, selected, retry]);
@@ -215,16 +212,10 @@ export function createSessionSearch(sdk: any, localResults: (props: any) => Sear
               h('div', { className: 'session-search-transcript', key: searchResultKey(selected), 'aria-busy': previewLoading },
                 previewLoading ? h('p', { role: 'status' }, text('正在加载预览…', 'Loading preview…')) : null,
                 previewError ? h('p', { role: 'alert' }, previewError, ' ', h('button', { onClick: () => setRetry(retry + 1) }, text('重试', 'Retry'))) : null,
-                ...messages.map((message: ChatMessage) => {
-                  const process = !['user', 'assistant'].includes(message.role) || message.phase === 'commentary';
-                  const label = message.role === 'user' ? text('用户', 'User') : message.role === 'assistant' && !process ? text('助手', 'Assistant') : message.role === 'reasoning' ? text('思考', 'Thinking') : text('工具 / 过程', 'Tools / process');
-                  const body = process ? h('pre', null, [message.content, message.input && JSON.stringify(message.input, null, 2), message.result && JSON.stringify(message.result, null, 2)].filter(Boolean).join('\n'))
-                    : h('div', { className: 'hti-rich-text', dangerouslySetInnerHTML: { __html: renderMarkdownSource(message.content) } });
-                  return process ? h('details', { key: message.id }, h('summary', null, label), body)
-                    : h('article', { key: message.id }, h('small', null, label), body);
-                }),
-                !previewLoading && !previewError && !messages.length ? h('p', null, text('暂无消息', 'No messages yet')) : null,
-                h('small', null, text('Hermes 预览最多显示最近 160 条消息；已归档会话显示最近 8 轮。', 'Hermes previews show up to 160 recent messages; archived sessions show the last 8 turns.'))))
+                transcript ? h(renderers.HermesHistoryTimeline, { transcript, collapsed: true })
+                  : h(renderers.Transcript, { messages, detail: 'compact' }),
+                !previewLoading && !previewError && !messages.length && !transcript?.turns.length ? h('p', null, text('暂无消息', 'No messages yet')) : null,
+                h('small', null, text('只读本地历史：Hermes 最多显示最近 160 条消息；Codex 最近 8 轮。打开会话查看完整历史。', 'Local history only: up to 160 recent Hermes messages or 8 Codex turns. Open the session for full history.'))))
               : h('p', { className: 'session-search-placeholder' }, text('选择会话，在此预览问题与答复', 'Select a session to preview its questions and answers'))))));
   };
 }

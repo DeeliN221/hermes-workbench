@@ -60,18 +60,26 @@ describe('preview body normalization', () => {
     const messages = await readSearchPreview(read as any, { id: 'shared', profile: 'writer', kind: 'session', title: 'Preview' });
     expect(messages.map(row => row.role)).toEqual(['user', 'reasoning', 'tool', 'assistant']);
     expect(messages.at(-1)?.content).toBe('**Answer**');
-    expect(read).toHaveBeenCalledExactlyOnceWith('/api/plugins/workbench/codex/session?profile=writer&session_id=shared&after=0&limit=200&defer_persistence=true');
-  });
-  it('preserves Hermes tool calls and reasoning alongside the answer', async () => {
-    const read = vi.fn(async () => ({ messages: [{ role: 'assistant', content: 'Answer', reasoning_content: 'Thinking', tool_calls: [{ function: { name: 'lookup', arguments: '{}' } }] }] }));
-    const messages = await readSearchPreview(read as any, { id: 'shared', profile: 'writer', kind: 'hermes', title: 'Preview' });
-    expect(messages.map(row => row.role)).toEqual(['reasoning', 'assistant', 'tool']);
-    expect(messages[2].content).toContain('lookup');
+    expect(read).toHaveBeenCalledExactlyOnceWith('/api/plugins/workbench/codex/session/preview?profile=writer&session_id=shared&turns=8&full=true');
   });
   it('uses only local cached history for archived previews', async () => {
     const read = vi.fn(async () => ({ cached: true, turns: [] }));
     await readSearchPreview(read as any, { id: 'archive', profile: 'writer', kind: 'archived', title: 'Archived' });
-    expect(read).toHaveBeenCalledExactlyOnceWith('/api/plugins/workbench/codex/session/preview?profile=writer&session_id=archive&turns=8');
+    expect(read).toHaveBeenCalledExactlyOnceWith('/api/plugins/workbench/codex/session/preview?profile=writer&session_id=archive&turns=8&full=true');
+  });
+  it('preserves status, timing and attachments for the shared renderer', async () => {
+    const read = vi.fn(async () => ({ cached: true, turns: [{ id: 'running', status: 'inProgress', startedAt: 1700000000, items: [
+      { id: 'q', type: 'userMessage', content: 'Question', attachments: [{ id: 'image', name: 'diagram.png', src: 'data:image/png;base64,aA==' }] },
+      { id: 'a', type: 'agentMessage', text: 'Partial response', status: 'inProgress' },
+    ] }] }));
+    const messages = await readSearchPreview(read as any, { id: 'active', profile: 'writer', kind: 'session', title: '' });
+    expect(messages[0].attachments?.[0].name).toBe('diagram.png');
+    expect(messages[1]).toMatchObject({ status: 'running', turnStatus: 'running', turnStartedAt: 1700000000000 });
+  });
+  it('does not fall back to upstream when local history is missing', async () => {
+    const read = vi.fn(async () => ({ cached: false, turns: [] }));
+    await expect(readSearchPreview(read as any, { id: 'one', profile: 'default', kind: 'session', title: '' })).rejects.toThrow('No local preview');
+    expect(read).toHaveBeenCalledTimes(1);
   });
   it('rejects missing snapshots instead of presenting an empty success', async () => {
     await expect(readSearchPreview((async () => ({})) as any, { id: 'one', profile: 'default', kind: 'session', title: '' })).rejects.toThrow('unavailable');

@@ -5710,7 +5710,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       K(i, Ki, { React: i, content: String(e.content || "") }),
     );
   }
-  function lR({ React: i, hooks: e, turn: t, rawOpen: r, index: n }) {
+  function lR({ React: i, hooks: e, turn: t, rawOpen: r, index: n, collapsed = false }) {
     const s = t,
       o = e.useMemo(() => I2(Z2(s)), [t]);
     return K(
@@ -5728,7 +5728,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               K(i, sR, {
                 React: i,
                 hooks: e,
-                block: a,
+                block: collapsed ? { ...a, defaultOpen: false } : a,
                 key: `${a.turnKey}:process`,
               }),
             ]
@@ -5760,7 +5760,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function Jb(i) {
     const e = i.React,
       t = i.hooks;
-    function r({ turns: n, rawOpen: s }) {
+    function r({ turns: n, rawOpen: s, collapsed = false }) {
       const [o, a] = t.useState(z2),
         l = Math.max(0, n.length - o),
         c = n.slice(l);
@@ -5791,6 +5791,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             hooks: t,
             turn: u,
             rawOpen: s,
+            collapsed,
             index: l + h,
             key: u.key,
           }),
@@ -7518,7 +7519,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function u_(i) {
     const e = i.React,
       { TranscriptTimeline: t } = Jb(i);
-    function r({ transcript: n }) {
+    function r({ transcript: n, collapsed = false }) {
       return e.createElement(
         "div",
         {
@@ -7526,7 +7527,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           "data-testid": "hermes-history-transcript",
           "data-session-id": n.sessionId,
         },
-        e.createElement(t, { turns: n.turns, rawOpen: !1 }),
+        e.createElement(t, { turns: n.turns, rawOpen: !1, collapsed }),
       );
     }
     return { HermesHistoryTimeline: r };
@@ -8627,7 +8628,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return i.createElement(e, t, ...r);
   }
   function h5(i) {
-    return createSessionSearch(i, (props) => c5(props));
+    return createSessionSearch(i, (props) => c5(props), {
+      Transcript: createChatTranscript(i.React),
+      HermesHistoryTimeline: u_(i).HermesHistoryTimeline,
+    });
   }
   function Fe(i, e, t, ...r) {
     return i.createElement(e, t, ...r);
@@ -9707,6 +9711,17 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function E5(i, e) {
     return `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}${Ml}/events?profile=${encodeURIComponent(i)}&session_id=${encodeURIComponent(e)}&defer_persistence=true`;
   }
+  /** Shared presentation only: no session hooks, subscriptions, or navigation. */
+  function createChatTranscript(e) {
+    const MemoMessage = e.memo(T5),
+      MemoProcess = e.memo(Q5, (before, after) => before.detail === after.detail
+        && before.showDuration === after.showDuration
+        && before.hasFollowingBody === after.hasFollowingBody
+        && before.messages.length === after.messages.length
+        && before.messages.every((message, index) => message === after.messages[index])),
+      Transcript = e.memo(({ messages, detail }) => W(e, e.Fragment, null, ...P5(e, messages, MemoProcess, MemoMessage, detail)));
+    return Transcript;
+  }
   function A5(i) {
     const e = i.React,
       {
@@ -9722,13 +9737,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ProjectNavigation = createProjectNavigation(i),
       ChatComposerInput = createChatComposerInput(i),
       CodexUserInput = createCodexUserInput(i),
-      MemoMessage = e.memo(T5),
-      MemoProcess = e.memo(Q5, (before, after) => before.detail === after.detail
-        && before.showDuration === after.showDuration
-        && before.hasFollowingBody === after.hasFollowingBody
-        && before.messages.length === after.messages.length
-        && before.messages.every((message, index) => message === after.messages[index])),
-      Transcript = e.memo(({ messages, detail }) => W(e, e.Fragment, null, ...P5(e, messages, MemoProcess, MemoMessage, detail))),
+      Transcript = createChatTranscript(e),
       u = LL(i, {
         imageLoading: runtimeText("图片加载中…", "Loading image…"),
         imageError: runtimeText("图片加载失败", "Could not load image"),

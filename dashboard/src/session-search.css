@@ -10,11 +10,14 @@
 .session-search-preview > header { display: flex; flex-direction: column; align-items: start; gap: 8px; padding: 16px; border-bottom: 1px solid var(--codex-search-border); overflow-wrap: anywhere; }
 .session-search-open { background: var(--codex-search-accent); color: var(--mc-on-accent, white); border: 0; border-radius: 6px; padding: 9px 16px; cursor: pointer; }
 .session-search-transcript { overflow: auto; padding: 16px; min-height: 0; overflow-wrap: anywhere; }
-.session-search-transcript article { margin-bottom: 20px; }
-.session-search-transcript article > small { font-weight: 600; }
-.session-search-transcript details { border: 1px solid var(--codex-search-border); border-radius: 6px; padding: 10px; margin: 10px 0; }
-.session-search-transcript summary { cursor: pointer; color: var(--codex-search-muted); }
-.session-search-transcript pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* Keep the real message styles; constrain only the containing viewport. */
+.session-search-transcript { display: flex; flex-direction: column; gap: 18px; flex: 1; }
+.session-search-transcript > *, .session-search-transcript .codex-message-body,
+.session-search-transcript .hti-rich-markdown { min-width: 0; max-width: 100%; }
+.session-search-transcript .codex-hermes-history-transcript { padding: 0; }
+.session-search-transcript .codex-message { width: 100%; margin: 0; }
+.session-search-transcript pre, .session-search-transcript table { max-width: 100%; overflow: auto; }
+.session-search-transcript img, .session-search-transcript svg { max-width: 100%; }
 .session-search-placeholder { margin: auto; padding: 32px; text-align: center; color: var(--codex-search-muted); }
 .session-search-back { display: none; }
 @media (max-width: 700px) {
