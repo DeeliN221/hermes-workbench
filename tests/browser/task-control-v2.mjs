@@ -10,13 +10,12 @@ import {
   rm,
   symlink,
 } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { chromium } from "playwright";
 import { createMockHost } from "./mock-host.mjs";
 const binary = process.env.FLEET_TEST_BINARY;
 assert.ok(binary, "Set FLEET_TEST_BINARY to fleetd built from fdabd48");
-const dir = await mkdtemp(path.join(tmpdir(), "workbench-v2-"));
+const dir = await mkdtemp("/tmp/workbench-v2-");
 const shots = process.env.SHOT_DIR || "/tmp/fleet-T-01484b8f-v2-screenshots";
 await mkdir(shots, { recursive: true });
 const port = async () => {
