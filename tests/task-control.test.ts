@@ -193,3 +193,39 @@ describe("task control tower", () => {
     );
   });
 });
+
+describe("real v2 UI boundary", () => {
+  it("keeps worker states authoritative and restores old deliveries visibly", () => {
+    const live = { ...base, server_lifecycle: true };
+    expect(canMove(live, "done")).toBeTruthy();
+    expect(canMove({ ...live, status: "ready" }, "running")).toBeTruthy();
+    expect(canMove({ ...live, status: "triage" }, "archived")).toBeNull();
+    expect(expired({ ...live, status: "done", created_at: "2000-01-01" })).toBe(
+      false,
+    );
+  });
+  it("uses review endpoints only for explicit live review actions", async () => {
+    const fetchJSON = vi.fn(async () => ({})) as unknown as FetchJSON;
+    const api = fleetAPI(fetchJSON);
+    const review = {
+      ...base,
+      status: "review" as const,
+      verify_mode: "human" as const,
+      acceptance: [{ label: "Pass", checked: true }],
+    };
+    await api.move(review, "done", false);
+    await api.move(review, "running", false);
+    expect(vi.mocked(fetchJSON).mock.calls.map((c) => c[0])).toEqual([
+      "/api/plugins/workbench/fleet/tasks/one/approve",
+      "/api/plugins/workbench/fleet/tasks/one/request_changes",
+    ]);
+  });
+  it.each([403, 404, 409, 410])("makes HTTP %s actionable", async (code) => {
+    const api = fleetAPI(async () => {
+      throw new Error(`HTTP ${code}`);
+    });
+    await expect(api.detail("one")).rejects.toThrow(
+      /administrator|Refresh|Reload/,
+    );
+  });
+});

@@ -37,6 +37,26 @@ export function fleetAPI(fetchJSON: FetchJSON) {
             "Task changed elsewhere. Reload and retry.",
           ),
         );
+      for (const [code, zh, en] of [
+        [
+          403,
+          "权限不足，请管理员检查人工验收凭据或产物访问权限",
+          "Permission denied. Ask the administrator to check review credentials or artifact access.",
+        ],
+        [
+          404,
+          "任务或产物不存在，请刷新任务列表",
+          "Task or artifact no longer exists. Refresh the task list.",
+        ],
+        [
+          410,
+          "决策已过期，请刷新并让执行者创建新决策",
+          "Decision expired. Refresh and ask the worker for a new decision.",
+        ],
+      ] as const) {
+        if (new RegExp(`\\b${code}\\b`).test(String(error)))
+          throw new Error(uiText(zh, en));
+      }
       throw error;
     }
   };
@@ -72,7 +92,11 @@ export function fleetAPI(fetchJSON: FetchJSON) {
             ? "archive"
             : t.status === "archived"
               ? "restore"
-              : "transition";
+              : !extended && t.status === "review" && to === "done"
+                ? "approve"
+                : !extended && t.status === "review" && to === "running"
+                  ? "request_changes"
+                  : "transition";
       if (action === "transition" && !extended)
         return Promise.reject(
           new Error(
@@ -105,8 +129,8 @@ export async function downloadArtifact(
   if (!response.ok)
     throw new Error(
       uiText(
-        `下载失败 (${response.status})`,
-        `Download failed (${response.status})`,
+        `下载失败 (${response.status})，请刷新；权限错误请管理员检查产物访问权限`,
+        `Download failed (${response.status}). Refresh; for permission errors ask the administrator to check artifact access.`,
       ),
     );
   const blob = await response.blob();

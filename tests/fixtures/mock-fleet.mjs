@@ -124,9 +124,9 @@ export async function createMockFleet() {
       ifMatch: request.headers["if-match"],
     });
     const match = url.pathname.match(
-      /^\/api\/v1\/tasks\/([^/]+)(?:\/([^/]+))?$/,
+      /^\/api\/v2\/tasks\/([^/]+)(?:\/([^/]+))?$/,
     );
-    if (url.pathname === "/api/v1/tasks" && request.method === "GET")
+    if (url.pathname === "/api/v2/tasks" && request.method === "GET")
       return send(200, {
         tasks: rows.filter(
           (t) =>
@@ -134,7 +134,7 @@ export async function createMockFleet() {
             t.status === url.searchParams.get("status"),
         ),
       });
-    if (url.pathname === "/api/v1/tasks" && request.method === "POST") {
+    if (url.pathname === "/api/v2/tasks" && request.method === "POST") {
       const task = fixtureTask(`created-${rows.length}`, "triage", {
         title: body.title,
         repo: "",
@@ -146,7 +146,7 @@ export async function createMockFleet() {
       rows.push(task);
       return send(201, { task });
     }
-    if (url.pathname === "/api/v1/artifacts/artifact-report/download") {
+    if (url.pathname === "/api/v2/artifacts/artifact-report/download") {
       response.writeHead(200, { "Content-Type": "text/plain" });
       response.end("Acceptance checks pass.\n");
       return;

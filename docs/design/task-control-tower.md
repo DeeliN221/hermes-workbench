@@ -47,41 +47,27 @@ ask the task owner to complete the options rather than solicit an open-ended ans
 than a fifth board column. `archived` is available through the Delivered footer.
 
 ```text
-triage --dispatch--> ready --claim--> running --complete(auto)--> done
-   ^                   |               |  ^                       |
-   +-------------------+               v  |                       v
-                                    blocked                    archived
-                                       |                          |
-                                       +--> running      restore -> triage
-
-running --complete(human)--> review --accept--> done
-                              |
-                              +--rework--> running
-scheduled --retry--> ready
+triage --dispatch--> ready --worker claim--> running
+                                               | complete(auto) --> done
+                                               | complete(human) --> review
+review --approve--> done                       | decision --> blocked
+review --request_changes--> running            blocked --decide--> ready
+triage/ready/scheduled/blocked/done --archive--> archived --restore--> previous status
 ```
 
-Dragging is supported onto a subgroup or onto a card. Dropping onto a card also
-positions the moved card before that card. Same-subgroup reordering is saved in
-local storage. Delivered cards always use descending **creation** time and reject
-manual reordering. Transitions and their guards are shared by the UI model and
-mirrored at the proxy boundary:
+In live mode the worker owns claim/complete/fail; the console never fabricates a
+worker completion or manually moves Ready to Running. Dragging maps only to
+contracted dispatch, review, archive and restore actions. Unsupported drops show
+an actionable explanation. Local reordering and four columns/subgroups remain.
+Dispatch requires a brief, acceptance criteria, repository and machine. Human
+review uses explicit **Accept delivery** / **Request changes** clicks. Fleet v2
+acceptance is text, not a writable review checklist; review/done criteria display
+the worker-completed state, and the explicit approve action records human approval.
 
-- Draft to Ready requires a brief, non-empty acceptance criteria, repository and
-  machine. Ready can return to Draft.
-- Ready can start Running; Running and Blocked can move between one another.
-- Only human verification can enter Review. An unchecked human checklist is
-  allowed into Review so the operator can verify it there.
-- Delivery requires a complete, non-empty acceptance checklist. Human delivery
-  must pass through Review; automatic delivery goes directly from Running to Done.
-- A task with an open decision cannot change status before the decision is resolved.
-- Only Done can archive; restore returns Archived to Draft. Illegal moves leave
-  the task in place and show a reason. Revision conflicts refresh server state.
-
-Done cards older than three days **from `created_at`**, not completion time, are
-excluded from the delivery column and sent through the revision-checked archive
-operation while the console is open. The console refreshes every 15 seconds;
-failed archive requests are surfaced and can be retried by reloading. Continuous
-archival while no console is open would need Fleet's own scheduler.
+Fleet owns automatic archival after 72 hours from creation and persistent restore
+exemptions. The browser does not hide or rearchive live restored deliveries. Live
+list merges the default task list and explicit archived list. Demo mode retains
+the prior simulated transitions/checklist and client-side age archival behavior.
 
 The desktop list groups attention, pending, active, human review and recent
 deliveries into compact rows. At 700px and below the board switches to the list;
@@ -99,21 +85,24 @@ or browser API responses.
 | Workbench endpoint | Fleet upstream endpoint |
 | --- | --- |
 | `GET /config` | Server-only capability projection, no upstream URL/token |
-| `GET /tasks?status=...` | `GET /api/v1/tasks?status=...` |
-| `GET /tasks/{id}` | `GET /api/v1/tasks/{id}` |
-| `PATCH /tasks/{id}` | `PATCH /api/v1/tasks/{id}` |
-| `POST /tasks/{id}/dispatch` | `POST /api/v1/tasks/{id}/dispatch` |
-| `POST /tasks/{id}/archive` | `POST /api/v1/tasks/{id}/archive` |
-| `POST /tasks/{id}/restore` | `POST /api/v1/tasks/{id}/restore` |
-| `POST /tasks/{id}/decide` | `POST /api/v1/tasks/{id}/decide` |
-| `GET /artifacts/{id}/download?task_id=...` | Task authorization/membership check, then `GET /api/v1/artifacts/{id}/download` |
+| `POST /tasks` | `POST /api/v2/tasks` (triage only) |
+| `POST /tasks/{id}/approve` | `POST /api/v2/tasks/{id}/approve` (review token) |
+| `POST /tasks/{id}/request_changes` | `POST /api/v2/tasks/{id}/request_changes` (review token) |
+| `GET /tasks?status=...` | `GET /api/v2/tasks?status=...` |
+| `GET /tasks/{id}` | `GET /api/v2/tasks/{id}` |
+| `PATCH /tasks/{id}` | `PATCH /api/v2/tasks/{id}` |
+| `POST /tasks/{id}/dispatch` | `POST /api/v2/tasks/{id}/dispatch` |
+| `POST /tasks/{id}/archive` | `POST /api/v2/tasks/{id}/archive` |
+| `POST /tasks/{id}/restore` | `POST /api/v2/tasks/{id}/restore` |
+| `POST /tasks/{id}/decide` | `POST /api/v2/tasks/{id}/decide` |
+| `GET /artifacts/{id}/download?task_id=...` | Task authorization/membership check, then `GET /api/v2/artifacts/{id}/download` |
 
 Updates carry matching integer `revision` and `If-Match` values. Upstream 409 is
 preserved; the UI explains that the task changed elsewhere and refreshes. PATCH
 allows only title/spec_json/acceptance/priority/risk/capability/machine/repo/
 verify_mode/revision. The browser cannot PATCH status or set verified_by. Fleet
 owns final validation and verification. Server responses are no-store projections:
-attempts, raw events, artifact refs, arbitrary upstream URLs and errors are not
+attempts, raw events, filesystem artifact refs, arbitrary upstream URLs and raw errors are not
 forwarded to the browser. Since the list contract does not promise open decisions,
 the proxy hydrates non-delivered tasks from detail, with at most four concurrent
 upstream reads. Large task sets may require a future paginated/bulk decision API.
@@ -124,43 +113,57 @@ filesystem `ref`, never follows `download_url` or redirects, and serves download
 as attachments with no-sniff/sandbox headers. JSON reads are capped at 4 MiB and
 downloads at 32 MiB with a 10-second upstream timeout. Browser downloads use the
 SDK's authenticated fetch and a temporary object URL, with visible failure text.
-Linked session/PR URLs are restricted to HTTP(S).
+PR/URL artifact refs become external links restricted to credential-free HTTP(S);
+they are never fetched by the proxy. File path and symlink containment remain
+fleetd responsibilities; Workbench cannot open local artifact paths.
 
 Server configuration:
 
 ```text
-HERMES_WORKBENCH_FLEET_URL=https://fleet.example
-HERMES_WORKBENCH_FLEET_TOKEN=<server secret>
+FLEET_URL=https://fleet.example
+FLEET_TOKEN=<server secret>
+FLEET_REVIEW_TOKEN=<different human-review secret>
 HERMES_WORKBENCH_FLEET_MODE=live
 ```
 
 The URL is an origin, without credentials, path, query or fragment. Non-loopback
 plain HTTP requires an explicit `HERMES_WORKBENCH_FLEET_ALLOW_HTTP=1` deployment
-choice. Missing configuration is a quiet disconnected state; recent conversations
-remain usable. There is no silent fallback from a failed live request to fake data.
+choice. The default mode is `mock`, even when Fleet credentials exist in the
+environment. Live requires the explicit flag **and** URL/token. Missing URL/token
+uses the process-local demo with a visible “Demo mode” / “演示模式” badge.
+A failed configured live request never falls back to fake data. Review credentials
+are server-only and used exclusively for approve/request_changes. Missing or
+incorrect review credentials return 403 without falling back to worker credentials.
 
-### Mock-only extension and integration gaps
+### v2 adapter and mock boundary
 
-The supplied authoritative contract does **not** define task creation or a general
-manual status-transition/acceptance endpoint. The implementation must not invent
-live Fleet mutations. Consequently:
+Validated against `zzl/fleet` commit `fdabd48` and its `docs/api-contract.md`:
 
-- Live list/detail/PATCH/dispatch/archive/restore/decide/download use the confirmed
-  contract. Unsupported manual drag transitions return an explicit explanation.
-- `HERMES_WORKBENCH_FLEET_MODE=mock` enables the mock-only `POST /tasks` and
-  `POST /tasks/{id}/transition` extension for the full lifecycle demonstration.
-  Both endpoints fail closed in live mode. The frontend reads this capability
-  from `/config`; no browser flag can enable it on a live proxy.
-- The presentation adapter currently expects `acceptance: [{label, checked}]`,
-  `spec_json.summary`, a boolean `needs_human` for actionable blockers, and an open
-  decision `{id, question, options: [{id, label, impact, recommended}]}` in detail.
-  These field shapes and decide payload `{decision_id, option_id, revision}` need
-  confirmation against the real Fleet v2 implementation. `verify_mode` and
-  `verified_by` follow the supplied contract.
-- Real Fleet integration was not run: no test Fleet URL/token was configured in
-  the isolated environment, and the parallel implementation's availability could
-  not be established here. No production tasks were read or mutated. No deployment,
-  merge, release, or daily-instance restart is part of this change.
+- UI `spec_json.summary` maps to Fleet's plain string `spec_json`.
+- UI criterion labels map to newline-separated `acceptance`; checkbox state is
+  demo-only. Priority `Pn` maps to integer `n`.
+- Artifact/decision numeric IDs become opaque strings. Options without IDs receive
+  stable indices for the displayed revision; decide validates the selected decision
+  and option, then sends `{"choice":"selected label"}`.
+- GET detail's `decision` is projected as `open_decision`; execution records remain
+  server-only. File downloads authenticate with the worker token after task ownership
+  validation. External PR links are separate from downloads.
+- PATCH has an atomic revision check upstream. Action endpoints have a proxy
+  revision preflight, but fdabd48 does not promise atomic If-Match checks for actions;
+  Fleet still enforces its state machine. This limitation cannot be fixed in the
+  Workbench adapter alone. No Fleet source change was made.
+- 409 asks to reload/retry; 403 asks the administrator to check review credentials
+  or artifact permissions; 404 asks to refresh; 410 asks for a new worker decision.
+  Upstream error bodies are never exposed.
+- `transition` is exclusively demo-only. The built-in demo uses process memory,
+  sample decision/report, and no database/network. It resets with the process.
+  `HERMES_WORKBENCH_FLEET_DEMO_URL` is an optional loopback-only test fixture
+  transport; it never selects a non-loopback Fleet service.
+
+Rollback: set `HERMES_WORKBENCH_FLEET_MODE=mock` in the next planned service
+configuration rollout, or revert this PR's adapter commit. No Fleet data migration
+is involved. Demo data is isolated from live data. This task does not deploy or
+restart any installed instance.
 
 ## Reproduction and evidence
 
@@ -207,4 +210,42 @@ Review snapshots are in [`../validation/task-control-tower/`](../validation/task
 - `recent-home-secondary.png`: previous home surface retained as a secondary entry.
 
 These use fictional English fixtures and are localhost validation only; the actual
-installed plugin loading route and a real Fleet test environment remain unverified.
+installed plugin loading route remains unverified. Real Fleet validation is below.
+
+
+## Real fleetd local validation
+
+```bash
+# In a disposable /tmp checkout of the private Fleet repository:
+git checkout --detach fdabd48
+go build -o /tmp/workbench-test-fleetd ./cmd/fleetd
+# Back in this Workbench branch, after npm run build:
+FLEET_TEST_BINARY=/tmp/workbench-test-fleetd node tests/browser/task-control-v2.mjs
+```
+
+The harness binds ephemeral loopback ports, creates a temporary SQLite/workspace,
+uses distinct synthetic worker/review tokens, disables mirrors/notifications,
+and cleans up children and database/workspace in `finally`. The Hermes shell is a
+local fixture; the Workbench bundle, authenticated Python proxy and fleetd are real.
+Worker claim/complete/decision calls come from the test driver, never the browser.
+No production Fleet requests or repository modifications occur.
+
+Verified: browser draft creation/edit/dispatch; worker claim and auto→done;
+human→review→request_changes→fresh attempt→review→approve; decision/decide;
+authenticated download and wrong-task 404; PR external link; archive/restore;
+concurrent PATCH 409 shown in UI; real expired decision 410; file download then
+symlink escape 403. Tests also check missing review credentials, no browser Fleet
+URL/token exposure, and safe default/mock selection.
+
+Screenshots: `/tmp/fleet-T-01484b8f-v2-screenshots/`, copied into
+`docs/validation/task-control-tower-v2/`: desktop light/dark, mobile light/dark,
+decision, download, 409 conflict. Chromium localhost only; no installed plugin
+route, production deployment, remote worker process or cross-machine mount tested.
+
+
+Validation result (2026-11-01): `npm run typecheck`, `npm test` (450 tests),
+`npm run test:python` (259 tests, 6 subtests), `npm run build`, full
+`npm run test:browser`, and the real v2 harness all passed. Browser page identity,
+nonblank content, absence of framework overlays, console health (expected 409
+resource error excluded), interactions and screenshots were checked. Fleet source
+was clean at `fdabd483e84c3831b148d52ea2d2658b8581c62f` after validation.

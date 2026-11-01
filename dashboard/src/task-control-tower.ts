@@ -127,7 +127,7 @@ export function createTaskControlTower(
       };
     }, []);
     useEffect(() => {
-      if (!config || config.mode === "unconfigured") return;
+      if (!config || config.mode !== "mock") return;
       const overdue = tasks.filter(
         (t) => expired(t) && !archiving.current.has(`${t.id}:${t.revision}`),
       );
@@ -445,7 +445,7 @@ export function createTaskControlTower(
           "Check the acceptance checklist and artifacts",
         ),
         done: tr("打开产物或归档", "Open the deliverables or archive"),
-        archived: tr("可恢复为草稿", "Restore as a draft"),
+        archived: tr("恢复归档前状态", "Restore the previous status"),
         scheduled: tr("等待重试", "Waiting for retry"),
       }[task.status];
     };
@@ -487,7 +487,7 @@ export function createTaskControlTower(
             ? h(
                 "span",
                 { className: "tower-mode" },
-                tr("演示数据", "Demo data"),
+                tr("演示模式", "Demo mode"),
               )
             : null,
           btn(tr("看板", "Board"), () => setView("board"), {
@@ -498,8 +498,8 @@ export function createTaskControlTower(
           }),
           btn(tr("新建草稿", "New draft"), () => setCreating(true), {
             className: "tower-primary",
-            disabled: !config?.extended_workflow || busy,
-            title: !config?.extended_workflow
+            disabled: !config || busy,
+            title: !config
               ? tr(
                   "等待 Fleet 新建任务接口",
                   "Waiting for Fleet task creation API",
@@ -869,7 +869,14 @@ export function createTaskControlTower(
                                 ? tr("派遣", "Dispatch")
                                 : s === "done" && t.status === "review"
                                   ? tr("验收通过", "Accept delivery")
-                                  : statusLabel(s),
+                                  : t.server_lifecycle &&
+                                      t.status === "archived"
+                                    ? tr("恢复", "Restore")
+                                    : t.server_lifecycle &&
+                                        t.status === "review" &&
+                                        s === "running"
+                                      ? tr("要求修改", "Request changes")
+                                      : statusLabel(s),
                               () => move(t, s),
                               {
                                 key: s,
@@ -895,7 +902,7 @@ export function createTaskControlTower(
                                 disabled:
                                   busy ||
                                   (!config?.extended_workflow &&
-                                    !["triage", "review"].includes(t.status)),
+                                    !["triage"].includes(t.status)),
                                 onChange: () =>
                                   void run(() =>
                                     api.patch(t, {
@@ -1137,22 +1144,32 @@ export function createTaskControlTower(
                                 { className: "tower-muted" },
                                 `${a.kind} · ${a.content_type} · ${a.size < 1024 ? `${a.size} B` : `${(a.size / 1024).toFixed(1)} KB`}`,
                               ),
-                              btn(
-                                tr("下载", "Download"),
-                                () =>
-                                  void run(() =>
-                                    downloadArtifact(
-                                      a,
-                                      sdk.authedFetch ||
-                                        ((url, init) =>
-                                          fetch(url, {
-                                            ...init,
-                                            credentials: "same-origin",
-                                          })),
-                                    ),
+                              a.external_url && safeLink(a.external_url)
+                                ? h(
+                                    "a",
+                                    {
+                                      href: safeLink(a.external_url)!,
+                                      target: "_blank",
+                                      rel: "noopener noreferrer",
+                                    },
+                                    tr("打开链接", "Open link"),
+                                  )
+                                : btn(
+                                    tr("下载", "Download"),
+                                    () =>
+                                      void run(() =>
+                                        downloadArtifact(
+                                          a,
+                                          sdk.authedFetch ||
+                                            ((url, init) =>
+                                              fetch(url, {
+                                                ...init,
+                                                credentials: "same-origin",
+                                              })),
+                                        ),
+                                      ),
+                                    { disabled: busy },
                                   ),
-                                { disabled: busy },
-                              ),
                             ),
                           )
                         : h(

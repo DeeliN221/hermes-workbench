@@ -16,7 +16,7 @@ const port = reserve.address().port;
 await new Promise((resolve) => reserve.close(resolve));
 const env = {
   ...process.env,
-  HERMES_WORKBENCH_FLEET_URL: fleet.origin,
+  HERMES_WORKBENCH_FLEET_DEMO_URL: fleet.origin,
   HERMES_WORKBENCH_FLEET_TOKEN: "mock-fleet-token",
   HERMES_WORKBENCH_FLEET_MODE: "mock",
   HERMES_DASHBOARD_TRUSTED_PROXY_SECRET: "local-proxy-secret",

@@ -37,6 +37,7 @@ export type Task = {
   acceptance: Check[];
   spec_json?: { summary?: string };
   needs_human?: boolean;
+  server_lifecycle?: boolean;
   decision?: Decision | null;
 };
 export type Artifact = {
@@ -49,6 +50,7 @@ export type Artifact = {
   size: number;
   content_type: string;
   download_url?: string;
+  external_url?: string;
 };
 export type Detail = {
   task: Task;
@@ -109,7 +111,11 @@ export function attention(t: Task): boolean {
   );
 }
 export function expired(t: Task, now = Date.now()): boolean {
-  return t.status === "done" && now - Date.parse(t.created_at) > 3 * 86400000;
+  return (
+    !t.server_lifecycle &&
+    t.status === "done" &&
+    now - Date.parse(t.created_at) > 3 * 86400000
+  );
 }
 export function delivered(tasks: Task[], now = Date.now()): Task[] {
   return tasks
@@ -141,6 +147,22 @@ export function canMove(t: Task, to: Status): string | null {
           "Delivered is ordered by creation time; manual reordering is disabled",
         )
       : null;
+  if (t.server_lifecycle) {
+    if (
+      to === "archived" &&
+      ["triage", "ready", "scheduled", "blocked", "done"].includes(t.status)
+    )
+      return null;
+    if (t.status === "archived" && to === "triage") return null;
+    if (
+      !(t.status === "triage" && to === "ready") &&
+      !(t.status === "review" && ["running", "done"].includes(to))
+    )
+      return uiText(
+        "此状态由执行者推进，请等待任务更新",
+        "The worker controls this state. Wait for a task update.",
+      );
+  }
   const graph: Record<Status, Status[]> = {
     triage: ["ready"],
     ready: ["triage", "running"],

@@ -48,18 +48,30 @@ class _NoRedirect(HTTPRedirectHandler):
 
 
 def _id(value):
-    if not _ID.fullmatch(value):
+    if not isinstance(value, str) or not _ID.fullmatch(value):
         raise HTTPException(422, "Invalid Fleet identifier")
     return value
 
 
 def _config():
-    base = os.getenv("HERMES_WORKBENCH_FLEET_URL", "").rstrip("/")
-    token = os.getenv("HERMES_WORKBENCH_FLEET_TOKEN", "")
-    mode = os.getenv("HERMES_WORKBENCH_FLEET_MODE", "live")
-    parsed = urlsplit(base)
+    base = os.getenv("FLEET_URL", "").rstrip("/")
+    token = os.getenv("FLEET_TOKEN", "")
+    mode = os.getenv("HERMES_WORKBENCH_FLEET_MODE", "mock")
+    if mode != "live":
+        # Explicit localhost fixture transport for browser regression tests only.
+        base = os.getenv("HERMES_WORKBENCH_FLEET_DEMO_URL", "").rstrip("/")
+        token = "mock-fleet-token"
+        if not base:
+            return None
+
     if not base or not token:
         return None
+    try:
+        parsed = urlsplit(base)
+    except ValueError:
+        raise HTTPException(503, "Invalid server Fleet configuration") from None
+    if mode != "live" and parsed.hostname not in ("localhost", "127.0.0.1", "::1"):
+        raise HTTPException(503, "Demo transport must be localhost")
     if (
         parsed.scheme not in ("http", "https")
         or not parsed.hostname
@@ -80,11 +92,25 @@ def _config():
     return base, token, mode
 
 
-def _upstream(method, path, body=None, revision=None, binary=False):
+def _live():
+    config = _config()
+    return bool(config and config[2] == "live")
+
+
+def _upstream(method, path, body=None, revision=None, binary=False, review=False):
     config = _config()
     if not config:
-        raise HTTPException(503, "Task service is not connected")
+        from fleet_demo import request
+
+        return request(method, path, body, revision, binary)
     base, token, _ = config
+    if review:
+        token = os.getenv("FLEET_REVIEW_TOKEN", "")
+        if not token:
+            raise HTTPException(
+                403,
+                "Ask the administrator to configure FLEET_REVIEW_TOKEN, then retry review",
+            )
     headers = {
         "Authorization": "Bearer " + token,
         "Accept": "application/octet-stream" if binary else "application/json",
@@ -96,7 +122,7 @@ def _upstream(method, path, body=None, revision=None, binary=False):
         headers["Content-Type"] = "application/json"
         data = json.dumps(body).encode()
     request = URLRequest(
-        base + "/api/v1/" + path, data=data, headers=headers, method=method
+        base + "/api/v2/" + path, data=data, headers=headers, method=method
     )
     try:
         with build_opener(_NoRedirect()).open(request, timeout=10) as response:
@@ -119,14 +145,17 @@ def _upstream(method, path, body=None, revision=None, binary=False):
         # Never forward upstream bodies/locations: they can contain credentials or paths.
         status = (
             error.code
-            if error.code in (400, 401, 403, 404, 409, 413, 422, 429)
+            if error.code in (400, 401, 403, 404, 409, 410, 413, 422, 429)
             else 502
         )
         raise HTTPException(
             status,
-            "Task changed elsewhere; reload and retry"
-            if status == 409
-            else "Fleet request failed",
+            {
+                409: "Task changed elsewhere; reload and retry",
+                403: "Permission denied; ask the administrator to check review credentials or artifact access",
+                404: "Task or artifact no longer exists; refresh the task list",
+                410: "Decision expired; refresh and ask the worker for a new decision",
+            }.get(status, "Fleet request failed; refresh and retry"),
         ) from None
     except (URLError, TimeoutError, OSError, ValueError):
         raise HTTPException(502, "Task service is unavailable") from None
@@ -161,6 +190,20 @@ def _task(task):
     }
     row = {k: task[k] for k in keys if k in task}
     row.setdefault("acceptance", [])
+    if isinstance(row.get("spec_json"), str):
+        row["spec_json"] = {"summary": row["spec_json"]}
+    if isinstance(row["acceptance"], str):
+        row["acceptance"] = [
+            {
+                "label": line,
+                "checked": task.get("status") in ("review", "done", "archived"),
+            }
+            for line in row["acceptance"].splitlines()
+            if line.strip()
+        ]
+    if isinstance(row.get("priority"), int):
+        row["priority"] = "P" + str(row["priority"])
+    row["server_lifecycle"] = _live()
     row["verify_mode"] = _mode(task)
     row["decision"] = _decision(task.get("decision") or task.get("open_decision"))
     return row
@@ -170,23 +213,38 @@ def _decision(value):
     if not isinstance(value, dict):
         return None
     return {
-        **{k: value[k] for k in ("id", "question") if k in value},
+        **{k: str(value[k]) for k in ("id", "question") if k in value},
         "options": [
-            {k: o[k] for k in ("id", "label", "impact", "recommended") if k in o}
-            for o in value.get("options", [])
+            {
+                "id": str(i),
+                **{k: o[k] for k in ("id", "label", "impact", "recommended") if k in o},
+            }
+            for i, o in enumerate(value.get("options", []))
             if isinstance(o, dict)
         ],
     }
 
 
 def _artifact(value, task_id):
+    external = value.get("ref", "")
+    parsed = urlsplit(external)
+    external = (
+        external
+        if parsed.scheme in ("http", "https")
+        and parsed.hostname
+        and not parsed.username
+        and not parsed.password
+        else None
+    )
     return {
+        "external_url": external,
         **{
             k: value.get(k)
             for k in ("id", "task_id", "kind", "name", "sha", "size", "content_type")
         },
         "task_id": task_id,
-        "download_url": f"/api/plugins/workbench/fleet/artifacts/{_id(value['id'])}/download?task_id={task_id}",
+        "id": str(value["id"]),
+        "download_url": f"/api/plugins/workbench/fleet/artifacts/{_id(str(value['id']))}/download?task_id={task_id}",
     }
 
 
@@ -220,12 +278,8 @@ def fleet_config():
     config = _config()
     return _reply(
         {
-            "mode": "unconfigured"
-            if not config
-            else "mock"
-            if config[2] == "mock"
-            else "live",
-            "extended_workflow": bool(config and config[2] == "mock"),
+            "mode": "live" if config and config[2] == "live" else "mock",
+            "extended_workflow": not bool(config and config[2] == "live"),
         }
     )
 
@@ -238,6 +292,8 @@ def fleet_tasks(status: str | None = None):
         "GET", "tasks" + ("?" + urlencode({"status": status}) if status else "")
     )
     rows = value if isinstance(value, list) else value.get("tasks", [])
+    if not status and _live():
+        rows += _upstream("GET", "tasks?status=archived").get("tasks", [])
 
     # The v2 list contract need not contain open decisions; detail is authoritative.
     def project(row):
@@ -292,15 +348,27 @@ async def fleet_patch(task_id: str, request: Request):
     ):
         raise HTTPException(422, "Unsupported task field")
     # Upstream owns field validation and optimistic concurrency.
+    if _live():
+        if isinstance(body.get("spec_json"), dict):
+            body["spec_json"] = body["spec_json"].get("summary", "")
+        if isinstance(body.get("acceptance"), list):
+            if any(
+                not isinstance(c, dict) or not isinstance(c.get("label"), str)
+                for c in body["acceptance"]
+            ):
+                raise HTTPException(422, "Each acceptance criterion needs a text label")
+            body["acceptance"] = "\n".join(c["label"] for c in body["acceptance"])
+        if isinstance(body.get("priority"), str):
+            try:
+                body["priority"] = int(body["priority"].removeprefix("P"))
+            except ValueError:
+                raise HTTPException(422, "Priority must be a number") from None
     await run_in_threadpool(_upstream, "PATCH", "tasks/" + _id(task_id), body, revision)
     return _reply(await run_in_threadpool(_detail, task_id))
 
 
 @router.post("/tasks")
 async def fleet_create(request: Request):
-    config = _config()
-    if not config or config[2] != "mock":
-        raise HTTPException(501, "Fleet task creation contract is not available")
     body = await _body(request)
     if (
         set(body) != {"title"}
@@ -348,7 +416,15 @@ def _validate_transition(task, to):
 
 @router.post("/tasks/{task_id}/{action}")
 async def fleet_action(task_id: str, action: str, request: Request):
-    if action not in ("dispatch", "archive", "restore", "decide", "transition"):
+    if action not in (
+        "dispatch",
+        "archive",
+        "restore",
+        "decide",
+        "transition",
+        "approve",
+        "request_changes",
+    ):
         raise HTTPException(404, "Unknown task action")
     body = await _body(request)
     return await run_in_threadpool(_perform_action, task_id, action, request, body)
@@ -362,7 +438,7 @@ def _perform_action(task_id, action, request, body):
         raise HTTPException(409, "Task changed elsewhere; reload and retry")
     if action == "transition":
         config = _config()
-        if not config or config[2] != "mock":
+        if config and config[2] == "live":
             raise HTTPException(
                 501, "Fleet manual transition contract is not available"
             )
@@ -379,17 +455,33 @@ def _perform_action(task_id, action, request, body):
             or body.get("option_id") not in [o.get("id") for o in options]
         ):
             raise HTTPException(422, "Choose one of the current decision options")
-        body = {k: body[k] for k in ("decision_id", "option_id", "revision")}
+        body = (
+            {
+                "choice": next(
+                    o["label"] for o in options if o["id"] == body["option_id"]
+                )
+            }
+            if _live()
+            else {k: body[k] for k in ("decision_id", "option_id", "revision")}
+        )
+    elif action in ("approve", "request_changes"):
+        if task["status"] != "review":
+            raise HTTPException(409, "Task is no longer awaiting review; refresh")
+        body = {}
     else:
         target = {"dispatch": "ready", "archive": "archived", "restore": "triage"}.get(
             action, body.get("status")
         )
-        _validate_transition(task, target)
+        if not _live() or action == "dispatch":
+            _validate_transition(task, target)
         body = {
             "revision": revision,
             **({"status": target} if action == "transition" else {}),
         }
-    _upstream("POST", f"tasks/{_id(task_id)}/{action}", body, revision)
+    if action in ("approve", "request_changes"):
+        _upstream("POST", f"tasks/{_id(task_id)}/{action}", body, revision, review=True)
+    else:
+        _upstream("POST", f"tasks/{_id(task_id)}/{action}", body, revision)
     return _reply(_detail(task_id))
 
 
@@ -400,7 +492,7 @@ def fleet_download(artifact_id: str, task_id: str):
     # open a ref/path or follow an upstream-provided download_url/redirect.
     detail = _detail(task_id)
     artifact = next((a for a in detail["artifacts"] if a["id"] == artifact_id), None)
-    if not artifact:
+    if not artifact or artifact.get("external_url"):
         raise HTTPException(404, "Artifact not found for this task")
     raw = _upstream("GET", f"artifacts/{artifact_id}/download", binary=True)
     from urllib.parse import quote

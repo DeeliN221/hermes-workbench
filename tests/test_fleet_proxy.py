@@ -35,8 +35,8 @@ HEADERS = {
 def client(monkeypatch):
     monkeypatch.setenv("HERMES_DASHBOARD_TRUSTED_PROXY_SECRET", "test-secret")
     monkeypatch.setenv("HERMES_WORKBENCH_ALLOWED_USERS", "alice")
-    monkeypatch.setenv("HERMES_WORKBENCH_FLEET_URL", "https://fleet.example")
-    monkeypatch.setenv("HERMES_WORKBENCH_FLEET_TOKEN", "server-only-token")
+    monkeypatch.setenv("FLEET_URL", "https://fleet.example")
+    monkeypatch.setenv("FLEET_TOKEN", "server-only-token")
     monkeypatch.setenv("HERMES_WORKBENCH_FLEET_MODE", "live")
     app = FastAPI()
     app.include_router(fleet.router, prefix="/api/plugins/workbench")
@@ -66,7 +66,7 @@ def upstream(monkeypatch):
         if binary:
             return b"report"
         if path.startswith("tasks?") or path == "tasks":
-            return {"tasks": [task]}
+            return {"tasks": [task], "task": task}
         return {
             "task": task,
             "artifacts": artifacts,
@@ -149,7 +149,7 @@ def test_live_extension_rejected_and_illegal_moves(client, upstream, monkeypatch
     url = BASE + "/tasks/task-1"
     assert (
         client.post(BASE + "/tasks", headers=HEADERS, json={"title": "New"}).status_code
-        == 501
+        == 200
     )
     assert (
         client.post(
@@ -230,9 +230,142 @@ def test_artifact_membership_safe_download_and_errors(client, upstream):
 
 
 def test_config_requires_secure_origin(client, monkeypatch):
-    monkeypatch.setenv("HERMES_WORKBENCH_FLEET_URL", "https://token@fleet.example")
+    monkeypatch.setenv("FLEET_URL", "https://token@fleet.example")
     assert client.get(BASE + "/config", headers=HEADERS).status_code == 503
-    monkeypatch.delenv("HERMES_WORKBENCH_FLEET_TOKEN")
+    monkeypatch.delenv("FLEET_TOKEN")
+    assert client.get(BASE + "/config", headers=HEADERS).json()["mode"] == "mock"
+
+
+def test_v2_transport_credentials_errors_and_projection(client, monkeypatch):
+    from urllib.error import HTTPError
+    import json
+
+    seen = []
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def read(self, limit):
+            return b"{}"
+
+    class Opener:
+        def open(self, request, timeout):
+            seen.append(request)
+            return Reply()
+
+    monkeypatch.setattr(fleet, "build_opener", lambda *args: Opener())
+    monkeypatch.setenv("FLEET_REVIEW_TOKEN", "human-only")
+    fleet._upstream("PATCH", "tasks/task-1", {"revision": 2}, 2)
+    assert seen[-1].full_url == "https://fleet.example/api/v2/tasks/task-1"
+    assert seen[-1].get_header("Authorization") == "Bearer server-only-token"
+    assert json.loads(seen[-1].data) == {"revision": 2}
+    fleet._upstream("POST", "tasks/task-1/approve", {}, review=True)
+    assert seen[-1].get_header("Authorization") == "Bearer human-only"
+    monkeypatch.delenv("FLEET_REVIEW_TOKEN")
+    with pytest.raises(fleet.HTTPException) as error:
+        fleet._upstream("POST", "tasks/task-1/approve", {}, review=True)
+    assert error.value.status_code == 403
+    for status in (403, 404, 409, 410):
+
+        class Failed:
+            def open(self, request, timeout):
+                raise HTTPError(
+                    request.full_url, status, "secret upstream body", {}, None
+                )
+
+        monkeypatch.setattr(fleet, "build_opener", lambda *args: Failed())
+        with pytest.raises(fleet.HTTPException) as error:
+            fleet._upstream("GET", "tasks/task-1")
+        assert error.value.status_code == status
+        assert "secret" not in error.value.detail
+    task = fleet._task(
+        {
+            **TASK,
+            "spec_json": "Plain brief",
+            "acceptance": "One\nTwo",
+            "priority": 5,
+            "status": "review",
+        }
+    )
+    assert task["spec_json"] == {"summary": "Plain brief"}
+    assert task["acceptance"] == [
+        {"label": "One", "checked": True},
+        {"label": "Two", "checked": True},
+    ]
+    assert task["priority"] == "P5"
     assert (
-        client.get(BASE + "/config", headers=HEADERS).json()["mode"] == "unconfigured"
+        fleet._decision({"options": [{"label": "A"}, {"label": "B"}]})["options"][1][
+            "id"
+        ]
+        == "1"
+    )
+
+
+def test_demo_defaults_never_contact_live(client, monkeypatch):
+    monkeypatch.delenv("HERMES_WORKBENCH_FLEET_MODE")
+
+    def forbidden(*args):
+        raise AssertionError("Must not contact upstream")
+
+    monkeypatch.setattr(fleet, "build_opener", forbidden)
+    assert client.get(BASE + "/config", headers=HEADERS).json() == {
+        "mode": "mock",
+        "extended_workflow": True,
+    }
+    task = client.post(
+        BASE + "/tasks", headers=HEADERS, json={"title": "Local demo"}
+    ).json()["task"]
+    assert task["status"] == "triage"
+    assert client.get(BASE + "/tasks/" + task["id"], headers=HEADERS).status_code == 200
+    monkeypatch.setenv("HERMES_WORKBENCH_FLEET_MODE", "live")
+    monkeypatch.delenv("FLEET_TOKEN")
+    assert client.get(BASE + "/config", headers=HEADERS).json()["mode"] == "mock"
+
+
+def test_live_payloads_and_review_routing(client, upstream, monkeypatch):
+    task, calls, _ = upstream
+    response = client.patch(
+        BASE + "/tasks/task-1",
+        headers=HEADERS,
+        json={
+            "revision": 2,
+            "spec_json": {"summary": "Brief"},
+            "acceptance": [{"label": "Pass", "checked": False}],
+            "priority": "P2",
+        },
+    )
+    assert response.status_code == 200
+    assert calls[0][2] == {
+        "revision": 2,
+        "spec_json": "Brief",
+        "acceptance": "Pass",
+        "priority": 2,
+    }
+    task["status"] = "review"
+    original = fleet._upstream
+    review_calls = []
+
+    def transport(method, path, body=None, revision=None, binary=False, review=False):
+        review_calls.append((path, review))
+        return original(method, path, body, revision, binary)
+
+    monkeypatch.setattr(fleet, "_upstream", transport)
+    for action in ("approve", "request_changes"):
+        assert (
+            client.post(
+                BASE + "/tasks/task-1/" + action, headers=HEADERS, json={"revision": 2}
+            ).status_code
+            == 200
+        )
+        assert ("tasks/task-1/" + action, True) in review_calls
+    task["status"] = "running"
+    assert (
+        client.post(
+            BASE + "/tasks/task-1/approve", headers=HEADERS, json={"revision": 2}
+        ).status_code
+        == 409
     )
