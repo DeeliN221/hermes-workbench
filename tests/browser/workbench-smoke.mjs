@@ -10,7 +10,7 @@ const host = await createMockHost();
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
   for (const [route, selector] of [
-    ['/sessions?profile=default', '.workbench-recent-home'],
+    ['/sessions?profile=default', '.task-tower'],
     ['/chat?session=codex-preview&profile=default', '.codex-pane-slot'],
     ['/chat?session=codex-preview&profile=writer', '.codex-pane-slot'],
   ]) {
@@ -86,7 +86,7 @@ try {
   const profileErrors = [];
   profilePage.on('pageerror', error => profileErrors.push(error.stack || error.message));
   await profilePage.goto(host.origin + '/sessions?profile=default', { waitUntil: 'domcontentloaded' });
-  await profilePage.locator('.workbench-recent-home').waitFor({ state: 'attached', timeout: 5000 });
+  await profilePage.locator('.task-tower').waitFor({ state: 'attached', timeout: 5000 });
   const profileTrigger = profilePage.locator('.dashboard-nav-profile > button');
   await profileTrigger.click();
   const profileMenu = profilePage.locator('#workbench-profile-menu');
@@ -357,7 +357,7 @@ try {
   const mobileErrors = [];
   mobilePage.on('pageerror', error => mobileErrors.push(error.stack || error.message));
   await mobilePage.goto(host.origin + '/sessions?profile=default', { waitUntil: 'domcontentloaded' });
-  await mobilePage.locator('.workbench-recent-home').waitFor({ state: 'attached', timeout: 5000 });
+  await mobilePage.locator('.task-tower').waitFor({ state: 'attached', timeout: 5000 });
   // Mirror the native Kanban overlay's positioning while exercising the real
   // Workbench mobile width override and the real action rail.
   await mobilePage.addStyleTag({ content: `

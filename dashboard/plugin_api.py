@@ -1636,3 +1636,8 @@ def get_profile_display(request: Request):
 @router.put('/profile-display')
 def put_profile_display(request: Request, body: ProfileDisplayBody, profile: str = 'default'):
     return _profile_display(_model_display_owner(request), profile, body)
+
+# Fleet runs behind the existing Hermes/sidecar authentication gate. The browser
+# receives a product projection only, never the server token or raw run events.
+from fleet_proxy import router as fleet_router
+router.include_router(fleet_router)

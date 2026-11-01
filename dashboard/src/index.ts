@@ -56,3 +56,5 @@ installMobileSettings();
 
 import { installQuotaDashboard } from './quota-dashboard';
 installQuotaDashboard();
+
+import './task-control-tower.css';

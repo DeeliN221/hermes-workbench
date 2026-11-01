@@ -32,7 +32,7 @@ try {
   await card.getByRole('button', { name: 'Save display name' }).click();
   await page.reload();
   await page.waitForFunction(() => document.querySelector('[data-profile="default"] h2')?.textContent.includes('Main Agent'));
-  await page.goto(host.origin + '/sessions?profile=writer');
+  await page.goto(host.origin + '/sessions?view=recent&profile=writer');
   await page.locator('.workbench-home-project').first().waitFor();
   assert.match(await page.locator('label[for="home-message"]').textContent(), /Main Agent/);
   assert.equal(await page.locator('.workbench-home-project').count(), 8);
@@ -51,7 +51,7 @@ try {
   await page.waitForFunction(() => document.querySelector('.codex-center-title')?.textContent.includes('Writer conversation'));
   assert.ok(writes.some(w => w.method === 'PATCH' && w.url.includes('profile=writer')));
   assert.ok(!writes.some(w => w.method === 'PATCH' && w.url.includes('profile=default')));
-  await page.goto(host.origin + '/sessions?profile=writer');
+  await page.goto(host.origin + '/sessions?view=recent&profile=writer');
   await page.locator('#home-message').fill('A task for the main agent');
   await page.locator('.workbench-home-compose button[type="submit"]').click();
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'default');
@@ -60,7 +60,7 @@ try {
   const create = writes.find(w => w.method === 'POST' && new URL(w.url).pathname.endsWith('/codex/sessions'));
   assert.equal(create.body.profile, 'default');
   await page.setViewportSize({ width: 390, height: 844 });
-  await page.goto(host.origin + '/sessions?profile=writer');
+  await page.goto(host.origin + '/sessions?view=recent&profile=writer');
   await page.locator('.workbench-home-project').first().waitFor();
   assert.ok(await page.locator('.workbench-home-card-meta').first().isVisible());
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'No mobile horizontal overflow');
@@ -68,10 +68,10 @@ try {
   await page.getByRole('link', { name: /New session.*Main Agent/ }).click();
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'default' && url.searchParams.get('new') === '1');
   dataState = 'denied';
-  await page.goto(host.origin + '/sessions?profile=default');
+  await page.goto(host.origin + '/sessions?view=recent&profile=default');
   await page.getByRole('alert').filter({ hasText: 'failed to load' }).first().waitFor();
   dataState = 'empty';
-  await page.goto(host.origin + '/sessions?profile=default');
+  await page.goto(host.origin + '/sessions?view=recent&profile=default');
   await page.getByText('No sessions yet. Start a conversation.').waitFor();
   assert.equal(await page.locator('.workbench-home-project').count(), 0);
   assert.deepEqual(errors, []);
