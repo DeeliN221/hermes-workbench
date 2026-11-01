@@ -54,7 +54,6 @@ import { runtimeErrorText, sameMessage, insertRequest, withTurnError } from './c
 import { installChatFileLinks, openChatFilePreview } from './chat-file-links';
 import { readManagedFile } from './files-preview';
 import { openFilePreview, showFilePreviewLoading } from './file-preview';
-import { prepareProfileKanban } from './profile-kanban';
 
 // Capture local file references before the host router treats them as app routes.
 installChatFileLinks('/opt/data/workspace', openChatFilePreview);
@@ -2598,6 +2597,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         R = n(null);
       A.current = p;
       const isHome = u.path === "/" || u.path === "/home" || u.path === "/sessions",
+        isTaskBoard = u.path === "/kanban" && new URLSearchParams(u.search).get("view") !== "legacy",
         isProfiles = u.path === "/profiles" && !u.profileManager,
         isShortcuts = u.path === "/config" && u.settingsTab === "shortcuts",
         isChatDisplay = u.path === "/config" && u.settingsTab === "display",
@@ -2608,8 +2608,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         H = Cx(u.path),
         F = yx(u.profile, da),
         j = u.path === "/chat" && !u.terminal,
-        accessory = mobileActions ? "" : accessoryKind(u.path, u.search),
-        navIsCollapsed = !mobileActions && navCollapsed;
+        accessory = mobileActions || isTaskBoard ? "" : accessoryKind(u.path, u.search),
+        navIsCollapsed = !mobileActions && navCollapsed,
+        ownsPage = M || isTaskBoard;
       r(() => {
         const media = window.matchMedia('(max-width: 800px)');
         const resize = () => { setMobileActions(media.matches); setActionsOpen(false); };
@@ -2701,7 +2702,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, []),
         r(() => {
           ((document.documentElement.dataset.workbenchShell = "true"),
-            (document.documentElement.dataset.workbenchPage = M
+            (document.documentElement.dataset.workbenchPage = ownsPage
               ? "custom"
               : H
                 ? "settings"
@@ -2718,15 +2719,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             ae = z?.getAttribute("aria-hidden");
           if (
             (z &&
-              ((z.inert = M),
-              M
+              ((z.inert = ownsPage),
+              ownsPage
                 ? z.setAttribute("aria-hidden", "true")
                 : z.removeAttribute("aria-hidden")),
-            M &&
+            ownsPage &&
               (z?.contains(document.activeElement) ||
                 document.activeElement === document.body) &&
               D.current?.focus({ preventScroll: !0 }),
-            !M && document.activeElement === document.body)
+            !ownsPage && document.activeElement === document.body)
           ) {
             const Ce = z?.querySelector('main, [role="main"], h1');
             Ce &&
@@ -2745,7 +2746,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               delete document.documentElement.dataset.workbenchAccessory,
               delete document.documentElement.dataset.workbenchAccessorySettings);
           };
-        }, [M, H, u.path, accessory]));
+        }, [ownsPage, H, u.path, accessory]));
       const activateAccessory = (z) => {
           const source = window.location.href;
           if (!u.panel) {
@@ -2753,15 +2754,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             catch { /* Storage can be unavailable in private browsing. */ }
           }
           E("");
-          if (z === "/kanban") {
-            prepareProfileKanban(i.fetchJSON, u.profile, () => window.location.href === source)
-              .then(board => {
-                if (!board) return;
-                Kp(withAccessoryPanel(z), u.profile);
-                f(false);
-              }).catch(error => E(error instanceof Error ? error.message : String(error)));
-            return;
-          }
           Kp(withAccessoryPanel(z), u.profile);
           f(false);
         },
@@ -2792,21 +2784,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         Q = (z, G, keepPanel = true) => {
           const target = keepPanel && u.panel ? withAccessoryPanel(G) : withoutAccessoryPanel(G);
-          if (new URL(target, "http://localhost").pathname === "/kanban"
-            && !z.metaKey && !z.ctrlKey && !z.shiftKey && !z.altKey && z.button === 0) {
-            z.preventDefault();
-            const source = window.location.href;
-            E("");
-            prepareProfileKanban(i.fetchJSON, u.profile, () => window.location.href === source)
-              .then(board => {
-                if (!board) return;
-                // An already-mounted native board keeps its own React selection.
-                if (u.path === "/kanban" && !u.panel) window.location.assign(Cn(target, u.profile));
-                else Kp(target, u.profile);
-                f(false);
-              }).catch(error => E(error instanceof Error ? error.message : String(error)));
-            return;
-          }
           z.metaKey ||
             z.ctrlKey ||
             z.shiftKey ||
@@ -2926,7 +2903,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             onClickCapture: (event) => { const action = event.target.closest("a, button"); if (!mobile && action && !action.closest(".workbench-theme-action, .workbench-profile-action")) setActionsOpen(false); } },
             l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
             l("div", { className: "dashboard-nav-pair" },
-              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban", undefined, true),
+              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban"),
               k("/cron", runtimeText("定时", "Scheduled jobs"), "cron", u.path === "/cron", undefined, true),
               k("/chat?workbench=terminal", runtimeText("终端", "Terminal"), "terminal", u.terminal, "hti-dashboard-terminal-trigger", true),
             ),
@@ -3104,7 +3081,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 : null,
             )
           : null,
-        M
+        isTaskBoard
+          ? l("main", {
+              ref: D, className: "dashboard-owned-page", tabIndex: -1,
+              "aria-label": runtimeText("看板", "Kanban"),
+            }, l(TaskControlTower, { key: "kanban", profile: F }))
+          : M
           ? l(
               "main",
               {

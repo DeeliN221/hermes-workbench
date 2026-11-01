@@ -141,7 +141,7 @@ try {
           : { task: { id: 't_2d0f0a85', assignee: 'default', status: 'todo' }, runs: [], attachments: [] },
       ) });
     });
-    await page.goto(host.origin + `/kanban?board=default&profile=default${panel ? '&panel=1' : ''}`, { waitUntil: 'domcontentloaded' });
+    await page.goto(host.origin + `/kanban?view=legacy&board=default&profile=default${panel ? '&panel=1' : ''}`, { waitUntil: 'domcontentloaded' });
     await page.waitForFunction(() => document.documentElement.dataset.workbenchShell === 'true');
     await installNativeBoundary(page);
     const open = async () => {
