@@ -40,6 +40,20 @@ class PreviewLoadingContract(unittest.IsolatedAsyncioTestCase):
             await self.bridge.history_preview('other', 'default', 'session')
         self.assertEqual(raised.exception.status_code, 404)
 
+    async def test_archived_preview_reads_local_body_without_restoring_or_connecting(self):
+        self.append('history/item', {'turnId': 'turn', 'item': {
+            'id': 'answer', 'type': 'agentMessage', 'text': 'Archived answer',
+        }})
+        self.append('history/turn', {'turn': {'id': 'turn', 'status': 'completed'}})
+        self.store.update_organization('qa', 'default', 'session', {'deleted': True})
+        with patch.object(self.bridge, '_connection', side_effect=AssertionError('Must stay local')):
+            result = await self.bridge.history_preview('qa', 'default', 'session')
+        self.assertEqual(result['turns'][0]['items'][0]['text'], 'Archived answer')
+        self.assertTrue(self.store.session('qa', 'default', 'session')['deleted'])
+        with self.assertRaises(HTTPException) as raised:
+            await self.bridge.history_preview('qa', 'writer', 'session')
+        self.assertEqual(raised.exception.status_code, 404)
+
     async def test_empty_preview_returns_the_terminal_turn_error(self):
         self.append('turn/completed', {'turn': {
             'id': 'failed-turn', 'status': 'failed',

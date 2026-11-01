@@ -2693,8 +2693,8 @@ class CodexBridge:
         session = self.store.session(user, profile, session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        if session.get("deleted"):
-            raise HTTPException(status_code=410, detail="Restore the archived session before reading its history")
+        # Search previews may inspect archived local history without restoring it
+        # or contacting the upstream runtime. Active history still requires restore.
         if str(session["thread_id"]).startswith("pending:"):
             return {
                 "session": session,

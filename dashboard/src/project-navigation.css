@@ -241,3 +241,5 @@
 .new-session-workspace-menu p { padding: 8px; font-size: 13px; }
 .dashboard-chat-actions .new-session-workspace-menu > button { height: auto; min-height: 48px; align-items: flex-start; justify-content: center; font-size: 13px; line-height: 1.4; }
 .dashboard-chat-actions .new-session-workspace-menu > button:hover, .dashboard-chat-actions .new-session-workspace-menu > button:focus-visible { font-size: 13px; }
+
+.project-rail-folder.is-active { background: var(--dashboard-active); box-shadow: inset 3px 0 var(--dashboard-accent); }
