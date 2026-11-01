@@ -1,19 +1,43 @@
 /* V4 drawer tokens: compact 12/16px spacing, one-line handoff, persistent comments. */
 .hermes-kanban-drawer.hti-kanban-v4 {
+  isolation: isolate; box-sizing: border-box;
   width: min(600px, 100vw); color: var(--color-card-foreground); background: var(--color-card);
   --wb-line: var(--color-border); --wb-muted: var(--color-muted-foreground);
   --wb-panel: var(--color-card); --wb-radius: 6px;
   font-family: var(--font-sans, system-ui, sans-serif); font-size: 14px;
 }
-.hti-kanban-v4 .hermes-kanban-drawer-head { padding: max(10px, env(safe-area-inset-top)) 16px 6px; border: 0; justify-content: flex-start; gap: 4px; color: var(--wb-muted); font-size: 12px; }
-.hti-kanban-v4 .hermes-kanban-drawer-head > button { margin-left: auto; min-width: 36px; min-height: 36px; }
+/* Keep the native close handler in the header's local stacking context. */
+.hti-kanban-v4 .hermes-kanban-drawer-head {
+  position: sticky; top: 0; z-index: 3; flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: flex-start; gap: 4px;
+  padding: max(12px, env(safe-area-inset-top)) 16px 8px;
+  border: 0; background: var(--wb-panel); color: var(--wb-muted); font-size: 12px;
+}
+.hti-kanban-v4 .hermes-kanban-drawer-head > :is(span, small) {
+  min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.hti-kanban-v4 .hermes-kanban-drawer-head > button {
+  position: static; inset: auto; transform: none; z-index: auto;
+  display: grid; place-items: center; flex: 0 0 36px; box-sizing: border-box;
+  width: 36px; height: 36px; min-width: 36px; min-height: 36px;
+  margin: 0 0 0 auto; padding: 0; border: 0; border-radius: 6px;
+  background: transparent; color: var(--wb-muted); box-shadow: none;
+  font-size: 18px; line-height: 1; cursor: pointer;
+}
+.hti-kanban-v4 .hermes-kanban-drawer-head > button svg { width: 18px; height: 18px; }
+.hti-kanban-v4 .hermes-kanban-drawer-head > button:is(:hover, :focus-visible) {
+  background: var(--color-accent); color: var(--color-accent-foreground);
+}
+.hti-kanban-v4 .hermes-kanban-drawer-head > button:focus-visible {
+  outline: 2px solid var(--color-ring, var(--color-primary)); outline-offset: 2px;
+}
 .hti-kanban-v4 .wb-board-name { font: inherit; }
-.hti-kanban-v4 .hermes-kanban-drawer-body { display: flex; flex-direction: column; gap: 10px; padding: 8px 16px 16px; min-height: 0; overflow-x: hidden; overscroll-behavior: contain; }
+.hti-kanban-v4 .hermes-kanban-drawer-body { position: relative; z-index: 0; display: flex; flex-direction: column; gap: 10px; padding: 8px 16px 16px; min-height: 0; overflow-x: hidden; overscroll-behavior: contain; }
 .hti-kanban-v4 .hermes-kanban-drawer-body > * { flex-shrink: 0; min-width: 0; box-sizing: border-box; }
 .hti-kanban-v4 [hidden], .hti-kanban-v4 .wb-native-comments, .hti-kanban-v4[data-wb-history-loaded] .wb-native-runs,
 .hti-kanban-v4:not([data-wb-log="true"]) .wb-native-log,
 .hti-kanban-v4 .hermes-kanban-comment-hint, .hti-kanban-v4 .wb-task-alert:empty, .hti-kanban-v4 .wb-runs:empty { display: none !important; }
-.hti-kanban-v4 .wb-task-title { order: -100; padding: 0; border: 0; margin: 0 0 4px; background: none; }
+.hti-kanban-v4 .wb-task-title { order: -100; padding: 0 48px 0 0; border: 0; margin: 0 0 4px; background: none; }
 .hti-kanban-v4 .wb-task-title .hermes-kanban-dot { display: none; }
 .hti-kanban-v4 .hermes-kanban-drawer-title-text { font-size: 23px; line-height: 1.35; font-weight: 750; overflow-wrap: anywhere; color: var(--color-card-foreground); }
 .hti-kanban-v4 .hti-kanban-execution-control { order: -90; display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(68px, 1fr) minmax(68px, 1fr); gap: 7px; align-items: center; margin: 0; padding: 0; border: 0; background: none; font-size: 13px; }
