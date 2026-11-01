@@ -92,6 +92,7 @@ class TrustedProxyGate:
             return
         if self._authorized(scope):
             scope.setdefault("state", {})["workbench_authenticated"] = True
+            scope["state"]["workbench_user"] = next(value.decode("latin-1").strip().lower() for key, value in reversed(scope["headers"]) if key.lower() == b"remote-user")
             # Event subscriptions cannot submit work; an idle chat tab must not block updates.
             read_events = scope.get('type') == 'websocket' and path == _API_PREFIX + '/codex/events'
             mutation = not read_events and (scope.get('type') == 'websocket' or scope.get('method') not in ['GET', 'HEAD', 'OPTIONS']) and path != _API_PREFIX + '/versions/switch'

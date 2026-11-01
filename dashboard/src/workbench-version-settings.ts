@@ -1,13 +1,11 @@
 import { uiText as sourceText } from './ui-locale';
 import { currentProfile } from './profile-scope';
 import { loadCodexModelCatalog, type ChatModelChoice } from './codex-api';
-import { readHiddenModels, writeHiddenModels } from './model-visibility';
+import { loadModelDisplay, saveModelDisplay, modelIsVisible } from './model-display';
 import {
   aliasConflict,
   MODEL_ALIAS_MAX_LENGTH,
   normalizeModelAlias,
-  readModelAliases,
-  writeModelAliases,
 } from './model-aliases';
 import type { FetchJSON } from './workbench-api';
 import { accessoryPanelOpen, withAccessoryPanel } from './workbench-accessory';
@@ -117,7 +115,10 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
   if (!list || !status || !showAll) return;
   const read: FetchJSON = async (url, init) => {
     const response = await fetch(url, { credentials: 'same-origin', ...init });
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.ok) {
+      if (response.status === 409) throw new Error(sourceText('设置已在其他页面更新，请重新打开此页后重试。', 'Preferences changed elsewhere; reopen this page and retry.'));
+      throw new Error(`HTTP ${response.status}`);
+    }
     return response.json();
   };
   try {
@@ -127,11 +128,31 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
       status.textContent = sourceText("没有可显示的模型", "No models to show");
       return;
     }
-    const known = new Set(models.map(model => model.id));
-    let hidden = readHiddenModels(profile);
-    let aliases = readModelAliases();
-    const stale = [...hidden].filter(id => !known.has(id));
-    if (stale.length) hidden = writeHiddenModels(profile, [...hidden].filter(id => known.has(id)));
+    let preferences = await loadModelDisplay(read, profile);
+    let hidden = new Set(models.filter(model => !modelIsVisible(preferences, model.id)).map(model => model.id));
+    let aliases = new Map(Object.entries(preferences.aliases));
+    let saving = false;
+    const persist = async (success: string, showEverything = false) => {
+      saving = true;
+      panel.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button').forEach(control => { control.disabled = true; });
+      status.textContent = sourceText('正在保存…', 'Saving…');
+      try {
+        preferences = await saveModelDisplay(read, profile, { ...preferences, mode: showEverything ? 'hidden' : preferences.mode, aliases: Object.fromEntries(aliases),
+          visible: [...new Set([...preferences.visible.filter(id => !models.some(model => model.id === id)), ...models.filter(model => !hidden.has(model.id)).map(model => model.id)])],
+          hidden: showEverything ? [] : [...new Set([...preferences.hidden.filter(id => !models.some(model => model.id === id)), ...hidden])] });
+        render();
+        status.textContent = success;
+      } catch (error) {
+        hidden = new Set(models.filter(model => !modelIsVisible(preferences, model.id)).map(model => model.id));
+        aliases = new Map(Object.entries(preferences.aliases));
+        render();
+        status.textContent = sourceText(`保存失败，已恢复上次保存的设置：${String(error)}`, `Save failed; restored saved preferences: ${String(error)}`);
+      } finally {
+        saving = false;
+        panel.querySelectorAll<HTMLInputElement | HTMLButtonElement>('input, button').forEach(control => { control.disabled = false; });
+        syncShowAll();
+      }
+    };
     const visibleCount = () => models.filter(model => !hidden.has(model.id)).length;
     const syncShowAll = () => {
       showAll.disabled = hidden.size === 0;
@@ -212,7 +233,7 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
           aliasInput.spellcheck = false;
           aliasInput.autocomplete = 'off';
           aliasInput.setAttribute('aria-label', `${sourceText('聊天显示名', 'Chat display name')}: ${model.label}`);
-          aliasInput.title = sourceText('对所有档案生效；留空则使用模型原名', 'Applies to every profile; leave empty to use the original model name');
+          aliasInput.title = sourceText('对当前档案生效；留空则使用模型原名', 'Applies to this profile; leave empty to use the original model name');
           const aliasError = document.createElement('span');
           aliasError.className = 'workbench-model-alias-error';
           aliasError.setAttribute('role', 'alert');
@@ -234,7 +255,8 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
               aliasInput.blur();
             }
           });
-          aliasInput.addEventListener('change', () => {
+          aliasInput.addEventListener('change', async () => {
+            if (saving) return;
             const candidate = normalizeModelAlias(aliasInput.value);
             aliasInput.value = candidate;
             const conflict = aliasConflict(aliases, model.id, candidate);
@@ -247,12 +269,12 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
             }
             if (candidate) aliases.set(model.id, candidate);
             else aliases.delete(model.id);
-            aliases = writeModelAliases(aliases);
-            status.textContent = candidate
-              ? sourceText(`已保存别名（所有档案）：${candidate}`, `Alias saved for all profiles: ${candidate}`)
-              : sourceText(`已恢复原名：${model.label}`, `Using the original name: ${model.label}`);
+            await persist(candidate
+              ? sourceText(`已保存别名（当前档案）：${candidate}`, `Alias saved for this profile: ${candidate}`)
+              : sourceText(`已恢复原名：${model.label}`, `Using the original name: ${model.label}`));
           });
-          checkbox.addEventListener('change', () => {
+          checkbox.addEventListener('change', async () => {
+            if (saving) return;
             if (!checkbox.checked && visibleCount() <= 1) {
               checkbox.checked = true;
               option.dataset.visible = 'true';
@@ -261,11 +283,10 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
             }
             if (checkbox.checked) hidden.delete(model.id);
             else hidden.add(model.id);
-            hidden = writeHiddenModels(profile, hidden);
             option.dataset.visible = String(checkbox.checked);
             updateGroupCount();
             syncShowAll();
-            status.textContent = sourceText(`已保存：聊天框显示 ${visibleCount()}/${models.length} 个模型`, `Saved: ${visibleCount()}/${models.length} models visible in chat`);
+            await persist(sourceText(`已保存：聊天框显示 ${visibleCount()}/${models.length} 个模型`, `Saved: ${visibleCount()}/${models.length} models visible in chat`));
           });
           options.append(option);
         }
@@ -274,10 +295,10 @@ async function renderModelVisibility(panel: HTMLElement, explicitProfile?: strin
       }));
       status.textContent = sourceText(`聊天框显示 ${visibleCount()}/${models.length} 个模型`, `${visibleCount()}/${models.length} models visible in chat`);
     };
-    showAll.onclick = () => {
-      hidden = writeHiddenModels(profile, []);
-      render();
-      status.textContent = sourceText("已恢复显示全部模型。", "All models are visible again.");
+    showAll.onclick = async () => {
+      if (saving) return;
+      hidden = new Set();
+      await persist(sourceText('已恢复显示全部模型。', 'All models are visible again.'), true);
     };
     render();
   } catch (error) {
@@ -291,8 +312,8 @@ export async function renderModelVisibilityPanel(panel: HTMLElement, explicitPro
   panel.setAttribute(PANEL_ATTR, 'true');
   panel.dataset.workbenchSettingsRoute = 'models';
   panel.innerHTML = sourceText(
-    '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">勾选控制当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong> 的聊天框显示哪些模型；聊天显示名对所有档案同步生效。设置只保存在当前浏览器，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
-    '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Checkboxes choose which models appear in the chat menu for profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. Chat display names apply to every profile. Both are stored in this browser and do not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">勾选控制当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong> 的聊天框显示哪些模型；聊天显示名按当前用户和档案保存。设置保存在服务端，跨浏览器生效，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
+    '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Checkboxes choose which models appear in the chat menu for profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. Chat display names apply to this user and profile. Both are stored on the server across browsers and do not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
   );
   const profile = panel.querySelector<HTMLElement>('[data-model-profile]');
   if (profile) profile.textContent = profileName;

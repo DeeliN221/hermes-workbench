@@ -497,7 +497,7 @@ def test_gate_marks_websocket_scope_for_plugin_api(monkeypatch: pytest.MonkeyPat
     import asyncio
 
     asyncio.run(gate(scope, lambda: None, lambda _message: None))
-    assert captured == {"workbench_authenticated": True}
+    assert captured == {"workbench_authenticated": True, "workbench_user": "bob"}
 
 
 def test_pending_managed_update_blocks_mutations_but_keeps_status_and_auth(sidecar, tmp_path, monkeypatch):

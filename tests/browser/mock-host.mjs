@@ -203,7 +203,14 @@ const createdSessions = [];
 let createdCounter = 0;
 
 /** Return deterministic plugin API data for the fixture routes. */
-function apiPayload(url, method, body = null) {
+function apiPayload(url, method, body = null, preferences = new Map()) {
+  if (url.pathname.startsWith('/api/plugins/workbench/model-display')) {
+    const profile = url.searchParams.get('profile') || 'default';
+    const current = preferences.get(profile);
+    if (method === 'PUT' && body.revision !== (current?.revision || 0)) return { __status: 409, detail: 'Conflict' };
+    if (method === 'PUT' || method === 'POST' && !current) preferences.set(profile, { ...body, revision: (current?.revision || 0) + 1 });
+    return { preferences: preferences.get(profile) || null };
+  }
   const pathname = url.pathname;
   const profile = url.searchParams.get('profile') || 'default';
   const codex = codexSessions(profile), hermes = hermesSessions(profile);
@@ -330,6 +337,7 @@ async function readRequestBody(request) {
 
 /** Start a same-origin preview host or an ephemeral server for browser tests. */
 export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
+  const preferences = new Map();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
     response.setHeader('Cache-Control', 'no-store');
@@ -338,7 +346,7 @@ export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
       return;
     }
     if (url.pathname.startsWith('/api/')) {
-      const payload = apiPayload(url, request.method || 'GET', await readRequestBody(request));
+      const payload = apiPayload(url, request.method || 'GET', await readRequestBody(request), preferences);
       const status = Number(payload?.__status) || 200;
       if (payload && typeof payload === 'object' && '__status' in payload) delete payload.__status;
       const body = JSON.stringify(payload);
