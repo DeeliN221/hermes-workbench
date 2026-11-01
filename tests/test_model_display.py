@@ -2,6 +2,7 @@
 import sys
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 import pytest
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
@@ -32,9 +33,14 @@ def test_migration_restart_isolation_and_conflict(root):
     assert api._model_display('alice', 'default') == newer
     assert (root / '.hermes-workbench/session-organization.sqlite3').is_file()
 
-def test_concurrent_first_migration_has_one_winner(root):
-    with ThreadPoolExecutor(4) as pool:
-        results = list(pool.map(lambda _: api._model_display('alice', 'default', body(), True), range(8)))
+@pytest.mark.parametrize('attempt', range(20))
+def test_concurrent_first_migration_has_one_winner(root, attempt):
+    barrier = Barrier(8)
+    def migrate(_):
+        barrier.wait(timeout=10)
+        return api._model_display('alice', 'default', body(), True)
+    with ThreadPoolExecutor(8) as pool:
+        results = list(pool.map(migrate, range(8)))
     assert all(result == results[0] for result in results)
     assert results[0]['preferences']['revision'] == 1
 

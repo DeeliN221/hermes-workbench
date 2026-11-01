@@ -23,6 +23,7 @@ import sqlite3
 import struct
 import tempfile
 import termios
+import threading
 import time
 from pathlib import Path
 from typing import Any
@@ -61,6 +62,7 @@ _ASSET_SECURITY_HEADERS = {
 _RESIZE_PREFIX = "\x1b[RESIZE:"
 _ORGANIZATION_STATE_DIR = ".hermes-workbench"
 _ORGANIZATION_DB_NAME = "session-organization.sqlite3"
+_ORGANIZATION_DB_INIT_LOCK = threading.Lock()
 _KANBAN_SESSION_LINKS_TABLE = "kanban_session_links"
 _HOME_READ_STATE_TABLE = "home_read_state"
 _MAX_PROFILE_LENGTH = 128
@@ -259,96 +261,99 @@ def _organization_db_path() -> Path:
 def _open_organization_db() -> sqlite3.Connection:
     """Open and initialize the small plugin-owned session organization database."""
 
-    database = _organization_db_path()
-    connection: sqlite3.Connection | None = None
-    try:
-        connection = sqlite3.connect(database, timeout=5)
-        connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA journal_mode=WAL")
-        connection.execute("PRAGMA synchronous=NORMAL")
-        connection.execute("BEGIN IMMEDIATE")
-        connection.execute(
-            """
-            CREATE TABLE IF NOT EXISTS session_organization (
-                profile TEXT NOT NULL,
-                session_id TEXT NOT NULL,
-                display_name TEXT NOT NULL DEFAULT '',
-                collection_name TEXT NOT NULL DEFAULT '',
-                tags_json TEXT NOT NULL DEFAULT '[]',
-                pinned INTEGER NOT NULL DEFAULT 0,
-                summary TEXT NOT NULL DEFAULT '',
-                updated_at REAL NOT NULL,
-                PRIMARY KEY (profile, session_id)
-            )
-            """
-        )
-        connection.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {_KANBAN_SESSION_LINKS_TABLE} (
-                board TEXT NOT NULL DEFAULT '',
-                task_id TEXT NOT NULL,
-                profile TEXT NOT NULL,
-                session_id TEXT NOT NULL,
-                created_at REAL NOT NULL,
-                PRIMARY KEY (board, task_id, profile, session_id)
-            )
-            """
-        )
-        connection.execute(
-            f"""
-            CREATE TABLE IF NOT EXISTS {_HOME_READ_STATE_TABLE} (
-                profile TEXT NOT NULL,
-                source TEXT NOT NULL,
-                session_id TEXT NOT NULL,
-                activity_version TEXT NOT NULL,
-                updated_at REAL NOT NULL,
-                PRIMARY KEY (profile, source, session_id)
-            )
-            """
-        )
-        connection.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{_HOME_READ_STATE_TABLE}_updated "
-            f"ON {_HOME_READ_STATE_TABLE} (updated_at DESC)"
-        )
-        # A task owns one durable conversation. Older releases allowed several
-        # rows per task; retain only the newest before installing the invariant.
-        connection.execute(
-            f"""
-            DELETE FROM {_KANBAN_SESSION_LINKS_TABLE} AS candidate
-            WHERE EXISTS (
-                SELECT 1 FROM {_KANBAN_SESSION_LINKS_TABLE} AS newer
-                WHERE newer.board = candidate.board
-                  AND newer.task_id = candidate.task_id
-                  AND (
-                    newer.created_at > candidate.created_at
-                    OR (newer.created_at = candidate.created_at AND newer.rowid > candidate.rowid)
-                  )
-            )
-            """
-        )
-        connection.execute(
-            f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{_KANBAN_SESSION_LINKS_TABLE}_one_per_task "
-            f"ON {_KANBAN_SESSION_LINKS_TABLE} (board, task_id)"
-        )
-        connection.execute(
-            f"CREATE INDEX IF NOT EXISTS idx_{_KANBAN_SESSION_LINKS_TABLE}_task "
-            f"ON {_KANBAN_SESSION_LINKS_TABLE} (board, task_id, created_at DESC)"
-        )
-        columns = {
-            str(row["name"])
-            for row in connection.execute("PRAGMA table_info(session_organization)").fetchall()
-        }
-        if "display_name" not in columns:
+    # Serialize first-open WAL setup and schema migration within this process.
+    # Release before callers start their own transactions on the connection.
+    with _ORGANIZATION_DB_INIT_LOCK:
+        database = _organization_db_path()
+        connection: sqlite3.Connection | None = None
+        try:
+            connection = sqlite3.connect(database, timeout=5)
+            connection.row_factory = sqlite3.Row
+            connection.execute("PRAGMA journal_mode=WAL")
+            connection.execute("PRAGMA synchronous=NORMAL")
+            connection.execute("BEGIN IMMEDIATE")
             connection.execute(
-                "ALTER TABLE session_organization ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
+                """
+                CREATE TABLE IF NOT EXISTS session_organization (
+                    profile TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    display_name TEXT NOT NULL DEFAULT '',
+                    collection_name TEXT NOT NULL DEFAULT '',
+                    tags_json TEXT NOT NULL DEFAULT '[]',
+                    pinned INTEGER NOT NULL DEFAULT 0,
+                    summary TEXT NOT NULL DEFAULT '',
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (profile, session_id)
+                )
+                """
             )
-        connection.commit()
-        os.chmod(database, 0o600)
-        return connection
-    except (OSError, sqlite3.Error) as exc:
-        if connection is not None:
-            connection.close()
-        raise HTTPException(status_code=500, detail=f"Workbench organization database failed: {exc}")
+            connection.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {_KANBAN_SESSION_LINKS_TABLE} (
+                    board TEXT NOT NULL DEFAULT '',
+                    task_id TEXT NOT NULL,
+                    profile TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    created_at REAL NOT NULL,
+                    PRIMARY KEY (board, task_id, profile, session_id)
+                )
+                """
+            )
+            connection.execute(
+                f"""
+                CREATE TABLE IF NOT EXISTS {_HOME_READ_STATE_TABLE} (
+                    profile TEXT NOT NULL,
+                    source TEXT NOT NULL,
+                    session_id TEXT NOT NULL,
+                    activity_version TEXT NOT NULL,
+                    updated_at REAL NOT NULL,
+                    PRIMARY KEY (profile, source, session_id)
+                )
+                """
+            )
+            connection.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{_HOME_READ_STATE_TABLE}_updated "
+                f"ON {_HOME_READ_STATE_TABLE} (updated_at DESC)"
+            )
+            # A task owns one durable conversation. Older releases allowed several
+            # rows per task; retain only the newest before installing the invariant.
+            connection.execute(
+                f"""
+                DELETE FROM {_KANBAN_SESSION_LINKS_TABLE} AS candidate
+                WHERE EXISTS (
+                    SELECT 1 FROM {_KANBAN_SESSION_LINKS_TABLE} AS newer
+                    WHERE newer.board = candidate.board
+                      AND newer.task_id = candidate.task_id
+                      AND (
+                        newer.created_at > candidate.created_at
+                        OR (newer.created_at = candidate.created_at AND newer.rowid > candidate.rowid)
+                      )
+                )
+                """
+            )
+            connection.execute(
+                f"CREATE UNIQUE INDEX IF NOT EXISTS idx_{_KANBAN_SESSION_LINKS_TABLE}_one_per_task "
+                f"ON {_KANBAN_SESSION_LINKS_TABLE} (board, task_id)"
+            )
+            connection.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{_KANBAN_SESSION_LINKS_TABLE}_task "
+                f"ON {_KANBAN_SESSION_LINKS_TABLE} (board, task_id, created_at DESC)"
+            )
+            columns = {
+                str(row["name"])
+                for row in connection.execute("PRAGMA table_info(session_organization)").fetchall()
+            }
+            if "display_name" not in columns:
+                connection.execute(
+                    "ALTER TABLE session_organization ADD COLUMN display_name TEXT NOT NULL DEFAULT ''"
+                )
+            connection.commit()
+            os.chmod(database, 0o600)
+            return connection
+        except (OSError, sqlite3.Error) as exc:
+            if connection is not None:
+                connection.close()
+            raise HTTPException(status_code=500, detail=f"Workbench organization database failed: {exc}")
 
 
 def _clean_identifier(value: str, *, label: str, maximum: int) -> str:
