@@ -204,6 +204,7 @@ let createdCounter = 0;
 
 /** Return deterministic plugin API data for the fixture routes. */
 function apiPayload(url, method, body = null, preferences = new Map()) {
+  if (url.pathname === '/api/plugins/workbench/fleet/config') return { mode: 'unconfigured', extended_workflow: false };
   if (url.pathname.startsWith('/api/plugins/workbench/model-display')) {
     const profile = url.searchParams.get('profile') || 'default';
     const current = preferences.get(profile);
@@ -336,13 +337,22 @@ async function readRequestBody(request) {
 }
 
 /** Start a same-origin preview host or an ephemeral server for browser tests. */
-export async function createMockHost({ host = '127.0.0.1', port = 0 } = {}) {
+export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '' } = {}) {
   const preferences = new Map();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
     response.setHeader('Cache-Control', 'no-store');
     if (url.pathname === '/favicon.ico') {
       response.writeHead(204).end();
+      return;
+    }
+    if (fleetProxyOrigin && url.pathname.startsWith('/api/plugins/workbench/fleet/')) {
+      try {
+        const body = ['GET', 'HEAD'].includes(request.method) ? undefined : JSON.stringify(await readRequestBody(request));
+        const upstream = await fetch(fleetProxyOrigin + url.pathname + url.search, { method: request.method, headers: { 'Content-Type': 'application/json', ...(request.headers['if-match'] ? { 'If-Match': request.headers['if-match'] } : {}), 'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' }, body });
+        response.writeHead(upstream.status, Object.fromEntries([...upstream.headers].filter(([key]) => !['transfer-encoding', 'content-length', 'connection'].includes(key))));
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+      } catch { response.writeHead(502, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ detail: 'Local Fleet proxy unavailable' })); }
       return;
     }
     if (url.pathname.startsWith('/api/')) {

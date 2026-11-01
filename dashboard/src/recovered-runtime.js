@@ -28,6 +28,7 @@ import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-alias
 import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
 installModelAliasSync();
 import { createRecentHome } from './recent-home';
+import { createTaskControlTower } from './task-control-tower';
 import { installHomeChatNavigation, openHomeConversation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
 import { currentProfile, rememberProfile, rememberChat, profileDrafts, profileAttachments } from './profile-scope';
@@ -2574,6 +2575,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ModelVisibilitySettings = createModelVisibilitySettings(i),
       VersionSettings = createVersionSettings(i),
       RecentHome = createRecentHome(i, Kp),
+      TaskControlTower = createTaskControlTower(i, Kp, RecentHome),
       l = t.createElement;
     return function () {
       const [u, h] = s(() => Ws(window.location.href)),
@@ -3111,7 +3113,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 tabIndex: -1,
                 "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(RecentHome, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )
