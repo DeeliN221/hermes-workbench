@@ -128,8 +128,13 @@ def build_bridge() -> CodexBridge:
             cursor = page.get('nextCursor')
             if not cursor:
                 break
+        # Hermes details/search also consume this mirror. Keep private native
+        # echoes out of its durable transcript; Codex retains the full context.
+        visible = await asyncio.to_thread(service.store.public_messages,
+                                         session['user_id'], profile, session['session_id'],
+                                         {'id': session['thread_id'], 'turns': turns})
         result = await asyncio.to_thread(import_completed, home, session['session_id'],
-                                         session['workspace_path'], {'id': session['thread_id'], 'turns': turns})
+                                         session['workspace_path'], visible)
         if result.get('status') == 'dependency_unavailable':
             raise RuntimeError('Hermes projection dependencies unavailable')
         else:

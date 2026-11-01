@@ -216,3 +216,37 @@ def test_reusing_attachments_never_merges_authored_spacing_between_turns():
         assert projection.public(turn)['items'][0]['content'] == [{'type': 'text', 'text': original}]
     unrelated = {'id': 'other-turn', 'items': [{'type': 'userMessage', 'content': 'a b\n\nprivate image context'}]}
     assert projection.public(unrelated) == unrelated
+
+
+def test_hermes_completion_mirror_receives_visible_transcript_only(tmp_path, monkeypatch):
+    import codex_integration
+    import codex_hermes
+    actual_bridge = codex_integration.IntegratedCodexBridge
+    monkeypatch.setenv('HERMES_WORKBENCH_HERMES_HOME', str(tmp_path))
+    monkeypatch.setenv('HERMES_WORKBENCH_REVIEW_ENABLED', '0')
+    monkeypatch.setattr(codex_integration, 'IntegratedCodexBridge',
+                        lambda **kwargs: actual_bridge(db_path=tmp_path / 'db', workspace_map={}, **kwargs))
+    imported = []
+    monkeypatch.setattr(codex_hermes, 'import_completed', lambda home, sid, cwd, thread: imported.append(thread) or {'status': 'completed'})
+
+    async def run():
+        bridge = codex_integration.build_bridge()
+        try:
+            session = bridge.store.upsert_session('qa', 'default', dict(session_id='s', thread_id='thread', workspace_id='w', workspace_path=str(tmp_path)))
+            bridge.store.save_request('qa', 'default', 's', 'r', turn_id='t', payload=json.dumps({
+                'input': [{'type': 'text', 'text': 'Visible input'}],
+                '_attachmentContext': {'hidden': True, 'content': [{'type': 'text', 'text': 'Private path hint'}]},
+            }))
+            class Peer:
+                async def request(self, method, payload):
+                    return {'data': [{'id': 't', 'status': 'completed', 'items': [
+                        {'type': 'userMessage', 'content': [{'type': 'text', 'text': 'Visible input\n\nPrivate path hint'}]},
+                    ]}]}
+            async def connection(*_): return Peer()
+            bridge._connection = connection
+            await bridge.on_completed(session)
+            assert 'Private path hint' not in json.dumps(imported)
+            assert imported[0]['turns'][0]['items'][0]['content'] == [{'type': 'text', 'text': 'Visible input'}]
+        finally:
+            await bridge.close()
+    asyncio.run(run())
