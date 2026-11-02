@@ -160,7 +160,7 @@ try {
       } catch {}
   });
   const load = async () => {
-    await page.goto(host.origin + "/sessions?profile=default");
+    await page.goto(host.origin + "/kanban?profile=default");
     await page
       .getByRole("heading", { name: "Task control tower", exact: true })
       .waitFor();
@@ -168,7 +168,7 @@ try {
       .getByText("Loading tasks…", { exact: true })
       .waitFor({ state: "hidden" });
     await page.addStyleTag({ content: "#preview-banner { display:none }" });
-    assert.equal(new URL(page.url()).pathname, "/sessions");
+    assert.equal(new URL(page.url()).pathname, "/kanban");
     assert.ok(await page.title());
     assert.equal(await page.locator("vite-error-overlay").count(), 0);
   };

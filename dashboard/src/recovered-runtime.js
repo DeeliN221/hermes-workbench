@@ -2998,9 +2998,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                       closeAccessoryToChat();
                     }
                   },
-                  hidden: false,
+                  hidden: isTaskBoard,
                 },
-                isHome ? l("div", { className: "workbench-home-nav" },
+                isTaskBoard ? null : isHome ? l("div", { className: "workbench-home-nav" },
                   l("p", null, runtimeText("按 Profile 浏览全部项目会话。", "Browse project sessions across all profiles.")),
                   l("a", { href: "/profiles?profile=default", onClick: (event) => { event.preventDefault(); Kp("/profiles", "default"); } }, runtimeText("管理档案与显示名", "Manage profiles and display names"))) : _?.element ?? l("div", { className: "project-section-heading workbench-project-placeholder" }, l("span", null, runtimeText("项目", "Projects"))),
               ),

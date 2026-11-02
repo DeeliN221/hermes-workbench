@@ -54,10 +54,8 @@ async function installNativeBoundary(page) {
     [hidden]{display:none!important}
   ` });
   await page.evaluate(() => {
-    const aside = document.createElement('aside'); aside.id = 'app-sidebar';
     const host = document.createElement('div'); host.id = 'native-board';
     host.innerHTML = '<header role="banner">Kanban</header><button id="open-card">home-only repo</button><span id="task-status">todo</span><output id="heartbeat">0</output>';
-    document.body.prepend(aside);
     // /kanban now owns its content; exercise the SDK portal contract inside that surface.
     document.querySelector('.dashboard-owned-page').append(host);
     let ticks = 0;
@@ -117,14 +115,14 @@ async function installNativeBoundary(page) {
         } catch { status.textContent = 'Archive failed'; }
       };
     };
-    addEventListener('popstate', () => { if (location.pathname !== '/kanban') { settle?.(false); clearInterval(timer); aside.remove(); host.remove(); } });
+    addEventListener('popstate', () => { if (location.pathname !== '/kanban') { settle?.(false); clearInterval(timer); host.remove(); } });
   });
 }
 
 try {
   const fixture = await (await fetch(host.origin + '/sessions')).text();
   for (const [label, viewport, panel] of [
-    ['floating', { width: 1920, height: 950 }, true],
+    ['legacy-panel', { width: 1920, height: 950 }, true],
     ['standalone', { width: 1280, height: 900 }, false],
     ['phone', { width: 390, height: 844 }, false],
   ]) {
@@ -182,8 +180,10 @@ try {
     await page.locator('#action-status').filter({ hasText: /^Archived$/ }).waitFor();
     assert.equal(patches, 3);
     if (panel) {
-      await page.locator('.dashboard-accessory-close').click();
-      await page.locator('.codex-composer textarea').first().fill('interactive after closing floating board');
+      assert.equal(await page.locator('.dashboard-accessory-close').count(), 0, 'Legacy panel links use the standalone Kanban tab');
+      await page.getByRole('button', { name: '关闭', exact: true }).click();
+      await page.locator('.overview-tabs').getByRole('link', { name: 'Project sessions' }).click();
+      await page.locator('.profile-overview').waitFor();
       assert.equal(await page.locator('.dashboard-global-nav').evaluate(node => node.inert), false);
       const unrelatedLayer = await page.evaluate(() => {
         const dialog = document.createElement('div');

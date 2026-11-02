@@ -70,6 +70,7 @@ try {
   await page.locator('.task-tower').waitFor();
   assert.equal(await page.locator('.profile-overview').count(), 0);
   assert.equal(await page.locator('.tower-session').count(), 0);
+  assert.equal(await page.locator('#dashboard-workbench-sessions').isVisible(), false);
   assert.equal(await tabs.locator('[aria-current="page"]').textContent(), 'Kanban');
   await page.screenshot({ path: `${shotDir}/after-kanban-desktop-dark.png` });
   await page.reload(); await page.locator('.task-tower').waitFor();

@@ -150,7 +150,7 @@ try {
     const source = card(id),
       target = before
         ? card(before)
-        : page.locator(`.tower-board [data-status="${status}"]`);
+        : page.locator(`.tower-board [data-status="${status}"] > h3`);
     await source.dragTo(target);
   };
   await drop("ready-b", "ready", "ready-a");
