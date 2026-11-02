@@ -8453,16 +8453,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return i.status === "running" || i.status === "waiting";
   }
   const ks = { title: 1300, id: 1050, group: 950, source: 650 },
-    f0 = { session: 0, hermes: 1, archived: 2 },
-    xd = 80;
+    f0 = { session: 0, hermes: 1, archived: 2 };
   function qn(i) {
     return String(i ?? "")
       .normalize("NFKC")
       .toLocaleLowerCase()
       .replace(/\s+/gu, "");
-  }
-  function Cd(i) {
-    return `codex-session-search-result-${i.kind}-${i.id.replace(/[^a-zA-Z0-9_-]/gu, "-")}`;
   }
   function a5(i, e) {
     const t = Array.from(qn(i)),
@@ -8571,38 +8567,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             (o.groupId && r.get(o.groupId)) || runtimeText("未整理", "Unorganized"),
             e,
           );
-    for (const o of i.serverHits || []) {
-      const kind = o.kind === "hermes" ? "hermes" : o.deleted ? "archived" : "session",
-        id = String(o.id || ""),
-        key = `${kind}:${id}`;
-      if (!id) continue;
-      const existing = n.find((row) => `${row.kind}:${row.id}` === key);
-      if (existing) {
-        existing.snippet ||= o.snippet || "";
-        existing.updatedAt ??= o.updatedAt;
-        continue;
-      }
-      if (s.has(key)) continue;
-      const known =
-        kind === "hermes"
-          ? i.hermesSessions.find((row) => String(row.id ?? row.session_id) === id)
-          : [...i.sessions, ...i.archivedSessions].find((row) => String(row.id) === id);
-      s.add(key);
-      n.push({
-        kind,
-        id,
-        title: o.title || known?.title || o.snippet || id,
-        updatedAt: o.updatedAt ?? known?.updatedAt,
-        groupName:
-          kind === "hermes"
-            ? runtimeText("Hermes 历史", "Hermes history")
-            : (known?.groupId && r.get(known.groupId)) || o.groupName || runtimeText("未整理", "Unorganized"),
-        score: 0,
-        matchedField: o.matched || "content",
-        snippet: o.snippet || "",
-        session: kind === "archived" ? known || { id, title: o.title || id, deleted: !0 } : void 0,
-      });
-    }
     return n.sort((o, a) => {
       if (t && a.score !== o.score) return a.score - o.score;
       const l = p0(a.updatedAt) - p0(o.updatedAt);
@@ -8613,9 +8577,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           : o.title.localeCompare(a.title, "zh-Hans"))
       );
     });
-  }
-  function Mt(i, e, t, ...r) {
-    return i.createElement(e, t, ...r);
   }
   function h5(i) {
     return createSessionSearch(i, (props) => c5(props), {
