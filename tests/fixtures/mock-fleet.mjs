@@ -127,7 +127,11 @@ export async function createMockFleet() {
     });
     if (request.method === "GET" && url.pathname.startsWith("/api/v1/")) {
       const resource = url.pathname.slice("/api/v1/".length);
-      return send(200, resource.startsWith("tasks/") ? v1.task : v1[resource] || {});
+      if (resource.startsWith("tasks/")) {
+        const task = v1.tasks.tasks.find(t => t.id === resource.slice(6));
+        return task ? send(200, {...v1.task, task}) : send(404, {detail: "Not found"});
+      }
+      return send(200, v1[resource] || {});
     }
     const match = url.pathname.match(
       /^\/api\/v2\/tasks\/([^/]+)(?:\/([^/]+))?$/,

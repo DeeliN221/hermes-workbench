@@ -9,7 +9,8 @@ from fleet_proxy import _id
 router = APIRouter(prefix="/fleetd")
 STATUS = {"ready": "ready", "queued": "ready", "running": "running",
           "claimed": "running", "retrying": "running", "blocked": "review",
-          "done": "done", "failed": "archived", "cancelled": "archived"}
+          "review": "review", "done": "done", "failed": "archived",
+          "cancelled": "archived", "archived": "archived", "scheduled": "ready"}
 
 
 def reply(value):
@@ -35,14 +36,15 @@ def decision(row):
 
 def task(row):
     raw = row.get("status", "")
-    if raw not in STATUS:
-        raise HTTPException(502, "Fleet returned an unsupported task status; retry after updating Workbench")
+    # Future or malformed statuses remain visible for human inspection instead
+    # of breaking the entire feed. Preserve the original value in Fleet details.
+    status = STATUS.get(raw, "review") if isinstance(raw, str) else "review"
     result = {k: row[k] for k in ("id", "title", "risk", "machine", "assignee", "repo",
               "created_at", "updated_at") if k in row}
-    result.update(status=STATUS[raw], fleet_status=raw, revision=0,
+    result.update(status=status, fleet_status=raw, revision=0,
                   priority="P" + str(row.get("priority", "")),
                   attempt_count=row.get("attempts", 0), server_lifecycle=True, read_only=True,
-                  verify_mode="human" if raw == "blocked" else "auto", acceptance=[])
+                  verify_mode="human" if status == "review" else "auto", acceptance=[])
     if raw == "done":
         result["completed_at"] = row.get("completed_at") or row.get("updated_at")
     return result

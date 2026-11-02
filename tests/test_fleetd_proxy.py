@@ -30,11 +30,22 @@ def client(monkeypatch):
     return TestClient(app)
 
 
-@pytest.mark.parametrize("status,expected", list(proxy.STATUS.items()))
+# Independent contract: additions cannot silently disappear with the mapping.
+V1_STATUSES = [
+    ("ready", "ready"), ("queued", "ready"), ("running", "running"),
+    ("claimed", "running"), ("retrying", "running"), ("blocked", "review"),
+    ("review", "review"), ("done", "done"), ("failed", "archived"),
+    ("cancelled", "archived"), ("archived", "archived"), ("scheduled", "ready"),
+]
+
+
+@pytest.mark.parametrize("status,expected", V1_STATUSES)
 def test_real_shape_mapping(status, expected):
     row = {**FIXTURE["task"]["task"], "status": status}
     result = proxy.task(row)
     assert result["status"] == expected
+    assert result["fleet_status"] == status
+    assert result["verify_mode"] == ("human" if expected == "review" else "auto")
     assert result["read_only"]
     assert result["attempt_count"] == row["attempts"]
     assert "conversation_id" not in result
@@ -101,3 +112,34 @@ def test_pagination(client, monkeypatch):
     monkeypatch.setattr(transport.FleetClient,"get",get)
     assert len(transport.FleetClient().collection("tasks",limit=100)) == 2
     assert "cursor=next" in seen[1]
+
+
+@pytest.mark.parametrize("status,expected", V1_STATUSES + [
+    ("future-status", "review"), (None, "review"), ([], "review"), ("", "review"),
+])
+def test_status_isolation_across_routes(client, monkeypatch, status, expected):
+    row = {**FIXTURE["task"]["task"], "status": status}
+    healthy = {**row, "id": "T-healthy", "status": "running"}
+    def get(self, path):
+        resource = path.split("?")[0]
+        if resource.startswith("tasks/"):
+            return {**FIXTURE["task"], "task": row}
+        if resource == "tasks":
+            return {"tasks": [row, healthy]}
+        return FIXTURE[resource]
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    response = client.get(BASE + "/tasks", headers=HEADERS)
+    assert response.status_code == 200
+    rows = response.json()["tasks"]
+    assert [r["status"] for r in rows] == [expected, "running"]
+    assert rows[0]["fleet_status"] == status
+    assert rows[0]["read_only"]
+    assert rows[0]["verify_mode"] == ("human" if expected == "review" else "auto")
+    response = client.get(BASE + "/tasks/T-example", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["task"]["status"] == expected
+    assert response.json()["task"]["fleet_status"] == status
+    for resource in ("decisions", "workers"):
+        response = client.get(BASE + "/" + resource, headers=HEADERS)
+        assert response.status_code == 200
+        assert len(response.json()[resource]) == 1

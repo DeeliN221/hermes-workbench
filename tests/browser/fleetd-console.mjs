@@ -43,6 +43,7 @@ try {
   page.on('response',async response=>{
     if (response.url().includes('/fleet')) responses.push(await response.text().catch(()=>''));
   });
+  console.log(`Local validation: ${host.origin}/kanban?profile=default`);
   await page.goto(host.origin+'/kanban?profile=default');
   await page.getByText('Connected to Fleet',{exact:true}).waitFor();
   assert.equal(await page.title(),'default');
@@ -60,6 +61,22 @@ try {
       await page.locator(`.tower-archive-list [data-task-id="${id}"]`).waitFor();
       await page.locator('.tower-archive').click();
     } else await page.locator(`.tower-board [data-task-id="${id}"]`).waitFor();
+  }
+  if (!live) {
+    for (const task of tasks.tasks) {
+      if (task.status === 'archived') continue;
+      await page.locator(`.column-${({ready:"pending",running:"active"})[task.status] || task.status} [data-task-id="${task.id}"]`).waitFor();
+    }
+    assert.equal(tasks.tasks.length, 14);
+    assert.equal(await page.locator('.column-review [data-task-id]').count(), 4);
+    await page.locator('.column-review [data-task-id="T-future-status"] .tower-card-title').click();
+    await page.locator('.tower-drawer').getByText('Fleet: future-status', {exact:true}).waitFor();
+    await page.getByRole('button',{name:'Close details'}).click();
+    await page.locator('.tower-archive').click();
+    for (const task of tasks.tasks.filter(t => t.status === 'archived')) {
+      await page.locator(`.tower-archive-list [data-task-id="${task.id}"]`).waitFor();
+    }
+    await page.locator('.tower-archive').click();
   }
   if (decisions.decisions.length) {
     const d=decisions.decisions[0];
@@ -113,6 +130,7 @@ try {
   await page.getByText('Connected to Fleet',{exact:true}).waitFor();
   await page.setViewportSize({width:390,height:844});
   assert.ok(await page.locator('.tower-list').isVisible());
+  if (!live) await page.locator('.tower-list [data-task-id="T-review"]').first().waitFor();
   assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1));
   for (const theme of ['light','dark']) {
     await page.evaluate(theme=>document.documentElement.dataset.workbenchTheme=theme,theme);

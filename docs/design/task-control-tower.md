@@ -278,7 +278,11 @@ operators must submit choices in Fleet. The legacy demo workflow remains isolate
 
 Ready/queued map to Pending; running/claimed/retrying to In progress; blocked to
 Your review (open decisions also appear in Needs you); done to Delivered;
-failed/cancelled to Archived. Cards expose the upstream attempt counter, while
+failed/cancelled/archived to Archived; scheduled to Pending; review to Your review
+with human verification. Unknown or malformed statuses also fall back to Your
+review, remain read-only, and preserve fleet_status for inspection in task details.
+The same projection applies to list and detail, so a future status cannot fail the
+entire list. Decisions and workers use independent projections. Cards expose the upstream attempt counter, while
 detail shows the number of actual attempt records (v1 may count only retries in
 the list). Delivered-today uses completed_at, or updated_at when v1 omits it.
 
