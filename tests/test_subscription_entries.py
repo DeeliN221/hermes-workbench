@@ -1,5 +1,6 @@
 """Persistence, identity boundaries, adapter isolation and redaction contracts."""
 import asyncio
+from unittest.mock import AsyncMock
 import json
 import sys
 from pathlib import Path
@@ -12,6 +13,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, str(Path(__file__).parents[1] / 'dashboard'))
 from quota_dashboard import create_router, QuotaDashboard
 from subscription_entries import SubscriptionStore, Entry
+
+
+@pytest.fixture(autouse=True)
+def offline_providers(monkeypatch):
+    import live_allowances as live
+    for name in ('gemini', 'opencode'):
+        monkeypatch.setattr(live, name, AsyncMock(return_value=live.result(name, 'unavailable', 'Offline fixture')))
 
 
 def manual(id='fourth', **kwargs):

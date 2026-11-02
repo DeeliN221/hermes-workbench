@@ -35,6 +35,7 @@ jobs:
           python-version: '3.13'
           enable-cache: true
       - run: pnpm test:browser
+      - run: pnpm test:quotas:e2e
       - run: pnpm history:check
       - run: pnpm privacy:check
       - run: pnpm release:verify
