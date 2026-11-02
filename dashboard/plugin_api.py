@@ -1654,3 +1654,38 @@ router.include_router(fleet_router)
 
 from fleetd_proxy import router as fleetd_router
 router.include_router(fleetd_router)
+
+
+class ProfileOrderBody(BaseModel):
+    order: list[str] = Field(max_length=4096)
+
+
+def _profile_order(user: str, body: ProfileOrderBody | None = None):
+    if body is not None:
+        for name in body.order:
+            _clean_identifier(name, label="Profile", maximum=_MAX_PROFILE_LENGTH)
+        if len(set(body.order)) != len(body.order):
+            raise HTTPException(422, "Duplicate profile")
+    connection = _open_organization_db()
+    try:
+        with connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS home_profile_order (owner TEXT PRIMARY KEY, payload TEXT NOT NULL)")
+            if body is not None:
+                connection.execute("INSERT INTO home_profile_order VALUES (?, ?) ON CONFLICT(owner) DO UPDATE SET payload=excluded.payload", (user, json.dumps(body.order)))
+            row = connection.execute("SELECT payload FROM home_profile_order WHERE owner=?", (user,)).fetchone()
+        return {"order": json.loads(row["payload"]) if row else []}
+    finally:
+        connection.close()
+
+
+@router.get('/profile-order')
+def get_profile_order(request: Request):
+    from codex_bridge import _user
+    from fastapi.responses import JSONResponse
+    return JSONResponse(_profile_order(_user(request)), headers={"Cache-Control": "no-store"})
+
+
+@router.put('/profile-order')
+def put_profile_order(request: Request, body: ProfileOrderBody):
+    from codex_bridge import _user
+    return _profile_order(_user(request), body)
