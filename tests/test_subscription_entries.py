@@ -127,3 +127,24 @@ def test_concurrent_updates_have_one_winner(tmp_path):
             return getattr(error, 'status_code', 500)
     with ThreadPoolExecutor(max_workers=2) as pool:
         assert sorted(pool.map(save, ['one', 'two'])) == [200, 409]
+
+
+def test_transaction_failure_preserves_revision_and_entries(tmp_path):
+    store = SubscriptionStore(tmp_path / 'config.db')
+    saved = store.save('alice', 'default', 0, [manual()])
+    with pytest.raises(RuntimeError):
+        with store.connect() as db:
+            db.execute('UPDATE subscriptions SET revision=99, entries=?', ('[]',))
+            raise RuntimeError('simulated interrupted write')
+    assert SubscriptionStore(store.path).read('alice', 'default') == saved
+
+
+def test_routes_require_identity_and_valid_profile(tmp_path):
+    app = FastAPI()
+    app.include_router(create_router(store=SubscriptionStore(tmp_path / 'config.db')))
+    api = TestClient(app)
+    payload = {'revision': 0, 'entries': [manual()]}
+    assert api.get('/quotas').status_code == 401
+    assert api.put('/quotas/entries', json=payload).status_code == 401
+    assert api.get('/quotas?profile=..', headers={'remote-user': 'alice'}).status_code == 400
+    assert not (tmp_path / 'config.db').exists()

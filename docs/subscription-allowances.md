@@ -37,6 +37,21 @@ HOME is inside its persistent data volume. Keep this database outside versioned
 release directories and back it up with application state. No browser storage is
 used. Defaults are returned only for identities without a saved configuration.
 
+### Upgrade and rollback
+
+This release adds a separate SQLite database; it does not migrate or rewrite the
+existing session, profile or credential stores. The table is created on first
+access. Existing identities see the three presets until they first save; an
+explicitly saved empty list stays empty. Writes replace the list and increment
+its revision in one transaction, so a failed transaction preserves both.
+
+Before upgrading, back up the database with SQLite's backup API (or copy it while
+the application is stopped). Rolling back the application to the previous
+release restores its fixed preset UI and ignores this database; retain the file
+to recover the saved configuration when upgrading again. Do not delete or modify
+credential/session stores as part of this rollback. No destructive schema
+migration is required for this version.
+
 The backend adapter registry currently contains `manual`, `codex` and
 `unsupported`. Future API adapters belong on the server, must return whitelisted
 quota fields, and must resolve credentials there. Adding a manual vendor requires
