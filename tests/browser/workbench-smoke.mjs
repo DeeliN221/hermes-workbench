@@ -87,6 +87,8 @@ try {
   profilePage.on('pageerror', error => profileErrors.push(error.stack || error.message));
   await profilePage.goto(host.origin + '/sessions?profile=default', { waitUntil: 'domcontentloaded' });
   await profilePage.locator('.profile-overview').waitFor({ state: 'attached', timeout: 5000 });
+  await profilePage.getByRole('link', { name: 'Manage profiles', exact: true }).click();
+  await profilePage.waitForURL(url => url.pathname === '/profiles');
   const profileTrigger = profilePage.locator('.dashboard-nav-profile > button');
   await profileTrigger.click();
   const profileMenu = profilePage.locator('#workbench-profile-menu');

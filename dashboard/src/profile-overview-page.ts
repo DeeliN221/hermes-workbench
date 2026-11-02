@@ -21,6 +21,27 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
     useProfileDisplay(sdk);
     const [columns, setColumns] = useState([] as ProfileColumn[]);
     const [loading, setLoading] = useState(true), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
+    const [order, setOrder] = useState([] as string[]);
+    const [saving, setSaving] = useState(false), [orderReady, setOrderReady] = useState(false), [notice, setNotice] = useState('');
+    useEffect(() => {
+      const controller = new AbortController();
+      sdk.fetchJSON<{order: string[]}>('/api/plugins/workbench/profile-order', { signal: controller.signal })
+        .then(value => { setOrder(value.order || []); setOrderReady(true); })
+        .catch(() => { if (!controller.signal.aborted) setNotice(tr('排序加载失败，请刷新重试', 'Unable to load order. Reload to retry.')); });
+      return () => controller.abort();
+    }, []);
+    const saveOrder = async (next: string[]) => {
+      setSaving(true);
+      try {
+        await sdk.fetchJSON('/api/plugins/workbench/profile-order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: next }) });
+        setOrder(next); setNotice(tr('列顺序已保存', 'Column order saved'));
+      } catch { setNotice(tr('保存失败，请重试', 'Unable to save order. Please retry.')); }
+      finally { setSaving(false); }
+    };
+    const sorted = [...columns].sort((a: ProfileColumn, b: ProfileColumn) => {
+      const rank = (name: string) => order.includes(name) ? order.indexOf(name) : order.length;
+      return rank(a.name) - rank(b.name);
+    });
     const [now, setNow] = useState(Date.now());
     useEffect(() => {
       const controller = new AbortController();
@@ -38,13 +59,15 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       error || allFailed ? h('p', { role: 'alert', className: 'overview-notice' }, tr('会话总览暂不可用，请重试。', 'Session overview unavailable. Please retry.'), retry()) : null,
       loading && !columns.length ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载 Profile 和项目会话…', 'Loading profiles and project sessions…')) : null,
       !loading && !error && !columns.length ? h('p', { className: 'overview-notice' }, tr('暂无 Profile。', 'No profiles available.')) : null,
+      h('div', { className: 'profile-order-toolbar' }, h('button', { type: 'button', disabled: saving || !orderReady, onClick: () => void saveOrder([]) }, tr('恢复默认顺序', 'Restore default order')), h('a', { href: '/profiles', className: 'profile-home-navigation' }, tr('管理 Profile', 'Manage profiles')), h('span', { role: 'status', 'aria-live': 'polite' }, notice)),
       h('div', { className: 'profile-overview-columns', tabIndex: 0, 'aria-label': tr('横向浏览 Profile', 'Scroll profiles horizontally') },
-        columns.map((column: ProfileColumn) => {
+        sorted.map((column: ProfileColumn, position: number) => {
           const projectNames = new Map(column.projects.map(project => [project.id, project.name]));
           const emptyProjects = column.projects.filter(project => !column.rows.some(row => row.groupId === project.id));
           return h('section', { key: column.name, className: 'profile-overview-column', 'data-profile': column.name, 'aria-labelledby': `overview-${column.name}` },
             h('header', { className: 'profile-column-heading' }, h('span', { className: 'profile-column-icon', 'aria-hidden': true }, column.icon || '◈'),
               h('h2', { id: `overview-${column.name}` }, profileTabName(column.name)), h('span', { className: 'profile-column-count' }, `${column.rows.length} ${tr('会话', 'sessions')}`)),
+            h('div', { className: 'profile-order-controls' }, ...([-1, 1] as const).map(direction => h('button', { type: 'button', disabled: saving || !orderReady || position + direction < 0 || position + direction >= sorted.length, 'aria-label': `${profileTabName(column.name)} ${direction < 0 ? tr('左移', 'Move left') : tr('右移', 'Move right')}`, onClick: () => { const next = sorted.map((item: ProfileColumn) => item.name); [next[position], next[position + direction]] = [next[position + direction], next[position]]; void saveOrder(next); } }, direction < 0 ? '←' : '→'))),
             h('div', { className: 'profile-column-scroll', tabIndex: 0, 'aria-label': profileTabName(column.name) },
               column.failed.length ? h('p', { role: 'alert', className: 'overview-notice' }, tr('部分数据加载失败，已保留可用会话。', 'Some data failed to load. Available sessions are shown.'), retry()) : null,
               column.loading ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载历史会话…', 'Loading conversation history…')) : null,

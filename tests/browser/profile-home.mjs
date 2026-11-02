@@ -12,7 +12,11 @@ try {
   const errors = [], writes = [], requests = [];
   page.on('pageerror', error => errors.push(String(error)));
   page.on('request', request => { requests.push(request.url()); if (request.method() !== 'GET') writes.push(request.url()); });
-  let mode = 'ready';
+  let mode = 'ready', savedOrder = [];
+  await page.route('**/api/plugins/workbench/profile-order', async route => {
+    if (route.request().method() === 'PUT') savedOrder = route.request().postDataJSON().order;
+    await route.fulfill({ json: { order: savedOrder } });
+  });
   const now = Date.now(), day = 86400000;
   const projects = [{ id: 'workbench', name: 'Workbench' }, { id: 'planning', name: 'Planning' }, { id: 'empty-project', name: 'Upcoming project' }];
   const session = (id, title, age, extra = {}) => ({ id, title, updatedAt: now - age, groupId: 'workbench', status: 'idle', ...extra });
@@ -30,6 +34,7 @@ try {
     ] },
     { name: 'research', projects: [{ id: 'research', name: 'Research notebook' }], failed: [], sessions: [session('research-one', 'Compare findings across projects', 3 * day, { groupId: 'research' })] },
     { name: 'empty', projects: [], failed: [], sessions: [] },
+    { name: 'archive', projects: [], failed: [], sessions: [] },
   ];
   await page.route('**/api/plugins/workbench/profile-overview', async route => {
     if (mode === 'loading') await new Promise(resolve => setTimeout(resolve, 500));
@@ -45,7 +50,7 @@ try {
   await page.locator('.profile-overview-column').nth(3).waitFor();
   await page.waitForFunction(() => document.querySelector('.profile-overview')?.getAttribute('aria-busy') === 'false');
   const columns = page.locator('.profile-overview-column');
-  assert.deepEqual(await columns.evaluateAll(nodes => nodes.map(n => n.dataset.profile)), ['default', 'writer', 'research', 'empty']);
+  assert.deepEqual(await columns.evaluateAll(nodes => nodes.map(n => n.dataset.profile)), ['default', 'writer', 'research', 'empty', 'archive']);
   assert.equal(await page.locator('.task-tower').count(), 0);
   assert.equal(await page.locator('[data-profile="default"] .profile-session').count(), 13);
   assert.deepEqual(await page.locator('[data-profile="default"] .profile-session').evaluateAll(nodes => nodes.slice(0, 4).map(n => n.dataset.freshness)), ['1', '2', '3', '0']);
@@ -64,6 +69,24 @@ try {
     assert.match(gradient, /linear-gradient/);
     assert.equal(await page.locator('.profile-session[data-freshness="0"]').first().evaluate(node => getComputedStyle(node).backgroundImage), 'none');
   }
+  assert.equal(await page.locator('.dashboard-global-nav').isVisible(), false);
+  assert.equal(await page.locator('.dashboard-action-rail').isVisible(), false);
+  assert.equal((await page.locator('.dashboard-owned-page').boundingBox()).x, 0);
+  const move = page.locator('[data-profile=writer]').getByRole('button', { name: /Move left/ });
+  await move.focus(); await page.keyboard.press('Enter');
+  await page.getByRole('status').filter({ hasText: 'Column order saved' }).waitFor();
+  assert.equal(await columns.first().getAttribute('data-profile'), 'writer');
+  await page.reload(); await columns.nth(3).waitFor();
+  await page.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'writer');
+  const fresh = await browser.newPage();
+  await fresh.route('**/api/plugins/workbench/profile-order', route => route.fulfill({ json: { order: savedOrder } }));
+  await fresh.route('**/api/plugins/workbench/profile-overview', route => route.fulfill({ json: { profiles } }));
+  await fresh.route('**/api/profiles/sessions?*', route => route.fulfill({ json: { sessions: [], total: 0 } }));
+  await fresh.goto(host.origin + '/');
+  await fresh.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'writer');
+  await fresh.close();
+  await page.getByRole('button', { name: 'Restore default order' }).click();
+  await page.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'default');
   const tabs = page.locator('.overview-tabs');
   await tabs.getByRole('link', { name: 'Kanban', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/kanban');
@@ -89,6 +112,7 @@ try {
   await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; localStorage.setItem('hermes-dashboard-theme', theme); }, theme);
+    assert.ok(await page.locator('.dashboard-action-rail').isVisible());
     assert.ok(await tabs.isVisible());
     assert.ok(await columns.first().locator('h2').isVisible());
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
@@ -107,7 +131,7 @@ try {
   mode = 'failed'; await page.reload(); await page.getByRole('alert').filter({ hasText: 'Session overview unavailable' }).waitFor();
   mode = 'ready'; await page.getByRole('button', { name: 'Retry', exact: true }).click(); await columns.nth(3).waitFor();
   mode = 'all-failed'; await page.reload(); await page.getByRole('alert').filter({ hasText: 'Session overview unavailable' }).waitFor();
-  assert.equal(await columns.count(), 4);
+  assert.equal(await columns.count(), 5);
   mode = 'empty'; await page.reload(); await page.getByText('No profiles available.').waitFor();
   mode = 'loading'; await page.reload(); await page.getByText('Loading profiles and project sessions…').waitFor(); await columns.nth(3).waitFor();
   await page.setViewportSize({ width: 1440, height: 900 });
