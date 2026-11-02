@@ -2,7 +2,7 @@
 import { afterEach, expect, test, vi } from 'vitest';
 import { mountQuotaDashboard } from '../dashboard/src/quota-dashboard';
 const payload = { providers: ['opencode', 'gemini', 'openai'].map(id => ({
-  id, status: id === 'openai' ? 'available' : 'unavailable', reason: 'Verified fixture',
+  id, description: 'Plan unverified', name: id, service: id, plan: 'Test plan', adapter: id === 'openai' ? 'codex' : 'unsupported', enabled: true, status: id === 'openai' ? 'available' : 'unavailable', reason: 'Verified fixture',
   windows: id === 'openai' ? [{ minutes: 300, remainingPercent: 75, resetsAt: '2030-01-01T00:00:00Z' }] : [],
   updatedAt: id === 'openai' ? '2030-01-01T00:00:00Z' : null, checkedAt: '2030-01-01T00:00:00Z',
 })) };
@@ -44,5 +44,47 @@ test('failed refresh removes stale numbers and exposes retry without upstream se
   expect(root.textContent).not.toContain('75% remaining');
   expect(root.textContent).not.toContain('PRIVATE');
   expect(root.querySelector('button')!.disabled).toBe(false);
+  dispose();
+});
+
+test('arbitrary providers and an empty list need no built-in IDs', async () => {
+  const root = document.createElement('div');
+  const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ providers: [{
+    id: 'independent-account', name: 'Fourth service', service: 'Example', plan: 'Team', adapter: 'manual', enabled: true,
+    status: 'available', reason: 'Manual', windows: [], updatedAt: null, checkedAt: null,
+    manual: { amount: 8, limit: null, unit: 'requests', mode: 'used', minutes: 43200, resetsAt: null },
+  }], entries: [], revision: 0 }))).mockResolvedValueOnce(new Response(JSON.stringify({ providers: [], entries: [], revision: 1 })));
+  const dispose = mountQuotaDashboard(root, fetcher);
+  await vi.waitFor(() => expect(root.textContent).toContain('1 of 1 providers available'));
+  expect(root.textContent).toContain('Fourth service');
+  expect(root.textContent).toContain('8 requests used');
+  root.querySelector('button')!.click();
+  await vi.waitFor(() => expect(root.textContent).toContain('0 of 0 providers available'));
+  expect(root.textContent).toContain('No subscriptions');
+  expect(root.querySelectorAll('article')).toHaveLength(0);
+  dispose();
+});
+
+test('save conflicts keep the editor and do not claim a successful write', async () => {
+  const root = document.createElement('div'); document.body.append(root);
+  const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ providers: [], entries: [], revision: 7 })))
+    .mockResolvedValueOnce(new Response('{}', { status: 409 }));
+  const dispose = mountQuotaDashboard(root, fetcher);
+  const findButton = (text: string) => [...root.querySelectorAll('button')].find(b => b.textContent === text)!;
+  await vi.waitFor(() => expect(findButton('Add subscription').disabled).toBe(false));
+  findButton('Add subscription').click();
+  const inputs = root.querySelectorAll<HTMLInputElement>('input');
+  inputs[0].value = 'Fourth provider'; inputs[1].value = 'Example';
+  root.querySelector('form')!.dispatchEvent(new Event('submit', { bubbles: true, cancelable: true }));
+  await vi.waitFor(() => expect(root.textContent).toContain('changed in another tab'));
+  const [url, options] = fetcher.mock.calls[1];
+  expect(url).toContain('/quotas/entries');
+  expect(options.method).toBe('PUT');
+  const body = JSON.parse(options.body);
+  expect(body.revision).toBe(7);
+  expect(body.entries[0]).toMatchObject({ name: 'Fourth provider', service: 'Example', adapter: 'manual' });
+  expect(root.querySelector('form')).not.toBeNull();
+  expect(inputs[0].value).toBe('Fourth provider');
+  expect(findButton('Save subscription').disabled).toBe(false);
   dispose();
 });

@@ -121,7 +121,7 @@ export async function searchSessions(
   const response = await fetchJSON<SearchResponse>(
     `/api/sessions/search?q=${query(search)}&limit=100&profile=${query(profile)}${includeAutomation ? '' : '&exclude_sources=cron'}`,
   );
-  return Array.isArray(response.results) ? response.results : [];
+  return Array.isArray(response.results) ? response.results.filter(row => row.hidden !== true) : [];
 }
 
 /** Read one complete session record. */

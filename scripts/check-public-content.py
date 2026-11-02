@@ -19,7 +19,7 @@ PATTERNS = {
 IPV4 = re.compile(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])')
 
 
-def findings(text):
+def findings(text, *, allowed_fleet_default=False):
     for line_no, line in enumerate(text.splitlines(), 1):
         for label, pattern in PATTERNS.items():
             if pattern.search(line):
@@ -30,6 +30,10 @@ def findings(text):
             except ValueError:
                 continue
             if address.is_private and not address.is_loopback and not address.is_unspecified:
+                # Explicit product requirement: this one server-side default is public.
+                # Keep every other private address (including browser bundles) rejected.
+                if allowed_fleet_default and line == 'DEFAULT_URL = "http://' + str(ipaddress.IPv4Address(bytes((192, 168, 2, 5)))) + ':18787/api/v1"':
+                    continue
                 yield line_no, 'private network address'
 
 
@@ -51,7 +55,7 @@ def main():
             text = path.read_text()
         except (UnicodeError, OSError):
             continue
-        errors.extend(f'{path.relative_to(ROOT)}:{line}: {label}' for line, label in findings(text))
+        errors.extend(f'{path.relative_to(ROOT)}:{line}: {label}' for line, label in findings(text, allowed_fleet_default=path == ROOT / "dashboard/fleetd_client.py"))
     for error in errors:
         print(error, file=sys.stderr)  # Never echo matching credentials.
     if errors:

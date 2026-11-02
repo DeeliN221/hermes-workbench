@@ -33,7 +33,7 @@ try {
   await page.reload();
   await page.waitForFunction(() => document.querySelector('[data-profile="default"] h2')?.textContent.includes('Main Agent'));
   await page.goto(host.origin + '/sessions?view=recent&profile=writer');
-  await page.locator('.workbench-home-project').first().waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('.workbench-home-project').length === 8);
   assert.match(await page.locator('label[for="home-message"]').textContent(), /Main Agent/);
   assert.equal(await page.locator('.workbench-home-project').count(), 8);
   assert.ok((await page.locator('.workbench-home-project').allTextContents()).some(text => text.includes('writer')));
@@ -61,7 +61,7 @@ try {
   assert.equal(create.body.profile, 'default');
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(host.origin + '/sessions?view=recent&profile=writer');
-  await page.locator('.workbench-home-project').first().waitFor();
+  await page.waitForFunction(() => document.querySelectorAll('.workbench-home-project').length === 8);
   assert.ok(await page.locator('.workbench-home-card-meta').first().isVisible());
   assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), 'No mobile horizontal overflow');
   if (process.env.SHOT_DIR) await page.screenshot({ path: `${process.env.SHOT_DIR}/home-mobile.png` });

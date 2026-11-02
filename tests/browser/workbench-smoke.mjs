@@ -275,6 +275,7 @@ try {
     ['[data-workbench-model-link]', 'models'],
     ['[data-workbench-version-link]', 'versions'],
   ]) {
+    if (tab === 'versions') await settingsReturnPage.locator('.workbench-settings-more-toggle').click();
     await settingsReturnPage.locator(selector).click();
     await settingsReturnPage.waitForFunction(expected => new URLSearchParams(location.search).get('workbench') === expected, tab);
     assert.equal(new URL(settingsReturnPage.url()).searchParams.get('panel'), '1', `${tab} settings must keep the floating panel marker`);
@@ -622,7 +623,7 @@ try {
   const restoredAlias = aliasPage.locator('[data-model-alias="deepseek/deepseek-flash"]');
   await restoredAlias.waitFor({ state: 'visible', timeout: 5000 });
   assert.equal(await restoredAlias.inputValue(), 'ds-flash', 'The alias must survive navigation and settings re-renders');
-  // Regrouped settings navigation: four groups, with rarely used pages folded into "More".
+  // Regrouped settings navigation: three groups, with rarely used pages folded into "More".
   const settingsNav = await aliasPage.evaluate(() => {
     const nav = document.querySelector('.dashboard-settings-nav');
     const groups = [...(nav?.querySelectorAll('.workbench-settings-group') || [])];
@@ -636,12 +637,12 @@ try {
       moreLinkCount: more?.querySelectorAll('.workbench-settings-more-links a').length,
     };
   });
-  assert.deepEqual(settingsNav.groups, ['preferences', 'agent', 'maintenance', 'more'], 'Settings must group into four sections');
-  assert.deepEqual(settingsNav.headings, ['Preferences', 'Agent', 'Maintenance', null], 'Groups must be labelled by intent');
+  assert.deepEqual(settingsNav.groups, ['preferences', 'agent', 'more'], 'Settings must group into three sections');
+  assert.deepEqual(settingsNav.headings, ['Preferences', 'Agent', null], 'Groups must be labelled by intent');
   assert.equal(settingsNav.topLevelLinks, 0, 'Long lists must live inside grouped sections, not as a flat link list');
   assert.equal(settingsNav.moreExpanded, 'false', 'The More section must start collapsed');
   assert.equal(settingsNav.moreLinksHidden, true, 'Collapsed More links must not be reachable visually');
-  assert.equal(settingsNav.moreLinkCount, 7, 'The More section must keep all rarely used settings reachable');
+  assert.equal(settingsNav.moreLinkCount, 10, 'The More section must keep all rarely used settings reachable');
   await aliasPage.evaluate(() => document.getElementById('preview-banner')?.remove());
   await aliasPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').click();
   assert.equal(await aliasPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').getAttribute('aria-expanded'), 'true');
@@ -671,7 +672,7 @@ try {
       navWidth: navRect?.width || 0,
     };
   });
-  assert.deepEqual(floatingNav.groups, ['preferences', 'agent', 'maintenance', 'more'], 'Floating panel must keep the grouped settings navigation');
+  assert.deepEqual(floatingNav.groups, ['preferences', 'agent', 'more'], 'Floating panel must keep the grouped settings navigation');
   assert.equal(floatingNav.toggleInside, true, 'The More toggle must stay inside the floating settings column');
   assert.ok(floatingNav.toggleWidth > 0 && floatingNav.toggleWidth <= floatingNav.navWidth, 'The More toggle must fit the narrow floating column');
   assert.deepEqual(floatingErrors, [], 'Browser errors in the floating settings panel:\n' + floatingErrors.join('\n'));

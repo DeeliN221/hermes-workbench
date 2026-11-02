@@ -50,6 +50,19 @@ export type HermesTurn = {
 
 const MAX_FIELD_BYTES = 48 * 1024;
 
+/** Keep hidden context out of both the transcript and its optional raw-event view. */
+export function visibleHermesRecord(row: HermesRecord): HermesRecord | null {
+  if (row.hidden === true) return null;
+  if (typeof row.content !== 'string' || !row.content.startsWith('\0json:')) return row;
+  try {
+    const parts = JSON.parse(row.content.slice(6));
+    if (Array.isArray(parts) && parts.some(part => part?.hidden === true)) {
+      return { ...row, content: '\0json:' + JSON.stringify(parts.filter(part => part?.hidden !== true)) };
+    }
+  } catch { /* Preserve malformed legacy content for the existing error placeholder. */ }
+  return row;
+}
+
 /** Decode structured Hermes text envelopes and leave clear placeholders for unsupported media. */
 export function decodeHermesStructuredContent(content: unknown): string {
   if (typeof content !== 'string') return '';
@@ -59,6 +72,7 @@ export function decodeHermesStructuredContent(content: unknown): string {
     if (!Array.isArray(parts)) return '';
     return parts.map((part) => {
       if (typeof part === 'string') return part;
+      if (part?.hidden === true) return '';
       if (part?.type === 'text' && typeof part.text === 'string') return part.text;
       return String(part?.type || '').match(/image|file|media/) ? '[Hermes media omitted]' : '';
     }).filter(Boolean).join('\n');
@@ -238,7 +252,9 @@ export function normalizeHermesTranscript(rows: HermesRecord[], sessionIds: stri
   let current: HermesTurn | undefined;
   let previous: HermesRecord | undefined;
 
-  for (const { row, inputIndex } of ordered) {
+  for (const { row: sourceRow, inputIndex } of ordered) {
+    const row = visibleHermesRecord(sourceRow);
+    if (!row) continue;
     const content = boundedText(decodeHermesStructuredContent(row.content), `${String(row.role || 'message')} content`);
     if (row.role === 'user') {
       if (previous && isHermesCompressionUserEcho(previous, row, sessionIds)) {

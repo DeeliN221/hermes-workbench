@@ -24,6 +24,10 @@ export type Task = {
   title: string;
   status: Status;
   revision: number;
+  read_only?: boolean;
+  fleet_status?: string;
+  assignee?: string;
+  attempt_count?: number;
   created_at: string;
   updated_at?: string;
   status_changed_at?: string;
@@ -126,7 +130,8 @@ export function delivered(tasks: Task[], now = Date.now()): Task[] {
         a.id.localeCompare(b.id),
     );
 }
-export function decisionOptions(d: Decision): Decision["options"] {
+export function decisionOptions(d: Decision, readOnly = false): Decision["options"] {
+  if (readOnly) return d.options.filter(o => !!o.label);
   if (
     d.options.length < 2 ||
     d.options.length > 4 ||
@@ -140,6 +145,7 @@ export function decisionOptions(d: Decision): Decision["options"] {
   );
 }
 export function canMove(t: Task, to: Status): string | null {
+  if (t.read_only) return uiText("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes");
   if (t.status === to)
     return to === "done"
       ? uiText(

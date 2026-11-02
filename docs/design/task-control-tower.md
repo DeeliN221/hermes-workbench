@@ -1,11 +1,21 @@
 # Task control tower
 
-The Workbench home routes (`/`, `/home`, `/sessions`) now open an operator task
-console. RecentHome remains intact at `/sessions?view=recent`; the main console
+The Workbench home routes (`/`, `/home`, `/sessions`) and the Kanban tab
+(`/kanban`) open the same four-column operator task console. RecentHome remains intact at `/sessions?view=recent`; the main console
 uses a narrow right rail for up to two user-pinned conversations and three recent
 conversations. Pins and manual card order are versioned browser preferences.
-Hermes' native Kanban remains available and unchanged. This feature does not
-modify Hermes or Fleet source.
+The desktop Workbench menu and mobile action rail link directly to `/kanban`,
+preserving the selected profile without requiring a native board assignment.
+The Kanban tab has its own active navigation state and opens as a full page.
+Existing `/kanban?board=...&panel=1` bookmarks also show the tower; those legacy
+parameters do not select a Fleet board or open a floating panel. Refresh and
+browser history retain the URL and profile. `view=recent` remains home-only.
+
+Hermes' native Kanban remains available explicitly at `/kanban?view=legacy`
+(with optional `board`, `profile`, and `panel=1` parameters). It is no longer
+the navigation default. Native compatibility tests use this escape hatch.
+This feature does not modify Hermes or Fleet source, the v2 proxy, or the
+server-side live/demo selection and credential boundary.
 
 ## Operator flow
 
@@ -128,9 +138,9 @@ HERMES_WORKBENCH_FLEET_MODE=live
 
 The URL is an origin, without credentials, path, query or fragment. Non-loopback
 plain HTTP requires an explicit `HERMES_WORKBENCH_FLEET_ALLOW_HTTP=1` deployment
-choice. The default mode is `mock`, even when Fleet credentials exist in the
-environment. Live requires the explicit flag **and** URL/token. Missing URL/token
-uses the process-local demo with a visible “Demo mode” / “演示模式” badge.
+choice. This is the legacy v2 transport configuration. The task console now
+uses fleetd v1 by default, as described below. Missing legacy credentials return
+an error; they never select demo data.
 A failed configured live request never falls back to fake data. Review credentials
 are server-only and used exclusively for approve/request_changes. Missing or
 incorrect review credentials return 403 without falling back to worker credentials.
@@ -249,3 +259,44 @@ Validation result (2026-11-01): `npm run typecheck`, `npm test` (450 tests),
 nonblank content, absence of framework overlays, console health (expected 409
 resource error excluded), interactions and screenshots were checked. Fleet source
 was clean at `fdabd483e84c3831b148d52ea2d2658b8581c62f` after validation.
+
+
+## Default fleetd v1 connection
+
+The console uses `/api/plugins/workbench/fleetd/{tasks,decisions,workers}` and
+`/api/plugins/workbench/fleetd/tasks/{id}` behind the existing Workbench user gate.
+The server reads `FLEETD_URL` (the installation's Fleet v1 API base by default),
+`FLEET_TOKEN`, or `FLEET_TOKEN_FILE` (default `/opt/data/.fleet-token`). Environment
+token takes precedence. `FLEETD_TIMEOUT_SECONDS` defaults to 8 seconds.
+No credentials, upstream URLs, raw execution logs, or execution payloads are
+returned. Free-text projections also redact the active token. Redirects are refused.
+
+Demo requires `?demo=1` or the explicit development configuration
+`HERMES_WORKBENCH_FLEET_MODE=mock`. A failed live request never selects demo.
+Live writes are disabled and labeled read-only, including decision submission;
+operators must submit choices in Fleet. The legacy demo workflow remains isolated.
+
+Ready/queued map to Pending; running/claimed/retrying to In progress; blocked to
+Your review (open decisions also appear in Needs you); done to Delivered;
+failed/cancelled to Archived. Cards expose the upstream attempt counter, while
+detail shows the number of actual attempt records (v1 may count only retries in
+the list). Delivered-today uses completed_at, or updated_at when v1 omits it.
+
+Tasks, open decisions, and workers form one successful client snapshot. Any partial
+failure retains the previous snapshot and last-success time, marks it stale, and
+provides Retry. Loading, manual refresh, focus/visibility return and a 15-second
+visible-page poll fetch data. Hidden-page polling pauses. A failed detail refresh
+marks the detail stale independently. No second task store or database is created.
+
+The current v1 list caps results at 100 and may return no cursor even when limited.
+The proxy requests 100, follows cursors if provided, and the UI warns when results
+may be truncated; counts cover loaded tasks. Tasks referenced by open decisions
+outside the list window are fetched separately so decisions remain visible.
+
+Validation: `tests/fixtures/fleetd-v1.json` preserves response structure captured
+from live v1 task list/get, decisions and worker list; text and identities are
+sanitized. `node tests/browser/fleetd-console.mjs` exercises the local fixture;
+`FLEET_LIVE_TEST=1 node tests/browser/fleetd-console.mjs` reads the configured live
+service through a localhost authenticated proxy without mutations. Live screenshots
+stay outside the repository. Public PR images use opaque privacy masks over live captures and an
+explicit-demo reproduction of the former default state.

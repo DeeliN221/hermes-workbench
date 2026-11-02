@@ -1,14 +1,26 @@
-.quota-open,.quota-dialog button{border:1px solid #6d896d;border-radius:6px;background:#253d2b;color:#f0f6eb;padding:8px 14px;cursor:pointer;font:inherit}
-.quota-open{margin-left:12px;white-space:nowrap;flex-shrink:0}
-.quota-dialog{box-sizing:border-box;width:min(1120px,94vw);max-height:90vh;overflow:auto;border:1px solid #63785d;border-radius:12px;background:#15221b;color:#eef2e9;padding:28px;font:15px/1.5 system-ui,sans-serif}
-.quota-dialog::backdrop{background:#06110bd9}
-.quota-dialog h2{font-size:26px;margin:0 70px 8px 0}.quota-dialog h3{font-size:20px;margin:0 0 8px}.quota-dialog h4{font-size:14px;margin:0 0 5px}
-.quota-dialog p{color:#c0cdbb}.quota-close{float:right}.quota-dialog button:disabled{opacity:.6;cursor:wait}
+.quota-settings button{border:1px solid #6d896d;border-radius:6px;background:#253d2b;color:#f0f6eb;padding:8px 14px;cursor:pointer;font:inherit}
+.quota-settings{box-sizing:border-box;width:100%;min-width:0;border:1px solid #63785d;border-radius:12px;background:#15221b;color:#eef2e9;padding:28px;font:15px/1.5 system-ui,sans-serif}
+.quota-settings h2{font-size:26px;margin:0 0 8px}.quota-settings h3{font-size:20px;margin:0 0 8px}.quota-settings h4{font-size:14px;margin:0 0 5px}
+.quota-settings p{color:#c0cdbb}.quota-settings button:disabled{opacity:.6;cursor:wait}
 .quota-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;margin-top:22px}
 .quota-card{min-width:0;background:#1f3026;border:1px solid #52654d;border-radius:8px;padding:20px;overflow-wrap:anywhere}
 .quota-card>p{min-height:46px}.quota-card small{display:block;color:#c0cdbb;font-size:12px;margin-top:8px}
 .quota-status{display:inline-block;border-radius:4px;background:#3b4032;color:#f6dc9d;padding:3px 9px;font-size:12px}.quota-available{background:#29482f;color:#bcf0b9}
 .quota-windows{display:grid;gap:12px;margin-top:18px}.quota-windows section{background:#15221b;border-radius:6px;padding:12px}.quota-windows strong{font-size:20px}.quota-windows meter{display:block;width:100%;margin-top:8px;accent-color:#9cd281}
-@media(max-width:800px){.quota-grid{grid-template-columns:1fr}.quota-dialog{padding:18px}.quota-card>p{min-height:0}.quota-windows{grid-template-columns:repeat(2,minmax(0,1fr))}}
-@media(prefers-reduced-motion:no-preference){.quota-dialog[open]{animation:quota-appear .12s ease-out}@keyframes quota-appear{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}}
+@media(max-width:800px){.quota-grid{grid-template-columns:1fr}.quota-settings{padding:18px}.quota-card>p{min-height:0}.quota-windows{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:480px){.quota-windows{grid-template-columns:1fr}}
+.quota-settings{background:var(--mc-surface,#15221b);color:var(--mc-ink,#eef2e9);border-color:var(--mc-line,#63785d)}
+.quota-settings p,.quota-card small{color:var(--mc-muted,#c0cdbb)}
+.quota-card{background:var(--mc-raised,#1f3026);border-color:var(--mc-line,#52654d)}
+.quota-windows section{background:var(--mc-surface,#15221b)}
+.quota-settings button{background:var(--mc-active,#253d2b);color:var(--mc-ink,#f0f6eb);border-color:var(--mc-line,#6d896d)}
+.quota-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr))}
+.quota-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:14px}
+.quota-editor{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;padding:20px;margin-top:20px;border:1px solid var(--mc-line,#63785d);border-radius:8px}
+.quota-editor h3,.quota-editor p,.quota-editor .quota-actions{grid-column:1/-1;margin:0}
+.quota-editor label{display:flex;flex-direction:column;gap:6px;min-width:0}
+.quota-editor input,.quota-editor select{box-sizing:border-box;width:100%;min-width:0;padding:8px;border:1px solid var(--mc-line,#63785d);border-radius:4px;background:var(--mc-surface,#15221b);color:inherit;font:inherit}
+.quota-editor input[type=checkbox]{width:20px;height:20px}
+.quota-settings :focus-visible{outline:2px solid var(--mc-accent,#9cd281);outline-offset:3px}
+@media(max-width:800px){.quota-grid{grid-template-columns:1fr}}
+@media(max-width:480px){.quota-editor{grid-template-columns:1fr;padding:12px}}

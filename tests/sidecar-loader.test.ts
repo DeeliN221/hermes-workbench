@@ -53,7 +53,7 @@ it('reports incompatible registration rather than declaring success on a script 
 
 it('shows the cached message tail while the runtime downloads', () => {
   const { window, register } = fixture('http://localhost/?session=session-1&profile=default');
-  window.localStorage.setItem('hermes-workbench.codex-snapshot.v1:default%00session-1', JSON.stringify({
+  window.localStorage.setItem('hermes-workbench.codex-snapshot.v2:default%00session-1', JSON.stringify({
     cachedAt: Date.now(),
     turnId: '',
     messages: [

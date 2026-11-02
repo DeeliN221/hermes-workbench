@@ -78,6 +78,34 @@ class PreviewLoadingContract(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.store.connection.total_changes, before)
                 self.assertEqual(bool(self.store.session('qa', 'default', 'session')['deleted']), archived)
 
+    async def test_full_preview_keeps_attachment_context_private_and_scope_read_only(self):
+        self.store.save_request('qa', 'default', 'session', 'request', status='completed', turn_id='turn', payload=json.dumps({
+            'input': [{'type': 'text', 'text': 'Visible question'}],
+            '_attachmentContext': {'hidden': True, 'content': [{'type': 'text', 'text': 'Private attachment path'}]},
+        }))
+        self.append('history/item', {'turnId': 'turn', 'item': {
+            'id': 'question', 'type': 'userMessage',
+            'content': [{'type': 'text', 'text': 'Visible question\n\nPrivate attachment path'}],
+        }})
+        self.append('history/turn', {'turn': {'id': 'turn', 'status': 'completed'}})
+        app = FastAPI()
+        app.include_router(create_router(self.bridge))
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test',
+                                    headers={'remote-user': 'qa'}) as client:
+            for archived in (False, True):
+                self.store.update_organization('qa', 'default', 'session', {'deleted': archived})
+                before = self.store.connection.total_changes
+                with patch.object(self.bridge, '_connection', side_effect=AssertionError('Must stay local')):
+                    response = await client.get('/session/preview?profile=default&session_id=session&full=true')
+                    self.assertEqual(response.status_code, 200)
+                    self.assertNotIn('Private attachment path', response.text)
+                    self.assertEqual(response.json()['turns'][0]['items'][0]['content'],
+                                     [{'type': 'text', 'text': 'Visible question'}])
+                    self.assertEqual((await client.get('/session/preview?profile=other&session_id=session&full=true')).status_code, 404)
+                    self.assertEqual((await client.get('/session/preview?profile=default&session_id=session&full=true',
+                                                       headers={'remote-user': 'other'})).status_code, 404)
+                self.assertEqual(self.store.connection.total_changes, before)
+
     async def test_empty_preview_returns_the_terminal_turn_error(self):
         self.append('turn/completed', {'turn': {
             'id': 'failed-turn', 'status': 'failed',

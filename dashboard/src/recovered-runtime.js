@@ -9,6 +9,8 @@ import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as
 import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
 import { applyMessagePreviews } from './message-previews';
+import { MessageAttachment } from './message-attachment';
+import { visibleHermesRecord } from './hermes-transcript';
 import { optionalNumber as pn, firstDefined as oi, timestamp as El, record as mt, text as Ae } from './api-values';
 import { cronList as Sn, cronSchedule as I5, cronTimezone as $0, cronForm as N5, cronPayload as Td, nativeCronPayload as B5, needsExtendedCron as z5, cronSessionId as T0, cronSessionProfiles, isCronSessionNotFound, mergeCronHistory as E0, cronTimestamp as A0, listCronJobs as q5, listCronRuns as Z5, listCronExecutions as j5, createNativeCronJob as F5, createExtendedCronJob as H5, updateCronJob as V5, changeCronJobState as U5, deleteCronJob as Y5 } from './cron-api';
 import { listSkills as iM, readSkillDescription as rM, listSkillEntries as B0, readSkillFile as nM, saveSkillFile as sM, mutateSkillFile as Md, skillPreviewUrl as oM, skillArchiveUrl as aM, isSkillTextPath as zl, skillPreviewKind as z0, downloadSkillFile as lM, uploadSkillArchive as cM, uploadSkillFile as hM } from './skills-api';
@@ -26,6 +28,7 @@ import { uiText as runtimeText } from './ui-locale';
 import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
 import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-aliases';
+import { createQuotaSettings } from './quota-dashboard';
 import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
 installModelAliasSync();
 import { createRecentHome } from './recent-home';
@@ -55,7 +58,6 @@ import { runtimeErrorText, sameMessage, insertRequest, withTurnError } from './c
 import { installChatFileLinks, openChatFilePreview } from './chat-file-links';
 import { readManagedFile } from './files-preview';
 import { openFilePreview, showFilePreviewLoading } from './file-preview';
-import { prepareProfileKanban } from './profile-kanban';
 
 // Capture local file references before the host router treats them as app routes.
 installChatFileLinks('/opt/data/workspace', openChatFilePreview);
@@ -2575,6 +2577,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ChatDisplaySettings = createChatDisplaySettings(i),
       ModelVisibilitySettings = createModelVisibilitySettings(i),
       VersionSettings = createVersionSettings(i),
+      QuotaSettings = createQuotaSettings(i),
       RecentHome = createRecentHome(i, Kp),
       TaskControlTower = createTaskControlTower(i, Kp, RecentHome),
       l = t.createElement;
@@ -2599,18 +2602,21 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         R = n(null);
       A.current = p;
       const isHome = u.path === "/" || u.path === "/home" || u.path === "/sessions",
+        isTaskBoard = u.path === "/kanban" && new URLSearchParams(u.search).get("view") !== "legacy",
         isProfiles = u.path === "/profiles" && !u.profileManager,
         isShortcuts = u.path === "/config" && u.settingsTab === "shortcuts",
         isChatDisplay = u.path === "/config" && u.settingsTab === "display",
         isModelVisibility = u.path === "/config" && u.settingsTab === "models",
         isVersionSettings = u.path === "/config" && (u.settingsTab === "versions" || u.settingsTab === "settings"),
-        isConfigSubpage = isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
+        isQuotaSettings = u.path === "/config" && u.settingsTab === "allowances",
+        isConfigSubpage = isQuotaSettings || isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
         M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
         H = Cx(u.path),
         F = yx(u.profile, da),
         j = u.path === "/chat" && !u.terminal,
-        accessory = mobileActions ? "" : accessoryKind(u.path, u.search),
-        navIsCollapsed = !mobileActions && navCollapsed;
+        accessory = mobileActions || isTaskBoard ? "" : accessoryKind(u.path, u.search),
+        navIsCollapsed = !mobileActions && navCollapsed,
+        ownsPage = M || isTaskBoard;
       r(() => {
         const media = window.matchMedia('(max-width: 800px)');
         const resize = () => { setMobileActions(media.matches); setActionsOpen(false); };
@@ -2702,7 +2708,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, []),
         r(() => {
           ((document.documentElement.dataset.workbenchShell = "true"),
-            (document.documentElement.dataset.workbenchPage = M
+            (document.documentElement.dataset.workbenchPage = ownsPage
               ? "custom"
               : H
                 ? "settings"
@@ -2719,15 +2725,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             ae = z?.getAttribute("aria-hidden");
           if (
             (z &&
-              ((z.inert = M),
-              M
+              ((z.inert = ownsPage),
+              ownsPage
                 ? z.setAttribute("aria-hidden", "true")
                 : z.removeAttribute("aria-hidden")),
-            M &&
+            ownsPage &&
               (z?.contains(document.activeElement) ||
                 document.activeElement === document.body) &&
               D.current?.focus({ preventScroll: !0 }),
-            !M && document.activeElement === document.body)
+            !ownsPage && document.activeElement === document.body)
           ) {
             const Ce = z?.querySelector('main, [role="main"], h1');
             Ce &&
@@ -2746,7 +2752,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               delete document.documentElement.dataset.workbenchAccessory,
               delete document.documentElement.dataset.workbenchAccessorySettings);
           };
-        }, [M, H, u.path, accessory]));
+        }, [ownsPage, H, u.path, accessory]));
       const activateAccessory = (z) => {
           const source = window.location.href;
           if (!u.panel) {
@@ -2754,15 +2760,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             catch { /* Storage can be unavailable in private browsing. */ }
           }
           E("");
-          if (z === "/kanban") {
-            prepareProfileKanban(i.fetchJSON, u.profile, () => window.location.href === source)
-              .then(board => {
-                if (!board) return;
-                Kp(withAccessoryPanel(z), u.profile);
-                f(false);
-              }).catch(error => E(error instanceof Error ? error.message : String(error)));
-            return;
-          }
           Kp(withAccessoryPanel(z), u.profile);
           f(false);
         },
@@ -2793,21 +2790,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         Q = (z, G, keepPanel = true) => {
           const target = keepPanel && u.panel ? withAccessoryPanel(G) : withoutAccessoryPanel(G);
-          if (new URL(target, "http://localhost").pathname === "/kanban"
-            && !z.metaKey && !z.ctrlKey && !z.shiftKey && !z.altKey && z.button === 0) {
-            z.preventDefault();
-            const source = window.location.href;
-            E("");
-            prepareProfileKanban(i.fetchJSON, u.profile, () => window.location.href === source)
-              .then(board => {
-                if (!board) return;
-                // An already-mounted native board keeps its own React selection.
-                if (u.path === "/kanban" && !u.panel) window.location.assign(Cn(target, u.profile));
-                else Kp(target, u.profile);
-                f(false);
-              }).catch(error => E(error instanceof Error ? error.message : String(error)));
-            return;
-          }
           z.metaKey ||
             z.ctrlKey ||
             z.shiftKey ||
@@ -2927,7 +2909,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             onClickCapture: (event) => { const action = event.target.closest("a, button"); if (!mobile && action && !action.closest(".workbench-theme-action, .workbench-profile-action")) setActionsOpen(false); } },
             l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
             l("div", { className: "dashboard-nav-pair" },
-              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban", undefined, true),
+              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban"),
               k("/cron", runtimeText("定时", "Scheduled jobs"), "cron", u.path === "/cron", undefined, true),
               k("/chat?workbench=terminal", runtimeText("终端", "Terminal"), "terminal", u.terminal, "hti-dashboard-terminal-trigger", true),
             ),
@@ -3105,16 +3087,21 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 : null,
             )
           : null,
-        M
+        isTaskBoard
+          ? l("main", {
+              ref: D, className: "dashboard-owned-page", tabIndex: -1,
+              "aria-label": runtimeText("看板", "Kanban"),
+            }, l(TaskControlTower, { key: "kanban", profile: F }))
+          : M
           ? l(
               "main",
               {
                 ref: D,
                 className: `dashboard-owned-page${isProfiles ? " dashboard-profile-page" : isConfigSubpage ? " dashboard-shortcuts-page" : ""}`,
                 tabIndex: -1,
-                "aria-label": isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
+                "aria-label": isQuotaSettings ? runtimeText("订阅额度", "Subscription allowances") : isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isQuotaSettings ? l(QuotaSettings) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )
@@ -3710,7 +3697,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     try {
       const e = JSON.parse(i.slice(6));
       return Array.isArray(e)
-        ? e
+        ? e.filter(t => t?.hidden !== true)
             .map((t) =>
               typeof t == "string"
                 ? t
@@ -3863,7 +3850,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       r = [],
       n = new Map();
     let s, o;
-    for (const { row: a, inputIndex: l } of t) {
+    for (const { row: sourceRow, inputIndex: l } of t) {
+      const a = visibleHermesRecord(sourceRow);
+      if (!a) continue;
       const c = hm(ma(a.content), `${String(a.role || "message")} content`);
       if (a.role === "user") {
         if (o && Hx(o, a, e)) {
@@ -4006,7 +3995,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const r = await i(
       `/api/sessions/search?q=${ci(t)}&limit=100&profile=${ci(e)}&exclude_sources=cron`,
     );
-    return Array.isArray(r.results) ? r.results : [];
+    return Array.isArray(r.results) ? r.results.filter(row => row.hidden !== true) : [];
   }
   function searchStamp(i) {
     const e = Number(i);
@@ -8422,7 +8411,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         (n = insertRequest(n, {
           id: h,
           role: "user",
-          content: Wn(u.input) || runtimeText("待确认的消息", "Message awaiting confirmation"),
+          content: Wn(u.input),
+          attachments: u.attachments,
           status: c.status === "failed" ? "failed" : "pending",
           submissionError: runtimeErrorText(c.result),
           turnStartedAt: El(c.updated_at),
@@ -9094,7 +9084,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const s = i[r + 1] || i[r - 1];
     return { panes: n, activePaneId: s.id };
   }
-  const S5 = runtimeText("请查看附件。", "Please review the attachment.");
   function On(i, e) {
     return `${i}:${e}`;
   }
@@ -9657,20 +9646,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               i,
               "article",
               { className: "codex-message is-user", "data-message-id": e.id },
-              W(i, "div", { className: "codex-message-body" }, e.content),
+              e.content ? W(i, "div", { className: "codex-message-body" }, e.content) : null,
               e.attachments?.length
                 ? W(
                     i,
                     "div",
                     { className: "codex-message-attachments" },
                     ...e.attachments.map((attachment) =>
-                      W(i, "img", {
-                        key: attachment.id,
-                        className: "codex-message-attachment",
-                        src: attachment.src,
-                        alt: attachment.name,
-                        loading: "lazy",
-                      }),
+                      W(i, MessageAttachment, { key: attachment.id, React: i, attachment }),
                     ),
                   )
                 : null,
@@ -11118,10 +11101,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const writeback = action === "kanban-writeback";
           const cardShortcut = writeback || questionAnswer;
           if (writeback && (!Y.current || !kanbanChatContext.current.matches(Y.current) || yr)) return;
-          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : Ji.current.trim(),
+          const L = questionAnswer ? answerText : writeback ? kanbanChatContext.current.writebackRequest(Y.current, M) : Ji.current,
             U = cardShortcut ? [] : [...Zi.current],
-            ee = L || (U.length ? S5 : "");
-          if (!ee || submittingRef.current || Ls || (yr && !qr) || yn) return;
+            ee = L;
+          if ((!ee.trim() && !U.length) || submittingRef.current || Ls || (yr && !qr) || yn) return;
           if (!(await shouldSubmitComposerMessage(L, cv))) return;
           const steeringTurnId = yr ? qr : "";
           if (!ai.length) {
@@ -11149,9 +11132,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             zt = [];
           ji.current.set(ze, { requestId: ne, content: L });
           const Ke = () => Hi.current && Ie === X.current && Y.current === $e;
-          const previews = U.flatMap((item) =>
-            item.preview ? [{ id: item.localId, name: item.file.name, src: item.preview }] : [],
-          );
+          const previews = U.map((item) => ({
+            id: item.localId, name: item.file.name, src: item.preview || undefined,
+            kind: item.folder ? "folder" : "file", fileCount: item.folder?.entries.length,
+          }));
           (!cardShortcut && ((Ji.current = ""), Ot("")),
             Nt(!0),
             Pt(""),
