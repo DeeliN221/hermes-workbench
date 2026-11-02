@@ -298,5 +298,5 @@ from live v1 task list/get, decisions and worker list; text and identities are
 sanitized. `node tests/browser/fleetd-console.mjs` exercises the local fixture;
 `FLEET_LIVE_TEST=1 node tests/browser/fleetd-console.mjs` reads the configured live
 service through a localhost authenticated proxy without mutations. Live screenshots
-stay outside the repository. Public PR images use the sanitized fixture and an
+stay outside the repository. Public PR images use opaque privacy masks over live captures and an
 explicit-demo reproduction of the former default state.

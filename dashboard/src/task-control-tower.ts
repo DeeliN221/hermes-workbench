@@ -199,6 +199,9 @@ export function createTaskControlTower(
     };
     useEffect(() => {
       if (!selected) return;
+      const nav = document.querySelector<HTMLElement>(".dashboard-global-nav");
+      const wasInert = nav?.inert;
+      if (nav) nav.inert = true;
       const key = (event: KeyboardEvent) => {
         if (event.key === "Escape") close();
         if (event.key === "Tab") {
@@ -220,7 +223,10 @@ export function createTaskControlTower(
       };
       document.addEventListener("keydown", key);
       dialog.current?.focus();
-      return () => document.removeEventListener("keydown", key);
+      return () => {
+        document.removeEventListener("keydown", key);
+        if (nav) nav.inert = !!wasInert;
+      };
     }, [selected]);
     const run = async (work: () => Promise<unknown>) => {
       if (writing.current) return;

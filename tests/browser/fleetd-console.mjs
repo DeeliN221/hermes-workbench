@@ -120,8 +120,31 @@ try {
   }
   if (live) await page.screenshot({path:path.join(shotDir,'redacted-mobile.png'),mask:privacyMasks(),maskColor:'#74776b'});
   await page.reload();
+  await page.addStyleTag({content:'#preview-banner {display:none}'});
   await page.getByText('Connected to Fleet',{exact:true}).waitFor();
   assert.equal(await page.getByText('Demo mode',{exact:true}).count(),0);
+  await page.locator('.tower-list').getByRole('heading',{name:/Archived/}).waitFor();
+  if (decisions.decisions.length) {
+    await page.locator('.tower-bottom-nav').getByRole('button',{name:'Needs you',exact:true}).click();
+    await page.locator('.tower-sidebar .tower-action').filter({hasText:decisions.decisions[0].question}).getByRole('button').click();
+    await page.locator('.tower-decision button').first().waitFor();
+    assert.ok(await page.locator('.tower-decision button').first().isDisabled());
+    const drawer=await page.locator('.tower-drawer').boundingBox();
+    assert.ok(drawer.x>=47 && drawer.x+drawer.width<=391,'Mobile detail stays inside the content area');
+    assert.ok(await page.locator('.dashboard-global-nav').evaluate(n=>n.inert));
+    await page.screenshot({path:path.join(shotDir,'mobile-decision.png')});
+    await page.getByRole('button',{name:'Close details'}).click();
+    await page.locator('.tower-bottom-nav').getByRole('button',{name:'Tasks',exact:true}).click();
+  }
+  const mobileBefore=await page.locator('.tower-list').innerText();
+  await context.setOffline(true);
+  await page.getByRole('button',{name:'Refresh',exact:true}).click();
+  await page.getByText('Connection error · Data stale',{exact:true}).waitFor();
+  assert.equal(await page.locator('.tower-list').innerText(),mobileBefore);
+  await page.screenshot({path:path.join(shotDir,'offline-mobile.png')});
+  await context.setOffline(false);
+  await page.getByRole('button',{name:'Retry',exact:true}).click();
+  await page.getByText('Connected to Fleet',{exact:true}).waitFor();
   // Visibility pause and immediate return refresh.
   const count=()=>requests.filter(u=>u.endsWith('/fleetd/tasks')).length;
   await page.evaluate(()=>Object.defineProperty(document,'hidden',{configurable:true,value:true}));
