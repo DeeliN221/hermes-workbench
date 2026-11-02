@@ -73,3 +73,26 @@ describe('typed Codex transcript boundary', () => {
     expect(normalizeMessage({ type: 'reasoning', summary: ['One', [{ text: 'Two' }]] }, 'x')?.content).toBe('One\n\nTwo');
   });
 });
+
+it('omits hidden messages and blocks from snapshots and notifications', () => {
+  const visible = { id: 'visible', type: 'userMessage', content: [
+    { type: 'text', text: 'Exact input\n' }, { type: 'text', text: '/private/path', hidden: true },
+  ] };
+  const hidden = { id: 'private', type: 'userMessage', hidden: true, content: 'private attachment hint' };
+  const messages = messagesFromTurns([{ id: 'turn', items: [visible, hidden] }], 'session');
+  expect(messages.map(message => message.content)).toEqual(['Exact input\n']);
+  expect(applyChatEvent(messages, { method: 'item/completed', params: { item: hidden } })).toEqual(messages);
+  expect(normalizeMessage({ role: 'user', hidden: true, content: 'secret' }, 'x')).toBeNull();
+});
+
+it('keeps durable image, file and folder cards with no filesystem paths', () => {
+  const attachments = [
+    { id: 'a', name: 'image.png', src: `/api/plugins/workbench/codex/attachments/${'a'.repeat(32)}/preview?profile=default&session_id=s` },
+    { id: 'b', name: 'notes.txt', kind: 'file' },
+    { id: 'c', name: 'project', kind: 'folder', fileCount: 2 },
+  ];
+  const message = normalizeMessage({ id: 'user', role: 'user', content: '', attachments }, 'x');
+  expect(message?.content).toBe('');
+  expect(message?.attachments).toEqual(attachments);
+  expect(normalizeMessage({ role: 'user', attachments: [{ id: 'bad', name: 'image', src: 'file:///private/image.png' }] }, 'x')?.attachments).toEqual([]);
+});

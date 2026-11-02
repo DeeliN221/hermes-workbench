@@ -20,8 +20,10 @@ import unicodedata
 import uuid
 from pathlib import Path
 from typing import Any, BinaryIO, Protocol
+from urllib.parse import urlencode
 
 from fastapi import APIRouter, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse
 
 DEFAULT_MAX_ATTACHMENT_BYTES: int | None = None
 """Default byte limit for one attachment; ``None`` keeps uploads uncapped."""
@@ -595,6 +597,39 @@ class AttachmentStore:
             entries,
         )
 
+    def previews(self, root: Path, user: str, profile: str, session_id: str, attachment_ids: list[str]) -> list[dict[str, Any]]:
+        """Return durable, path-free cards for already validated attachment IDs."""
+        scope = _scope_directory(root, user, profile, session_id, create=False)
+        if scope is None:
+            return []
+        with self._lock_for(scope):
+            records = _read_manifest(scope)
+            previews = []
+            for identifier in attachment_ids:
+                record = records.get(identifier)
+                if not record:
+                    continue
+                card = {key: record[key] for key in ("id", "name", "size", "mimeType", "kind", "fileCount") if key in record}
+                target = _safe_record_path(scope, identifier, record) if record.get("kind") != "folder" else None
+                if target and detect_raster_mime(target):
+                    card["src"] = "/api/plugins/workbench/codex/attachments/" + identifier + "/preview?" + urlencode({"profile": profile, "session_id": session_id})
+                previews.append(card)
+            return previews
+
+    def image_preview(self, root: Path, user: str, profile: str, session_id: str, identifier: str) -> tuple[Path, str]:
+        """Resolve a raster image with the same scope/link checks as agent input."""
+        if not _ATTACHMENT_ID.fullmatch(identifier):
+            raise HTTPException(status_code=404, detail="Attachment not found")
+        scope = _scope_directory(root, user, profile, session_id, create=False)
+        if scope is not None:
+            with self._lock_for(scope):
+                record = _read_manifest(scope).get(identifier)
+                target = _safe_record_path(scope, identifier, record) if record else None
+                mime = detect_raster_mime(target) if target else None
+                if target and mime:
+                    return target, mime
+        raise HTTPException(status_code=404, detail="Image attachment is unavailable")
+
     def resolve_inputs(
         self,
         root: Path,
@@ -681,6 +716,14 @@ def create_router(bridge: Any) -> APIRouter:
     from codex_files import _session_workspace
 
     router = APIRouter()
+
+    @router.get("/attachments/{identifier}/preview")
+    async def preview(identifier: str, request: Request, profile: str = "default", session_id: str = ""):
+        user = _user(request)
+        profile, session_id = _safe(profile, "profile"), _safe(session_id, "session")
+        root = await _session_workspace(bridge, request, profile, session_id)
+        target, mime = bridge.attachments.image_preview(root, user, profile, session_id, identifier)
+        return FileResponse(target, media_type=mime, headers={"Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
 
     @router.post("/attachments")
     async def upload_attachment(
