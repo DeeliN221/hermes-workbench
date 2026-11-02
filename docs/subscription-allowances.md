@@ -181,3 +181,27 @@ Screenshots contain no credentials or account identifiers.
 [Desktop](../assets/live-allowances/desktop.png) ·
 [Mobile login](../assets/live-allowances/mobile-login.png) ·
 [Mobile Gemini](../assets/live-allowances/mobile-gemini.png)
+
+### OpenCode edge compatibility (2026-11-02)
+
+The server now identifies its usage requests as `Hermes-Workbench/1.0`.
+A controlled read-only comparison kept the credential, URL, `Accept:
+application/json`, Python urllib client, TLS stack and redirect policy identical:
+
+| User-Agent | HTTP result | Remaining rolling / weekly / monthly |
+| --- | --- | --- |
+| urllib default | 403, Cloudflare HTML | unavailable |
+| `curl/8.10.1` (using urllib) | 200 | 100 / 100 / 99 |
+| `Hermes-Workbench/1.0` | 200 | 100 / 100 / 99 |
+| `Python-urllib/3.11` | 403, Cloudflare HTML | unavailable |
+| `Hermes-Workbench/1.0` (repeat) | 200 | 100 / 100 / 99 |
+
+This isolates the User-Agent as a sufficient cause of the observed difference;
+it does not reveal the private Cloudflare rule or guarantee future edge behavior.
+There is no need to replace urllib or impersonate curl. A 403 now reports access
+denied, because it alone cannot establish that a subscription is missing.
+Requests remain server-side, use an eight-second timeout, and refuse redirects.
+Neither upstream bodies nor exception details are returned to the browser.
+Regression tests exercise the real urllib transport against a local HTTP server,
+including the application User-Agent, success, 403, timeout, redirect refusal and
+credential filtering. Browser regressions cover the denied state and recovery.

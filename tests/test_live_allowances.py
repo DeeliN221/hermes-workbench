@@ -92,14 +92,16 @@ def test_private_config_and_existing_auth(monkeypatch, tmp_path):
     assert live.opencode_headers() == {'Authorization': 'Bearer SECRET'}
 
 
-@pytest.mark.parametrize('failure,status', [(401, 'login_required'), (403, 'subscription_required'), (500, 'error'),
+@pytest.mark.parametrize('failure,status', [(401, 'login_required'), (403, 'access_denied'), (500, 'error'),
                                           ('timeout', 'timeout'), ('empty', 'empty'), ('invalid', 'error'), ('ok', 'available')])
-def test_opencode_transport(monkeypatch, failure, status):
+def test_opencode_transport(monkeypatch, failure, status, caplog, capsys):
     monkeypatch.setattr(live, 'opencode_headers', lambda: {'Authorization': 'Bearer SECRET'})
     class Opener:
         def open(self, req, timeout):
             assert req.full_url == live.OPENCODE_URL and timeout == 8
             assert req.get_header('Authorization') == 'Bearer SECRET'
+            assert req.get_header('User-agent') == 'Hermes-Workbench/1.0'
+            assert req.get_header('Accept') == 'application/json'
             if isinstance(failure, int):
                 raise urllib.error.HTTPError(req.full_url, failure, 'SECRET', {}, io.BytesIO(b'SECRET'))
             if failure == 'timeout':
@@ -109,6 +111,11 @@ def test_opencode_transport(monkeypatch, failure, status):
     value = asyncio.run(live.opencode())
     assert value['status'] == status
     assert 'SECRET' not in str(value)
+    assert 'SECRET' not in caplog.text + str(capsys.readouterr())
+    if failure == 'ok':
+        assert [w['remainingPercent'] for w in value['windows']] == [75, 40, 0]
+    if failure == 403:
+        assert 'subscription required' not in value['reason'].lower()
     assert live.NoRedirect().redirect_request(None, None, 302, '', {}, 'https://other.test') is None
 
 
@@ -146,3 +153,49 @@ def test_gemini_command_success(monkeypatch):
     assert value['status'] == 'available'
     assert value['updatedAt'] == value['checkedAt']
     assert len(value['windows']) == 2
+
+
+@pytest.mark.parametrize('mode,status', [('ok', 'available'), ('denied', 'access_denied'),
+                                         ('redirect', 'error'), ('timeout', 'timeout')])
+def test_opencode_real_http_boundary(monkeypatch, caplog, capsys, mode, status):
+    """Exercise urllib itself, including its default headers and redirect policy."""
+    import threading
+    import time
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+    seen = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_GET(self):
+            seen.append(self.path)
+            assert self.headers['User-Agent'] == 'Hermes-Workbench/1.0'
+            assert self.headers['Authorization'] == 'Bearer SECRET'
+            assert self.headers['Accept'] == 'application/json'
+            if mode == 'timeout':
+                time.sleep(.15)
+                return
+            self.send_response({'ok': 200, 'denied': 403, 'redirect': 302}[mode])
+            if mode == 'redirect':
+                self.send_header('Location', '/must-not-receive-credentials')
+            self.end_headers()
+            payload = json.loads((FIXTURES / 'opencode-usage.json').read_text())
+            payload['private'] = 'SECRET'
+            self.wfile.write(json.dumps(payload).encode())
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    monkeypatch.setattr(live, 'OPENCODE_URL', f'http://127.0.0.1:{server.server_port}/usage')
+    monkeypatch.setattr(live, 'OPENCODE_TIMEOUT', .05 if mode == 'timeout' else 2)
+    monkeypatch.setattr(live, 'opencode_headers', lambda: {'Authorization': 'Bearer SECRET'})
+    try:
+        value = live.opencode_sync()
+        assert value['status'] == status
+        assert seen == ['/usage']
+        assert 'SECRET' not in json.dumps(value) + caplog.text + str(capsys.readouterr())
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()

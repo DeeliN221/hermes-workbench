@@ -26,9 +26,9 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
         await new Promise(resolve => setTimeout(resolve, 250));
         const values = providers();
         if (failed) for (const p of values) {
-          p.status = p.id === 'gemini' ? 'timeout' : 'login_required';
+          p.status = p.id === 'gemini' ? 'timeout' : 'access_denied';
           p.reason = p.id === 'gemini' ? 'agy usage exceeded 20 seconds. Check login and Refresh.' :
-            '需要配置 OpenCode Go 登录。Save a mode-0600 JSON file on the server and set WORKBENCH_OPENCODE_AUTH_FILE, then Refresh.';
+            'OpenCode usage access denied (403). The provider or its edge may have blocked this request. Verify server connectivity and Go access, then Refresh.';
           p.windows = [];
         }
         await route.fulfill({ json: { providers: values } });
@@ -52,8 +52,8 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await expect(refresh).toBeDisabled();
       await expect(panel.getByRole('status')).toHaveText('Refreshing…');
       await expect(panel.getByText('Timed out', { exact: true })).toBeVisible();
-      await expect(panel.getByText('Login required', { exact: true })).toBeVisible();
-      await expect(panel.getByText('需要配置 OpenCode Go 登录。', { exact: false })).toBeVisible();
+      await expect(panel.getByText('Access denied', { exact: true })).toBeVisible();
+      await expect(panel.getByText('OpenCode usage access denied (403).', { exact: false })).toBeVisible();
       await expect(panel.getByText('85% remaining')).toHaveCount(0);
       await expect(panel.getByText('75% remaining')).toHaveCount(0);
       await page.screenshot({ path: info.outputPath('errors.png'), fullPage: true });
