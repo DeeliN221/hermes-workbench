@@ -1,0 +1,8 @@
+/* Message lightbox uses the reader shell, with room for a dismissible backdrop. */
+.codex-message-image-button { display: block; max-width: 100%; padding: 0; border: 0; border-radius: .5rem; background: transparent; cursor: zoom-in; }
+.codex-message-image-button:focus-visible { outline: 2px solid var(--color-primary, #2563eb); outline-offset: 3px; }
+.hti-message-image-preview { margin: 0; border: 0; width: 100%; height: 100%; max-width: none; max-height: none; box-sizing: border-box; display: grid; place-items: center; padding: 16px; }
+.hti-message-image-preview .hti-file-preview-panel { width: 100%; max-width: 96rem; height: calc(100dvh - 32px); min-width: 0; border-radius: .5rem; overflow: hidden; }
+.hti-message-image-preview .hti-file-preview-body { display: flex; align-items: center; justify-content: center; overflow: hidden; min-width: 0; }
+.hti-message-image-preview .hti-file-preview-body img { width: auto; height: auto; max-width: 100%; max-height: 100%; object-fit: contain; }
+.hti-message-image-preview .hti-file-preview-body img[hidden] { display: none; }

@@ -15,6 +15,7 @@ const PELE_SCRIPT_URL = '/dashboard-plugins/workbench/dist/pele.global.js';
 let peleLoad: Promise<PeleAPI> | undefined;
 let previewObjectUrls: string[] = [];
 let mermaidSequence = 0;
+let releaseImagePreview: (() => void) | undefined;
 const previewHistory: { overlay: HTMLElement; urls: string[]; scrollTop: number; focus: HTMLElement | null }[] = [];
 
 function removeCurrentPreview(): void {
@@ -47,6 +48,8 @@ export function filePreviewKind(filename: string, contentType = ''): PreviewKind
 
 export function closeFilePreview(): void {
   removeCurrentPreview();
+  releaseImagePreview?.();
+  releaseImagePreview = undefined;
   for (const previous of previewHistory.splice(0)) {
     for (const url of previous.urls) URL.revokeObjectURL(url);
   }
@@ -283,7 +286,7 @@ function renderEditor(
   header?.setAttribute('data-hti-file-editing', 'true');
 }
 
-function previewShell(filename: string, navigate = false): { overlay: HTMLElement; body: HTMLElement } {
+function previewShell(filename: string, navigate = false, modal = false): { overlay: HTMLElement; body: HTMLElement } {
   const current = document.getElementById('hti-file-preview');
   if (navigate && current) {
     previewHistory.push({
@@ -295,7 +298,7 @@ function previewShell(filename: string, navigate = false): { overlay: HTMLElemen
     current.remove();
     previewObjectUrls = [];
   } else closeFilePreview();
-  const overlay = document.createElement('div');
+  const overlay = document.createElement(modal ? 'dialog' : 'div');
   overlay.id = 'hti-file-preview';
   overlay.className = 'hti-file-preview';
   overlay.addEventListener('click', event => { if (event.target === overlay) closeFilePreview(); });
@@ -413,4 +416,54 @@ export async function openFilePreview(filename: string, blob: Blob, contentType 
     );
     body.append(note, pre);
   }
+}
+
+/** Reuse the file reader shell without re-fetching an authenticated message image. */
+export function openMessageImagePreview(src: string, trigger: HTMLElement): void {
+  const label = uiText('图片预览', 'Image preview');
+  const { overlay, body } = previewShell(label, false, true);
+  overlay.classList.add('hti-message-image-preview');
+  const panel = body.parentElement!;
+  overlay.setAttribute('aria-modal', 'true');
+  overlay.setAttribute('aria-label', label);
+  const close = panel.querySelector<HTMLButtonElement>('button')!;
+  const siblings = Array.from(document.body.children).filter((node): node is HTMLElement => node instanceof HTMLElement && node !== overlay);
+  const inert = siblings.map(node => node.inert);
+  siblings.forEach(node => { node.inert = true; });
+  const overflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
+  const keydown = (event: KeyboardEvent) => {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      closeFilePreview();
+    } else if (event.key === 'Tab') {
+      event.preventDefault();
+      close.focus();
+    }
+  };
+  window.addEventListener('keydown', keydown, true);
+  releaseImagePreview = () => {
+    window.removeEventListener('keydown', keydown, true);
+    siblings.forEach((node, index) => { node.inert = inert[index]; });
+    document.body.style.overflow = overflow;
+    if (trigger.isConnected) trigger.focus({ preventScroll: true });
+  };
+  const status = document.createElement('p');
+  status.setAttribute('role', 'status');
+  status.textContent = uiText('图片加载中…', 'Loading image…');
+  const image = document.createElement('img');
+  image.alt = label;
+  image.hidden = true;
+  image.onload = () => { status.remove(); image.hidden = false; };
+  image.onerror = () => {
+    image.remove();
+    body.append(status);
+    status.setAttribute('role', 'alert');
+    status.textContent = uiText('图片加载失败', 'Unable to load image');
+  };
+  body.append(status, image);
+  image.src = src;
+  (overlay as HTMLDialogElement).showModal();
+  close.focus();
 }

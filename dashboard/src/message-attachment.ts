@@ -1,3 +1,4 @@
+import { openMessageImagePreview } from './file-preview';
 import type { MessageAttachmentPreview } from './codex-messages';
 import { uiText } from './ui-locale';
 
@@ -31,10 +32,18 @@ export function MessageAttachment({ React, attachment }: { React: ReactRuntime; 
     return () => { controller.abort(); if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [source, remote]);
   const src = failed === source ? '' : remote ? loaded.source === source ? loaded.url : '' : source;
-  if (src) return React.createElement('img', {
+  if (src) return React.createElement('button', {
+    type: 'button', className: 'codex-message-image-button',
+    'aria-label': uiText('查看大图', 'View full image'),
+    'aria-haspopup': 'dialog',
+    onClick: (event: MouseEvent) => {
+      event.stopPropagation();
+      openMessageImagePreview(src, event.currentTarget as HTMLElement);
+    },
+  }, React.createElement('img', {
     className: 'codex-message-attachment', src, alt: attachment.name, loading: 'lazy',
     onError: () => setFailed(source),
-  });
+  }));
   return React.createElement('div', { className: 'codex-message-file' },
     React.createElement('span', { 'aria-hidden': true }, attachment.kind === 'folder' ? '▰' : '▤'),
     React.createElement('span', null, attachment.name),
