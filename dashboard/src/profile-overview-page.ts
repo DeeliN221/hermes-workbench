@@ -1,5 +1,5 @@
 import type { FetchJSON } from './workbench-api';
-import { loadProfileOverview, sessionTime, freshnessRank, timeHint, type ProfileColumn } from './profile-overview';
+import { loadProfileOverview, freshnessRank, timeHint, type ProfileColumn } from './profile-overview';
 import { openHomeConversation } from './home-navigation';
 import { useProfileDisplay } from './profile-display';
 import { profileTabName } from './kanban-agent-picker';
@@ -34,7 +34,7 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       setSaving(true);
       try {
         await sdk.fetchJSON('/api/plugins/workbench/profile-order', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ order: next }) });
-        setOrder(next); setNotice(tr('列顺序已保存', 'Column order saved'));
+        setOrder(next); setNotice(tr('分组顺序已保存', 'Group order saved'));
       } catch { setNotice(tr('保存失败，请重试', 'Unable to save order. Please retry.')); }
       finally { setSaving(false); }
     };
@@ -60,27 +60,27 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       loading && !columns.length ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载 Profile 和项目会话…', 'Loading profiles and project sessions…')) : null,
       !loading && !error && !columns.length ? h('p', { className: 'overview-notice' }, tr('暂无 Profile。', 'No profiles available.')) : null,
       h('div', { className: 'profile-order-toolbar' }, h('button', { type: 'button', disabled: saving || !orderReady, onClick: () => void saveOrder([]) }, tr('恢复默认顺序', 'Restore default order')), h('a', { href: '/profiles', className: 'profile-home-navigation' }, tr('管理 Profile', 'Manage profiles')), h('span', { role: 'status', 'aria-live': 'polite' }, notice)),
-      h('div', { className: 'profile-overview-columns', tabIndex: 0, 'aria-label': tr('横向浏览 Profile', 'Scroll profiles horizontally') },
+      h('div', { className: 'profile-overview-columns', 'aria-label': tr('按 Profile 分组的会话', 'Sessions grouped by profile') },
         sorted.map((column: ProfileColumn, position: number) => {
           const projectNames = new Map(column.projects.map(project => [project.id, project.name]));
           const emptyProjects = column.projects.filter(project => !column.rows.some(row => row.groupId === project.id));
           return h('section', { key: column.name, className: 'profile-overview-column', 'data-profile': column.name, 'aria-labelledby': `overview-${column.name}` },
             h('header', { className: 'profile-column-heading' }, h('span', { className: 'profile-column-icon', 'aria-hidden': true }, column.icon || '◈'),
               h('h2', { id: `overview-${column.name}` }, profileTabName(column.name)), h('span', { className: 'profile-column-count' }, `${column.rows.length} ${tr('会话', 'sessions')}`)),
-            h('div', { className: 'profile-order-controls' }, ...([-1, 1] as const).map(direction => h('button', { type: 'button', disabled: saving || !orderReady || position + direction < 0 || position + direction >= sorted.length, 'aria-label': `${profileTabName(column.name)} ${direction < 0 ? tr('左移', 'Move left') : tr('右移', 'Move right')}`, onClick: () => { const next = sorted.map((item: ProfileColumn) => item.name); [next[position], next[position + direction]] = [next[position + direction], next[position]]; void saveOrder(next); } }, direction < 0 ? '←' : '→'))),
-            h('div', { className: 'profile-column-scroll', tabIndex: 0, 'aria-label': profileTabName(column.name) },
+            h('div', { className: 'profile-order-controls' }, ...([-1, 1] as const).map(direction => h('button', { type: 'button', disabled: saving || !orderReady || position + direction < 0 || position + direction >= sorted.length, 'aria-label': `${profileTabName(column.name)} ${direction < 0 ? tr('上移', 'Move up') : tr('下移', 'Move down')}`, onClick: () => { const next = sorted.map((item: ProfileColumn) => item.name); [next[position], next[position + direction]] = [next[position + direction], next[position]]; void saveOrder(next); } }, direction < 0 ? '↑' : '↓'))),
+            h('div', { className: 'profile-column-scroll', 'aria-label': profileTabName(column.name) },
               column.failed.length ? h('p', { role: 'alert', className: 'overview-notice' }, tr('部分数据加载失败，已保留可用会话。', 'Some data failed to load. Available sessions are shown.'), retry()) : null,
               column.loading ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载历史会话…', 'Loading conversation history…')) : null,
               column.rows.map((row, index) => {
-                const time = sessionTime(row), rank = freshnessRank(row, index, now);
+                const time = row.updated, rank = freshnessRank(row, index, now);
                 const href = `/chat?${row.source === 'Codex' ? 'session' : 'hermesSession'}=${encodeURIComponent(row.id)}&profile=${encodeURIComponent(column.name)}`;
                 return h('a', { key: `${row.source}:${row.id}`, href, className: 'profile-session', 'data-freshness': rank,
                   onClick: (event: MouseEvent) => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openHomeConversation(href, column.name, navigate); } },
                   h('span', { className: 'profile-session-project' }, projectNames.get(row.groupId || '') || row.projectName || (row.source === 'Codex' ? row.workspace.split('/').filter(Boolean).at(-1) : '') || tr('未分组项目', 'Ungrouped project')),
                   h('strong', null, row.title),
-                  h('span', { className: 'profile-session-meta' }, row.source, row.status ? ` · ${row.status}` : '', row.unread ? ` · ${tr('未读', 'Unread')}` : ''),
-                  h('time', { dateTime: time ? new Date(time).toISOString() : undefined, title: time ? new Date(time).toLocaleString() : undefined },
-                    `${row.lastOpened ? tr('打开', 'Opened') : tr('活动', 'Active')} · ${timeHint(time, now)}${time ? ' · ' + new Date(time).toLocaleString() : ''}`));
+                  h('span', { className: 'profile-session-meta' }, row.source, ` · ${row.status || tr('状态未知', 'Unknown status')}`, row.unread ? ` · ${tr('未读', 'Unread')}` : ''),
+                  h('time', { 'aria-label': `${tr('更新时间', 'Updated')} · ${row.updated ? new Date(row.updated).toLocaleString() : tr('未知', 'Unknown')}`, dateTime: time ? new Date(time).toISOString() : undefined, title: time ? new Date(time).toLocaleString() : undefined },
+                    `${tr('更新', 'Updated')} · ${timeHint(row.updated, now)}`));
               }),
               emptyProjects.map(project => h('div', { key: project.id, className: 'profile-empty-project' }, h('strong', null, project.name), h('p', null, tr('暂无会话', 'No sessions yet')))),
               !column.loading && !column.rows.length && !emptyProjects.length && !column.failed.length ? h('p', { className: 'overview-notice' }, tr('暂无项目或会话', 'No projects or sessions yet')) : null));

@@ -7,8 +7,8 @@
 .profile-overview-heading { padding: 20px 24px 14px; }
 .profile-overview-heading h1 { font-size: 20px; margin: 0 0 6px; }
 .profile-overview-heading p { color: var(--mc-muted); font-size: 13px; margin: 0; }
-.profile-overview-columns { display: flex; flex: 1; min-height: 0; gap: 16px; overflow-x: auto; padding: 0 24px 20px; overscroll-behavior-x: contain; }
-.profile-overview-column { display: flex; flex-direction: column; flex: 0 0 320px; min-width: 0; border: 1px solid var(--mc-line-soft); border-radius: 10px; background: var(--mc-surface); overflow: hidden; }
+.profile-overview-columns { display: flex; flex: 1; min-height: 0; gap: 16px; overflow: visible; padding: 0 24px 20px; }
+.profile-overview-column { display: flex; flex-direction: column; min-width: 0; border: 1px solid var(--mc-line-soft); border-radius: 10px; background: var(--mc-surface); overflow: hidden; }
 .profile-column-heading { display: flex; align-items: center; gap: 8px; padding: 16px; border-bottom: 1px solid var(--mc-line-soft); flex: 0 0 auto; }
 .profile-column-heading h2 { font-size: 15px; margin: 0; flex: 1; overflow-wrap: anywhere; }
 .profile-column-icon { color: var(--mc-accent); }
@@ -28,8 +28,8 @@
 @media (max-width: 800px) {
   .overview-tabs { padding: 4px 14px 0; gap: 22px; }
   .profile-overview-heading { padding: 16px 14px 12px; }
-  .profile-overview-columns { scroll-snap-type: x mandatory; scroll-padding-inline: 14px; gap: 12px; padding: 0 14px 12px; }
-  .profile-overview-column { flex-basis: 100%; scroll-snap-align: start; }
+  .profile-overview-columns { gap: 12px; padding: 0 14px 12px; }
+  .profile-overview-column { }
 }
 
 .profile-order-toolbar, .profile-order-controls { display: flex; gap: 8px; align-items: center; padding: 6px 24px; }
@@ -45,4 +45,39 @@
   :root[data-workbench-view="/"] #app-sidebar { display: none !important; }
   :root[data-workbench-view="/"] .dashboard-owned-page { left: 0 !important; }
   :root[data-workbench-view="/"] #app-sidebar + div { margin-left: 0 !important; }
+}
+
+/* One page scroll, with compact profile groups at every viewport width. */
+.profile-overview { overflow-y: auto; }
+.profile-overview-heading { padding: 16px 24px 8px; }
+.profile-overview-columns { display: flex; flex-direction: column; flex: 0 0 auto; overflow: visible; gap: 16px; }
+.profile-overview-column { display: grid; grid-template-columns: minmax(0, 1fr) auto; flex: none; overflow: visible; }
+.profile-column-heading { padding: 10px 14px; border-bottom: 0; min-width: 0; }
+.profile-order-controls { padding: 6px 10px; }
+.profile-column-scroll { grid-column: 1 / -1; overflow: visible; padding: 0; border-top: 1px solid var(--mc-line-soft); }
+.profile-session { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, .35fr) minmax(140px, .35fr) 150px; align-items: center; gap: 12px; padding: 10px 14px; margin: 0; border: 0; border-bottom: 1px solid var(--mc-line-soft); border-radius: 0; }
+.profile-session:last-child { border-bottom: 0; }
+.profile-session strong { grid-column: 1; grid-row: 1; min-width: 0; }
+.profile-session-project { grid-column: 2; grid-row: 1; }
+.profile-session-meta { grid-column: 3; }
+.profile-session time { grid-column: 4; }
+.profile-session:hover { background-color: var(--mc-raised); }
+.profile-empty-project { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 14px; }
+.profile-empty-project p { margin: 0; }
+.profile-order-toolbar { flex-wrap: wrap; padding-bottom: 12px; }
+.profile-overview-column .overview-notice { margin: 0; padding: 10px 14px; }
+@media (max-width: 800px) {
+  .profile-overview-columns { scroll-snap-type: none; padding: 0 12px 16px; gap: 14px; }
+  .profile-overview-column { flex-basis: auto; }
+  .profile-overview-heading { padding: 12px; }
+  .profile-order-toolbar { padding: 6px 12px 12px; }
+  .profile-column-heading { flex-wrap: wrap; gap: 6px; padding: 10px; }
+  .profile-column-count { white-space: normal; }
+  .profile-order-controls { gap: 4px; padding: 6px; }
+  .profile-order-controls button { min-height: 36px; padding: 4px 8px; }
+  .profile-session { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 8px; padding: 10px; }
+  .profile-session strong { grid-column: 1 / -1; grid-row: 1; }
+  .profile-session-project { grid-column: 1 / -1; grid-row: 2; }
+  .profile-session-meta { grid-column: 1; grid-row: 3; }
+  .profile-session time { grid-column: 2; grid-row: 3; text-align: right; max-width: 120px; }
 }
