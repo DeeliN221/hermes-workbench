@@ -43,10 +43,10 @@ try {
   page.on('response',async response=>{
     if (response.url().includes('/fleet')) responses.push(await response.text().catch(()=>''));
   });
-  await page.goto(host.origin+'/sessions?profile=default');
+  await page.goto(host.origin+'/kanban?profile=default');
   await page.getByText('Connected to Fleet',{exact:true}).waitFor();
   assert.equal(await page.title(),'default');
-  assert.equal(new URL(page.url()).pathname,'/sessions');
+  assert.equal(new URL(page.url()).pathname,'/kanban');
   assert.equal(await page.locator('vite-error-overlay').count(),0);
   assert.equal(await page.getByText('Demo mode',{exact:true}).count(),0);
   assert.equal(await page.getByText('Review the sample report',{exact:true}).count(),0);
@@ -163,7 +163,7 @@ try {
   if (!live) {
     const denied = await context.newPage();
     await denied.route('**/fleetd/tasks',route=>route.fulfill({status:401,json:{detail:'Fleet authentication failed (401)'}}));
-    await denied.goto(host.origin+'/sessions?profile=default');
+    await denied.goto(host.origin+'/kanban?profile=default');
     await denied.getByText('Connection error · Data stale',{exact:true}).waitFor();
     assert.equal(await denied.locator('.tower-card').count(),0);
     assert.equal(await denied.getByText('Demo mode',{exact:true}).count(),0);
@@ -173,7 +173,7 @@ try {
   }
   // Explicit demo is isolated and never selected as a fallback.
   await page.setViewportSize({width:1536,height:960});
-  await page.goto(host.origin+'/sessions?profile=default&demo=1');
+  await page.goto(host.origin+'/kanban?profile=default&demo=1');
   await page.getByText('Demo mode',{exact:true}).waitFor();
   await page.locator('.tower-board [data-task-id="demo-review"]').waitFor();
   await page.addStyleTag({content:'#preview-banner {display:none}'});

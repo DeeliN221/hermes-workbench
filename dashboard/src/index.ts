@@ -44,6 +44,7 @@ installFilesDirectoryNavigation();
 import './profile-controls.css';
 
 import './recent-home.css';
+import './profile-overview.css';
 
 import './compact-actions.css';
 

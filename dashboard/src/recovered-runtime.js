@@ -31,7 +31,8 @@ import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-alias
 import { createQuotaSettings } from './quota-dashboard';
 import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
 installModelAliasSync();
-import { createRecentHome } from './recent-home';
+import { createProfileOverview, createOverviewTabs } from './profile-overview-page';
+import { overviewRoute } from './profile-overview';
 import { createTaskControlTower } from './task-control-tower';
 import { installHomeChatNavigation, openHomeConversation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
@@ -2406,7 +2407,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     ]),
     Yp = () => settingsNavSections().flatMap((section) => section.items);
   function Ws(i) {
-    const e = new URL(i, "http://localhost");
+    const e = new URL(overviewRoute(i), "http://localhost");
     return {
       path: e.pathname,
       search: e.search,
@@ -2420,7 +2421,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     };
   }
   function Gp(i) {
-    const e = new URL(i, "http://localhost");
+    const e = new URL(overviewRoute(i), "http://localhost");
     return (
       !e.searchParams.get("profile") && e.searchParams.set("profile", currentProfile()),
       `${e.pathname}${e.search}${e.hash}`
@@ -2433,7 +2434,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     e !== i && window.history.replaceState(null, "", e);
   }
   function Cn(i, e) {
-    const t = new URL(i, "http://localhost"),
+    const t = new URL(overviewRoute(i), "http://localhost"),
       r = t.searchParams.get("profile") || e.trim() || currentProfile();
     return (
       r ? t.searchParams.set("profile", r) : t.searchParams.delete("profile"),
@@ -2578,8 +2579,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ModelVisibilitySettings = createModelVisibilitySettings(i),
       VersionSettings = createVersionSettings(i),
       QuotaSettings = createQuotaSettings(i),
-      RecentHome = createRecentHome(i, Kp),
-      TaskControlTower = createTaskControlTower(i, Kp, RecentHome),
+      ProfileOverview = createProfileOverview(i, Kp),
+      OverviewTabs = createOverviewTabs(i, Kp),
+      TaskControlTower = createTaskControlTower(i, Kp),
       l = t.createElement;
     return function () {
       const [u, h] = s(() => Ws(window.location.href)),
@@ -2602,7 +2604,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         R = n(null);
       A.current = p;
       const isHome = u.path === "/" || u.path === "/home" || u.path === "/sessions",
-        isTaskBoard = u.path === "/kanban" && new URLSearchParams(u.search).get("view") !== "legacy",
+        isTaskBoard = u.path === "/kanban",
         isProfiles = u.path === "/profiles" && !u.profileManager,
         isShortcuts = u.path === "/config" && u.settingsTab === "shortcuts",
         isChatDisplay = u.path === "/config" && u.settingsTab === "display",
@@ -2671,6 +2673,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         r(() => {
           let z = window.location.href;
           const G = () => {
+              const canonical = Gp(window.location.href);
+              if (canonical !== `${window.location.pathname}${window.location.search}${window.location.hash}`) window.history.replaceState(null, "", canonical);
               const Ce = window.location.href;
               z !== Ce && ((z = Ce), h(Ws(z)), f(!1));
               const Qe = xx(document);
@@ -2994,10 +2998,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                       closeAccessoryToChat();
                     }
                   },
-                  hidden: false,
+                  hidden: isTaskBoard,
                 },
-                isHome ? l("div", { className: "workbench-home-nav" },
-                  l("p", null, runtimeText("首页展示全部档案；新会话发送给默认 Agent。", "Home shows all profiles. New sessions go to the default agent.")),
+                isTaskBoard ? null : isHome ? l("div", { className: "workbench-home-nav" },
+                  l("p", null, runtimeText("按 Profile 浏览全部项目会话。", "Browse project sessions across all profiles.")),
                   l("a", { href: "/profiles?profile=default", onClick: (event) => { event.preventDefault(); Kp("/profiles", "default"); } }, runtimeText("管理档案与显示名", "Manage profiles and display names"))) : _?.element ?? l("div", { className: "project-section-heading workbench-project-placeholder" }, l("span", null, runtimeText("项目", "Projects"))),
               ),
             ),
@@ -3091,7 +3095,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           ? l("main", {
               ref: D, className: "dashboard-owned-page", tabIndex: -1,
               "aria-label": runtimeText("看板", "Kanban"),
-            }, l(TaskControlTower, { key: "kanban", profile: F }))
+            }, l(OverviewTabs, { board: true, profile: F }), l(TaskControlTower, { key: "kanban", profile: F }))
           : M
           ? l(
               "main",
@@ -3101,7 +3105,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 tabIndex: -1,
                 "aria-label": isQuotaSettings ? runtimeText("订阅额度", "Subscription allowances") : isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isQuotaSettings ? l(QuotaSettings) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(TaskControlTower, { key: "home", profile: F }) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isQuotaSettings ? l(QuotaSettings) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(t.Fragment, null, l(OverviewTabs, { board: false, profile: F }), l(ProfileOverview)) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )

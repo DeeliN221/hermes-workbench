@@ -552,17 +552,11 @@
     border: 0;
     padding: 0;
   }
-  .mobile-attention .tower-workspace,
-  .mobile-sessions .tower-workspace {
+  .mobile-attention .tower-workspace {
     display: none;
   }
-  .mobile-attention .tower-sidebar,
-  .mobile-sessions .tower-sidebar {
+  .mobile-attention .tower-sidebar {
     display: block;
-  }
-  .mobile-attention .tower-sidebar > section:last-child,
-  .mobile-sessions .tower-sidebar > :not(section:last-child) {
-    display: none;
   }
   .tower-bottom-nav {
     position: fixed;

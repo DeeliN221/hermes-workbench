@@ -1516,6 +1516,16 @@ async def profile_names() -> dict:
     return await asyncio.to_thread(read)
 
 
+@router.get('/profile-overview')
+async def get_profile_overview(request: Request) -> dict:
+    """Reuse the sidebar's roster and trusted-user Codex store; never repair on GET."""
+    from codex_bridge import _user
+    from profile_overview import profile_overview
+    user = _user(request)
+    roster = await profile_names()
+    return await profile_overview(getattr(request.app.state, 'codex_bridge', None), user, roster['profiles'])
+
+
 @router.post('/recover-migrated-sessions')
 async def recover_migrated_sessions() -> dict:
     """Restore Hermes projections after a completed cross-profile migration."""

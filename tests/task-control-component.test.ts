@@ -32,7 +32,6 @@ it("renders quiet empty state, four columns and a mobile navigation without atte
   const Component = createTaskControlTower(
     { React, hooks: React, fetchJSON },
     vi.fn(),
-    () => null,
   );
   const host = document.createElement("div");
   document.body.append(host);
@@ -45,7 +44,7 @@ it("renders quiet empty state, four columns and a mobile navigation without atte
   expect(host.textContent).toContain("Nothing needs you now");
   expect(host.querySelectorAll("[data-column]")).toHaveLength(4);
   expect(host.querySelectorAll(".tower-action")).toHaveLength(0);
-  expect(host.querySelectorAll(".tower-bottom-nav button")).toHaveLength(3);
+  expect(host.querySelectorAll(".tower-bottom-nav button")).toHaveLength(2);
   expect(host.querySelector(".tower-list")?.textContent).toContain("Needs you");
 });
 
@@ -59,7 +58,7 @@ it("retains the last complete snapshot on a failed refresh and recovers on retry
     if (url.endsWith("/workers")) return { workers: [] } as T;
     return { profiles: [], items: [], sessions: [], groups: [] } as T;
   };
-  const Component = createTaskControlTower({ React, hooks: React, fetchJSON }, vi.fn(), () => null);
+  const Component = createTaskControlTower({ React, hooks: React, fetchJSON }, vi.fn());
   const host = document.createElement("div"); document.body.append(host);
   const root = createRoot(host); roots.push(root);
   await act(async () => { root.render(React.createElement(Component, { profile: "default" })); await new Promise(r => setTimeout(r, 20)); });

@@ -11,7 +11,7 @@ import type { FetchJSON } from './workbench-api';
 import { sessionDisplayTitle } from './session-organization';
 import { decodeHermesStructuredContent, type HermesRecord } from './hermes-transcript';
 
-export type RecentSession = { groupId?: string; id: string; title: string; source: 'Codex' | 'Hermes'; updated: number; status: string; workspace: string; profile: string; completedSeq: number; readSeq?: number; messageCount: number; historyId?: string };
+export type RecentSession = { projectName?: string; lastOpened?: number; unread?: boolean; groupId?: string; id: string; title: string; source: 'Codex' | 'Hermes'; updated: number; status: string; workspace: string; profile: string; completedSeq: number; readSeq?: number; messageCount: number; historyId?: string };
 /** Keep the home card list focused on current work; older chats stay in the session browser. */
 export const RECENT_WINDOW_DAYS = 30;
 const RECENT_WINDOW_MS = RECENT_WINDOW_DAYS * 24 * 60 * 60 * 1000;
@@ -38,7 +38,7 @@ export function isInternalSession(row: HermesRecord): boolean {
 }
 
 export function activityTime(row: HermesRecord): number {
-  for (const value of [row.updatedAt, row.updated_at, row.last_active, row.last_message_at, row.createdAt, row.created_at]) {
+  for (const value of [row.last_activity_at, row.updatedAt, row.updated_at, row.last_active, row.last_message_at, row.createdAt, row.created_at]) {
     if (value === null || value === undefined || value === '') continue;
     const numeric = Number(value);
     const time = Number.isFinite(numeric) ? numeric * (numeric < 1e12 ? 1000 : 1) : Date.parse(String(value));
@@ -46,7 +46,7 @@ export function activityTime(row: HermesRecord): number {
   }
   return 0;
 }
-export function recentSessions(codex: HermesRecord[], hermes: HermesRecord[], profile = 'default'): RecentSession[] {
+export function recentSessions(codex: HermesRecord[], hermes: HermesRecord[], profile = 'default', limit = 24): RecentSession[] {
   const seen = new Set<string>();
   const mirrors = new Set(hermes.filter(row => row.source === 'codex').map(row => `${row.profile || profile}:${row.id ?? row.session_id}`));
   return (['Codex', 'Hermes'] as const).flatMap(source => (source === 'Codex' ? codex : hermes).flatMap(row => {
@@ -57,9 +57,9 @@ export function recentSessions(codex: HermesRecord[], hermes: HermesRecord[], pr
     // The chat reader rejects Codex projections; only mapped Codex sessions are openable.
     if (source === 'Hermes' && row.source === 'codex') return [];
     seen.add(key);
-    return [{ id, source, groupId: String(row.groupId || row.group_id || ''), historyId: source === 'Codex' && mirrors.has(`${owner}:${id}`) ? id : undefined, profile: owner, completedSeq: Number(row.lastCompletedSeq || 0), readSeq: Number(row.readSeq || 0), messageCount: Number(row.message_count || 0), title: sessionDisplayTitle(row), updated: activityTime(row),
-      status: String(row.status || ''), workspace: String(row.workspacePath ?? row.workspace_path ?? row.model ?? '') }];
-  })).sort((a, b) => b.updated - a.updated || a.id.localeCompare(b.id)).slice(0, 24);
+    return [{ id, source, projectName: String(row.project_name || ''), lastOpened: activityTime({ last_activity_at: row.last_opened_at }), unread: row.unread === true || Number(row.lastCompletedSeq || 0) > Number(row.readSeq || 0), groupId: String(row.groupId || row.group_id || ''), historyId: source === 'Codex' && mirrors.has(`${owner}:${id}`) ? id : undefined, profile: owner, completedSeq: Number(row.lastCompletedSeq || 0), readSeq: Number(row.readSeq || 0), messageCount: Number(row.message_count || 0), title: sessionDisplayTitle(row), updated: activityTime(row),
+      status: String(row.status || (row.is_active ? 'active' : '')), workspace: String(row.workspacePath ?? row.workspace_path ?? row.model ?? '') }];
+  })).sort((a, b) => b.updated - a.updated || a.id.localeCompare(b.id)).slice(0, limit);
 }
 export async function codexSessions(fetchJSON: FetchJSON, profile: string, signal: AbortSignal, onPage?: (rows: HermesRecord[]) => void, recent = false): Promise<HermesRecord[]> {
   const rows: HermesRecord[] = [];

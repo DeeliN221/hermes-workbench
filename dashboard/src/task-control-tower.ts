@@ -21,9 +21,6 @@ import {
   type Status,
   type Task,
 } from "./task-control-model";
-import { loadHomeProfiles } from "./home-profiles";
-import { openHomeConversation } from "./home-navigation";
-import type { RecentSession } from "./recent-home";
 
 type SDK = {
   React: any;
@@ -40,7 +37,6 @@ type SDK = {
 export function createTaskControlTower(
   sdk: SDK,
   navigate: (path: string, profile: string) => void,
-  RecentHome: any,
 ) {
   const h = sdk.React.createElement,
     { useState, useEffect, useRef } = sdk.hooks,
@@ -67,17 +63,6 @@ export function createTaskControlTower(
     const [view, setView] = useState("board"),
       [archive, setArchive] = useState(false),
       [mobileTab, setMobileTab] = useState("tasks");
-    const [sessions, setSessions] = useState([] as RecentSession[]),
-      [sessionError, setSessionError] = useState("");
-    const [pins, setPins] = useState(() => {
-      try {
-        return JSON.parse(
-          localStorage.getItem("workbench:tower:pins:v1") || "[]",
-        ) as string[];
-      } catch {
-        return [] as string[];
-      }
-    });
     const [draft, setDraft] = useState(null as Task | null),
       [newTitle, setNewTitle] = useState(""),
       [creating, setCreating] = useState(false);
@@ -170,26 +155,6 @@ export function createTaskControlTower(
         }
       })();
     }, [tasks, config?.mode]);
-    useEffect(() => {
-      const controller = new AbortController();
-      loadHomeProfiles(sdk.fetchJSON, controller.signal, {
-        initialProfile: profile,
-      })
-        .then((data) => {
-          if (!controller.signal.aborted) {
-            setSessions(data.rows);
-            if (data.failed.length)
-              setSessionError(
-                tr("部分会话暂不可用", "Some sessions are unavailable"),
-              );
-          }
-        })
-        .catch(() => {
-          if (!controller.signal.aborted)
-            setSessionError(tr("会话暂不可用", "Sessions unavailable"));
-        });
-      return () => controller.abort();
-    }, [profile]);
     const close = () => {
       selection.current = "";
       setSelected("");
@@ -425,32 +390,6 @@ export function createTaskControlTower(
             ),
       );
     };
-    const sessionKey = (s: RecentSession) => `${s.profile}:${s.source}:${s.id}`;
-    const pin = (s: RecentSession) => {
-      const key = sessionKey(s);
-      const next = pins.includes(key)
-        ? pins.filter((p: string) => p !== key)
-        : [...pins.slice(-1), key];
-      setPins(next);
-      localStorage.setItem("workbench:tower:pins:v1", JSON.stringify(next));
-    };
-    const sessionRow = (s: RecentSession) =>
-      h(
-        "div",
-        { key: sessionKey(s), className: "tower-session" },
-        btn(s.title, () =>
-          openHomeConversation(
-            `/chat?${s.source === "Codex" ? "session" : "hermesSession"}=${encodeURIComponent(s.id)}`,
-            s.profile,
-            navigate,
-          ),
-        ),
-        btn(pins.includes(sessionKey(s)) ? "★" : "☆", () => pin(s), {
-          "aria-label": pins.includes(sessionKey(s))
-            ? tr("取消置顶", "Unpin session")
-            : tr("置顶会话", "Pin session"),
-        }),
-      );
     const t = detail?.task,
       decision = detail?.open_decision || detail?.decision || t?.decision;
     const nextAction = (task: Task) => {
@@ -592,7 +531,7 @@ export function createTaskControlTower(
             { className: "tower-empty" },
             tr(
               "任务服务尚未连接。最近会话仍可使用。",
-              "Task service is not connected. Recent sessions remain available.",
+              "Task service is not connected.",
             ),
           )
         : null,
@@ -778,38 +717,6 @@ export function createTaskControlTower(
               .slice(0, 3)
               .map((t) => btn(t.title, () => void open(t.id), { key: t.id })),
           ),
-          h(
-            "section",
-            null,
-            h(
-              "h2",
-              null,
-              tr("主会话", "Main sessions"),
-              h("span", null, `${pins.length}/2`),
-            ),
-            sessions
-              .filter((s) => pins.includes(sessionKey(s)))
-              .slice(0, 2)
-              .map(sessionRow),
-            !pins.length
-              ? h(
-                  "p",
-                  { className: "tower-muted" },
-                  tr("从最近会话中置顶 1–2 个", "Pin 1–2 recent sessions"),
-                )
-              : null,
-            h("h3", null, tr("最近会话", "Recent sessions")),
-            sessions
-              .filter((s) => !pins.includes(sessionKey(s)))
-              .slice(0, 3)
-              .map(sessionRow),
-            sessionError
-              ? h("p", { className: "tower-muted" }, sessionError)
-              : null,
-            btn(tr("全部最近会话", "All recent sessions"), () =>
-              navigate("/sessions?view=recent", profile),
-            ),
-          ),
         ),
       ),
       h(
@@ -824,9 +731,7 @@ export function createTaskControlTower(
         btn(tr("待你处理", "Needs you"), () => setMobileTab("attention"), {
           "aria-pressed": mobileTab === "attention",
         }),
-        btn(tr("会话", "Sessions"), () => setMobileTab("sessions"), {
-          "aria-pressed": mobileTab === "sessions",
-        }),
+
       ),
       selected
         ? h(
@@ -1266,17 +1171,5 @@ export function createTaskControlTower(
         : null,
     );
   }
-  return function TaskControlHome(props: { profile: string }) {
-    if (location.pathname !== "/kanban" && new URLSearchParams(location.search).get("view") === "recent") {
-      return h(
-        "section",
-        { className: "tower-recent-secondary" },
-        btn(tr("返回任务控制台", "Back to task control tower"), () =>
-          navigate("/sessions", props.profile),
-        ),
-        h(RecentHome, props),
-      );
-    }
-    return h(TaskControlTower, props);
-  };
+  return TaskControlTower;
 }
