@@ -16,6 +16,8 @@ from pathlib import Path
 
 GEMINI_TIMEOUT = 20
 OPENCODE_TIMEOUT = 8
+# The provider edge rejects urllib's default UA; identify this server client explicitly.
+OPENCODE_USER_AGENT = 'Hermes-Workbench/1.0'
 OPENCODE_URL = 'https://opencode.ai/zen/go/v1/usage'
 SOURCES = {'gemini': "agy -p '/usage' · Gemini Models", 'opencode': 'OpenCode Go · GET /zen/go/v1/usage'}
 SETUP = ('需要配置 OpenCode Go 登录。On the server, save {"token":"<OpenCode Go API key>"} '
@@ -147,7 +149,9 @@ def opencode_sync():
     if not headers:
         return result('opencode', 'login_required', SETUP)
     try:
-        request = urllib.request.Request(OPENCODE_URL, headers={**headers, 'Accept': 'application/json'})
+        request = urllib.request.Request(OPENCODE_URL, headers={
+            **headers, 'Accept': 'application/json', 'User-Agent': OPENCODE_USER_AGENT,
+        })
         with urllib.request.build_opener(NoRedirect()).open(request, timeout=OPENCODE_TIMEOUT) as response:
             raw = response.read(200001)
         if not raw.strip():
@@ -156,10 +160,11 @@ def opencode_sync():
         return result('opencode', 'available' if windows else 'invalid',
                       'Provider-reported Go usage; remaining = 100 − used percent.' if windows else 'No usable OpenCode usage windows. Check the provider account, then Refresh.', windows)
     except urllib.error.HTTPError as exc:
+        exc.close()  # Discard private error bodies and release the connection.
         if exc.code == 401:
             return result('opencode', 'login_required', 'OpenCode rejected the login (401). ' + SETUP)
         if exc.code == 403:
-            return result('opencode', 'subscription_required', 'OpenCode Go subscription required (403). Verify Go access for this server credential, then Refresh.')
+            return result('opencode', 'access_denied', 'OpenCode usage access denied (403). The provider or its edge may have blocked this request. Verify server connectivity and Go access, then Refresh.')
         return result('opencode', 'error', 'OpenCode usage request failed. Retry using Refresh.')
     except (TimeoutError, asyncio.TimeoutError):
         return result('opencode', 'timeout', 'OpenCode usage request timed out. Check connectivity, then Refresh.')

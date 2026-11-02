@@ -26,7 +26,7 @@ function card(provider: Provider): HTMLElement {
   if (provider.source) article.append(element('p', `Source: ${provider.source}`));
   const statuses: Record<string, string> = { available: 'Available', disabled: 'Disabled', timeout: 'Timed out',
     error: 'Refresh failed', login_required: 'Login required', configuration_error: 'Configuration required',
-    command_missing: 'Install agy', empty: 'Empty response', invalid: 'Unrecognized response', subscription_required: 'Subscription required' };
+    command_missing: 'Install agy', empty: 'Empty response', invalid: 'Unrecognized response', subscription_required: 'Subscription required', access_denied: 'Access denied' };
   const badge = element('strong', statuses[provider.status] || 'Unavailable');
   badge.className = `quota-status quota-${provider.status}`;
   article.append(badge);
