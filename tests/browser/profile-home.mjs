@@ -5,7 +5,7 @@ import { chromium } from 'playwright';
 import { createMockHost } from './mock-host.mjs';
 const host = await createMockHost();
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
-const shotDir = process.env.SHOT_DIR || 'docs/validation/profile-overview';
+const shotDir = process.env.SHOT_DIR || 'node_modules/.cache/profile-overview-screenshots';
 await mkdir(shotDir, { recursive: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });

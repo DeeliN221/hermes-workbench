@@ -19,4 +19,4 @@ env -u CODEX_APP_SERVER_ENDPOINT -u CODEX_HOME uv run --no-project --with-requir
 pnpm test:browser
 ```
 
-The browser suite uses `CHROMIUM_EXECUTABLE_PATH` when Chromium is provided by the local environment. `tests/browser/profile-home.mjs` saves the after screenshots and checks routing, profile ownership on open, request counts, failure states, desktop scrolling, phone snapping, and light/dark backgrounds.
+The browser suite uses `CHROMIUM_EXECUTABLE_PATH` when Chromium is provided by the local environment. `tests/browser/profile-home.mjs` saves screenshots under the ignored `node_modules/.cache/profile-overview-screenshots` directory by default (set `SHOT_DIR=docs/validation/profile-overview` to deliberately refresh the committed evidence) and checks routing, profile ownership on open, request counts, failure states, desktop scrolling, phone snapping, and light/dark backgrounds.
