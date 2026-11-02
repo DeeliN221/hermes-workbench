@@ -1,5 +1,7 @@
 /** Stateful Fleet v2 stand-in. Extended lifecycle endpoints are mock-only. */
 import { createServer } from "node:http";
+import { readFileSync } from "node:fs";
+const v1 = JSON.parse(readFileSync(new URL("./fleetd-v1.json", import.meta.url), "utf8"));
 const iso = (hours) => new Date(Date.now() - hours * 3600000).toISOString();
 export function fixtureTask(id, status, extra = {}) {
   return {
@@ -123,6 +125,10 @@ export async function createMockFleet() {
       body,
       ifMatch: request.headers["if-match"],
     });
+    if (request.method === "GET" && url.pathname.startsWith("/api/v1/")) {
+      const resource = url.pathname.slice("/api/v1/".length);
+      return send(200, resource.startsWith("tasks/") ? v1.task : v1[resource] || {});
+    }
     const match = url.pathname.match(
       /^\/api\/v2\/tasks\/([^/]+)(?:\/([^/]+))?$/,
     );

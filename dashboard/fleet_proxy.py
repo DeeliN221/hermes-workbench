@@ -11,10 +11,22 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request as URLRequest, HTTPRedirectHandler, build_opener
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Depends
+from contextvars import ContextVar, copy_context
 from fastapi.responses import JSONResponse, Response
 
-router = APIRouter(prefix="/fleet")
+_demo_request = ContextVar("fleet_demo_request", default=False)
+
+
+async def demo_mode(request: Request):
+    marker = _demo_request.set(request.query_params.get("demo") == "1")
+    try:
+        yield
+    finally:
+        _demo_request.reset(marker)
+
+
+router = APIRouter(prefix="/fleet", dependencies=[Depends(demo_mode)])
 _ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 _STATUSES = {
     "triage",
@@ -56,7 +68,7 @@ def _id(value):
 def _config():
     base = os.getenv("FLEET_URL", "").rstrip("/")
     token = os.getenv("FLEET_TOKEN", "")
-    mode = os.getenv("HERMES_WORKBENCH_FLEET_MODE", "mock")
+    mode = "mock" if _demo_request.get() else os.getenv("HERMES_WORKBENCH_FLEET_MODE", "live")
     if mode != "live":
         # Explicit localhost fixture transport for browser regression tests only.
         base = os.getenv("HERMES_WORKBENCH_FLEET_DEMO_URL", "").rstrip("/")
@@ -65,7 +77,7 @@ def _config():
             return None
 
     if not base or not token:
-        return None
+        raise HTTPException(503, "Legacy Fleet v2 is unconfigured; use the fleetd v1 console")
     try:
         parsed = urlsplit(base)
     except ValueError:
@@ -302,7 +314,8 @@ def fleet_tasks(status: str | None = None):
         return _detail(row["id"])["task"]
 
     with ThreadPoolExecutor(max_workers=4) as pool:
-        tasks = list(pool.map(project, rows))
+        futures = [pool.submit(copy_context().run, project, row) for row in rows]
+        tasks = [future.result() for future in futures]
     return _reply({"tasks": tasks})
 
 

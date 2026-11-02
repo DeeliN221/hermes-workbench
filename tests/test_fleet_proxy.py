@@ -233,7 +233,7 @@ def test_config_requires_secure_origin(client, monkeypatch):
     monkeypatch.setenv("FLEET_URL", "https://token@fleet.example")
     assert client.get(BASE + "/config", headers=HEADERS).status_code == 503
     monkeypatch.delenv("FLEET_TOKEN")
-    assert client.get(BASE + "/config", headers=HEADERS).json()["mode"] == "mock"
+    assert client.get(BASE + "/config", headers=HEADERS).status_code == 503
 
 
 def test_v2_transport_credentials_errors_and_projection(client, monkeypatch):
@@ -305,8 +305,8 @@ def test_v2_transport_credentials_errors_and_projection(client, monkeypatch):
     )
 
 
-def test_demo_defaults_never_contact_live(client, monkeypatch):
-    monkeypatch.delenv("HERMES_WORKBENCH_FLEET_MODE")
+def test_explicit_demo_never_contacts_live(client, monkeypatch):
+    monkeypatch.setenv("HERMES_WORKBENCH_FLEET_MODE", "mock")
 
     def forbidden(*args):
         raise AssertionError("Must not contact upstream")
@@ -323,7 +323,7 @@ def test_demo_defaults_never_contact_live(client, monkeypatch):
     assert client.get(BASE + "/tasks/" + task["id"], headers=HEADERS).status_code == 200
     monkeypatch.setenv("HERMES_WORKBENCH_FLEET_MODE", "live")
     monkeypatch.delenv("FLEET_TOKEN")
-    assert client.get(BASE + "/config", headers=HEADERS).json()["mode"] == "mock"
+    assert client.get(BASE + "/config", headers=HEADERS).status_code == 503
 
 
 def test_live_payloads_and_review_routing(client, upstream, monkeypatch):
@@ -369,3 +369,13 @@ def test_live_payloads_and_review_routing(client, upstream, monkeypatch):
         ).status_code
         == 409
     )
+
+
+def test_query_demo_context_reaches_list_worker_threads(client, monkeypatch):
+    monkeypatch.delenv("HERMES_WORKBENCH_FLEET_MODE", raising=False)
+    monkeypatch.delenv("FLEET_URL", raising=False)
+    monkeypatch.delenv("FLEET_TOKEN", raising=False)
+    response = client.get(BASE + "/tasks?demo=1", headers=HEADERS)
+    assert response.status_code == 200
+    assert any(t["id"] == "demo-review" for t in response.json()["tasks"])
+    assert client.get(BASE + "/tasks", headers=HEADERS).status_code == 503

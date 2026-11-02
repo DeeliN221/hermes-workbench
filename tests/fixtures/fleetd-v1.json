@@ -1,0 +1,78 @@
+{
+  "tasks": {
+    "tasks": [
+      {
+        "id": "T-example",
+        "title": "Review the release report",
+        "kind": "code",
+        "risk": "R3",
+        "capability": "codex",
+        "machine": "test-machine",
+        "priority": 5,
+        "spec_json": "Check the release report.",
+        "acceptance": "Report checks pass",
+        "status": "blocked",
+        "assignee": "W-example",
+        "attempts": 0,
+        "created_at": "2026-11-02T01:29:58.230774955Z",
+        "updated_at": "2026-11-02T01:40:30.645869245Z"
+      }
+    ],
+    "next_cursor": ""
+  },
+  "task": {
+    "task": {
+      "id": "T-example",
+      "title": "Review the release report",
+      "kind": "code",
+      "risk": "R3",
+      "capability": "codex",
+      "machine": "test-machine",
+      "priority": 5,
+      "spec_json": "Check the release report.",
+      "acceptance": "Report checks pass",
+      "status": "blocked",
+      "assignee": "W-example",
+      "attempts": 0,
+      "created_at": "2026-11-02T01:29:58.230774955Z",
+      "updated_at": "2026-11-02T01:40:30.645869245Z"
+    },
+    "attempts": [
+      {
+        "id": "A-example",
+        "task_id": "T-example",
+        "worker_id": "W-example",
+        "status": "ok",
+        "started_at": "2026-11-02T01:29:58.49215841Z",
+        "ended_at": "2026-11-02T01:40:30.645869245Z",
+        "result": "raw execution log"
+      }
+    ],
+    "events": []
+  },
+  "decisions": {
+    "decisions": [
+      {
+        "id": 1,
+        "task_id": "T-example",
+        "question": "How should this task proceed?",
+        "options_json": "[\"A Retry\", \"B Change worker\", \"C Cancel\"]",
+        "status": "open",
+        "expires_at": "2026-11-02T13:02:58.552262825Z",
+        "created_at": "2026-11-01T13:02:58.552262825Z",
+        "task_title": "Review the release report",
+        "task_status": "blocked"
+      }
+    ]
+  },
+  "workers": {
+    "workers": [
+      {
+        "id": "W-example",
+        "machine": "test-machine",
+        "status": "offline",
+        "last_heartbeat": "2026-11-01T16:15:09.730511667Z"
+      }
+    ]
+  }
+}

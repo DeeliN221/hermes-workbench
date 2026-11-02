@@ -589,3 +589,7 @@
     padding: 20px 16px;
   }
 }
+
+.tower-connection { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 10px 0; font-size: 12px; }
+.tower-connection [role="alert"] { flex-basis: 100%; color: var(--text-danger, #bc5148); }
+.tower-card-meta, .tower-decision-summary { overflow-wrap: anywhere; }
