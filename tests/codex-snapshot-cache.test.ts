@@ -45,7 +45,7 @@ it('extracts the latest user and assistant text for the thin loader', () => {
 
 it('ignores expired, malformed, and other-session snapshots', () => {
   saveCodexSnapshot('default\0session-1', { messages: [{ id: 'one' }] });
-  const storageKey = 'hermes-workbench.codex-snapshot.v1:default%00session-1';
+  const storageKey = 'hermes-workbench.codex-snapshot.v2:default%00session-1';
   expect(window.localStorage.getItem(storageKey)).toBeTruthy();
 
   const value = JSON.parse(window.localStorage.getItem(storageKey)!);
@@ -55,4 +55,15 @@ it('ignores expired, malformed, and other-session snapshots', () => {
   window.localStorage.setItem(storageKey, '{bad');
   expect(loadCodexSnapshot('default\0session-1')).toBeNull();
   expect(loadCodexSnapshot('default\0session-2')).toBeNull();
+});
+
+it('discards pre-visibility snapshots and excludes hidden messages from loader previews', () => {
+  window.localStorage.setItem('hermes-workbench.codex-snapshot.v1:default%00session-1', JSON.stringify({
+    cachedAt: Date.now(), messages: [{ role: 'user', content: 'old private path hint' }],
+  }));
+  expect(loadCodexSnapshot('default\0session-1')).toBeNull();
+  saveCodexSnapshot('default\0session-1', { messages: [
+    { role: 'user', content: 'original' }, { role: 'user', hidden: true, content: 'private' },
+  ] });
+  expect(loadCodexPreview('default\0session-1')).toEqual([{ role: 'user', content: 'original' }]);
 });

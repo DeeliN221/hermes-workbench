@@ -9030,6 +9030,7 @@ dialog.codex-session-search-dialog-backdrop::backdrop {
 }
 .codex-message-attachments {
   display: flex;
+  align-items: flex-start;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 0.45rem;
@@ -10716,3 +10717,17 @@ html.dark .hti-rich-text {
     padding-block: 0.375rem;
   }
 }
+
+/* Durable file/folder cards contain display metadata only, never storage paths. */
+.codex-message-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 10px 12px;
+  border: 1px solid var(--border-color, #64748b60);
+  border-radius: 8px;
+  background: var(--bg-secondary, #80808012);
+  overflow-wrap: anywhere;
+}
+.codex-message-file small { opacity: .7; white-space: nowrap; }

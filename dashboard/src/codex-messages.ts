@@ -7,7 +7,7 @@ import { normalizeResponseQuota, type ResponseQuota } from './response-quota';
 
 export type MessageStatus = 'running' | 'completed' | 'failed' | 'accepted' | 'pending';
 export type TurnStatus = 'running' | 'completed' | 'failed';
-export interface MessageAttachmentPreview { id: string; name: string; src: string }
+export interface MessageAttachmentPreview { id: string; name: string; src?: string; kind?: string; size?: number; fileCount?: number }
 export interface ChatMessage {
   id: string; itemId?: string; clientId?: unknown; clientRequestId?: string; turnId?: string;
   role: string; content: string; paragraphs?: string[]; status?: MessageStatus; phase?: 'commentary' | 'final';
@@ -57,7 +57,7 @@ export function completedItemStatus(item: JsonRecord, fallback?: MessageStatus):
 }
 export function contentText(value: unknown): string {
   return typeof value === 'string' ? value : Array.isArray(value)
-    ? value.map(value => typeof value === 'string' ? value : text(record(value).text)).join('') : '';
+    ? value.filter(value => record(value).hidden !== true).map(value => typeof value === 'string' ? value : text(record(value).text)).join('') : '';
 }
 function attachmentName(path: string) { return path.trim().split(/[\\/]/).filter(Boolean).at(-1) || path.trim() || uiText('附件', 'Attachments'); }
 export function userContentText(value: unknown): string {
@@ -66,6 +66,7 @@ export function userContentText(value: unknown): string {
   for (const part of value) {
     if (typeof part === 'string') { content += part; continue; }
     const row = record(part), type = text(row.type).toLowerCase();
+    if (row.hidden === true) continue;
     let label: string | undefined;
     if (type === 'localimage') {
       const name = attachmentName(text(row.path ?? row.name ?? row.filename));
@@ -81,7 +82,7 @@ export function userContentText(value: unknown): string {
 }
 export function normalizeMessage(value: unknown, fallbackId: string): ChatMessage | null {
   const item = record(value);
-  if (!Object.keys(item).length) return null;
+  if (!Object.keys(item).length || item.hidden === true || record(item.message).hidden === true) return null;
   const type = text(item.type), role = text(item.role), nested = record(item.message);
   const itemId = text(item.itemId ?? item.id, fallbackId);
   const user = type === 'userMessage' || role === 'user', reasoning = type === 'reasoning' || role === 'reasoning';
@@ -113,7 +114,12 @@ export function normalizeMessage(value: unknown, fallbackId: string): ChatMessag
   const status = itemStatus(item), exitCode = optionalNumber(firstDefined(item, 'exitCode', 'exit_code'));
   const attachments = Array.isArray(item.attachments) ? item.attachments.flatMap(value => {
     const row = record(value), id = text(row.id), name = text(row.name), src = text(row.src);
-    return id && src && (src.startsWith('blob:') || src.startsWith('data:image/')) ? [{ id, name, src }] : [];
+    const safeSrc = src.startsWith('blob:') || src.startsWith('data:image/')
+      || /^\/api\/plugins\/workbench\/codex\/attachments\/[a-f0-9]{32}\/preview\?/.test(src);
+    return id && name && (!src || safeSrc) ? [{ id, name, ...(src ? { src } : {}),
+      ...(row.kind ? { kind: row.kind === 'folder' ? 'folder' : 'file' } : {}),
+      ...(optionalNumber(row.size) != null ? { size: optionalNumber(row.size)! } : {}),
+      ...(optionalNumber(row.fileCount) != null ? { fileCount: optionalNumber(row.fileCount)! } : {}) }] : [];
   }) : undefined;
   const message: ChatMessage = {
     id: user ? text(item.clientId, role ? text(item.id, itemId) : itemId) : itemId, itemId,
@@ -191,6 +197,7 @@ export function messagesFromTurns(turns: unknown[], sessionId: string): ChatMess
 }
 export function applyChatEvent(messages: ChatMessage[], value: unknown): ChatMessage[] {
   const event = record(value), { method, params } = notification(event);
+  if (event.hidden === true || params.hidden === true) return messages;
   if (method === 'workbench/turnMetrics') return messages.map(message => message.turnId === params.turnId ? {
     ...message, turnCompletedAt: timestamp(params.completedAt),
     weeklyRemainingPercent: typeof params.weeklyRemainingPercent === 'number' ? params.weeklyRemainingPercent : undefined,

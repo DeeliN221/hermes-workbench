@@ -343,13 +343,28 @@ async function readRequestBody(request) {
 }
 
 /** Start a same-origin preview host or an ephemeral server for browser tests. */
-export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '' } = {}) {
+export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '', codexProxyOrigin = '' } = {}) {
   const preferences = new Map();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
     response.setHeader('Cache-Control', 'no-store');
     if (url.pathname === '/favicon.ico') {
       response.writeHead(204).end();
+      return;
+    }
+    if (codexProxyOrigin && /^\/api\/plugins\/workbench\/codex\/(?:session(?:\/preview|\/read|\/steer)?|search|attachments(?:\/.*)?)$/.test(url.pathname)) {
+      try {
+        // Forward the browser's real multipart bytes. CDP route.fetch can omit
+        // file-backed directory bodies even though in-memory File uploads work.
+        const chunks = [];
+        for await (const chunk of request) chunks.push(chunk);
+        const body = ['GET', 'HEAD'].includes(request.method) ? undefined : Buffer.concat(chunks);
+        const upstream = await fetch(codexProxyOrigin + url.pathname + url.search, { method: request.method,
+          headers: { ...(request.headers['content-type'] ? { 'Content-Type': request.headers['content-type'] } : {}),
+            'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' }, body });
+        response.writeHead(upstream.status, Object.fromEntries([...upstream.headers].filter(([key]) => !['transfer-encoding', 'content-length', 'connection'].includes(key))));
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+      } catch { response.writeHead(502, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ detail: 'Local Codex test bridge unavailable' })); }
       return;
     }
     if (fleetProxyOrigin && url.pathname.startsWith('/api/plugins/workbench/fleet/')) {
