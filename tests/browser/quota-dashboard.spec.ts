@@ -118,10 +118,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     });
 
     test('hanging request times out and allows retry', async ({ page }) => {
+      test.setTimeout(45000);
       await page.route('**/api/plugins/workbench/quotas?**', () => new Promise(() => {}));
       await page.goto('/config?workbench=allowances&profile=default');
       const panel = page.locator('.quota-settings');
-      await expect(panel.getByRole('status')).toHaveText('Refresh failed · Retry available', { timeout: 15000 });
+      await expect(panel.getByRole('status')).toHaveText('Refresh failed · Retry available', { timeout: 35000 });
       await expect(panel.getByRole('button', { name: 'Refresh', exact: true })).toBeEnabled();
     });
   });

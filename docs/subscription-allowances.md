@@ -52,71 +52,82 @@ to recover the saved configuration when upgrading again. Do not delete or modify
 credential/session stores as part of this rollback. No destructive schema
 migration is required for this version.
 
-The backend adapter registry currently contains `manual`, `codex` and
-`unsupported`. Future API adapters belong on the server, must return whitelisted
-quota fields, and must resolve credentials there. Adding a manual vendor requires
-no adapter or code change. The Codex preset uses the existing server bridge;
-changing a label never switches the authenticated upstream account. Separate
-accounts can be tracked manually now; separate automatic account connections are
-not implemented. Unsupported built-ins retain their explicit limitations below.
-Each enabled adapter runs independently with the existing 8-second timeout;
-disabled entries make no upstream calls. Cache keys include the full configuration
-so edits cannot reuse results from the previous configuration. The existing
-identity-scoped single-flight refresh and 12-second browser deadline remain.
+## Live provider connections
 
-## Verified capability boundary
+Existing Gemini/OpenCode presets (including previously saved entries) now dispatch
+to live server adapters. The stored `unsupported` adapter identifier is retained
+for backwards-compatible configuration; it no longer means these presets lack an
+adapter. Labels do not switch upstream accounts. These connections belong to the
+Workbench service account and are shared by authorized dashboard users, like the
+Codex bridge. Profile names are not separate provider identities.
 
-Official documentation checked 2026-10-31:
+### Gemini AI Pro
 
-| Provider | Reliable source and implemented behavior | Limitations |
-| --- | --- | --- |
-| OpenAI ChatGPT Pro | Existing Workbench Codex App Server bridge, `account/rateLimits/read`; normalize only the `codex` bucket, its actual `windowDurationMins`, `usedPercent`, and `resetsAt`. Remaining percent is exactly 100 minus reported used percent. | This is Codex allowance, not a ChatGPT-wide balance. No assumed plan, multiplier, requests or tokens remaining. Missing 300/10080-minute windows and reset timestamps remain unavailable. No configured bridge, auth/RPC failure or timeout is explicit. |
-| OpenCode Go | Official Go documentation describes per-model 5-hour, weekly and monthly allowances and the Console usage view. | No verified remaining-quota endpoint/schema or existing Workbench quota connection was found. The API overview lists Usage read permission but does not establish a Go remaining-window endpoint. Inference `opencode.allowance` describes a single request, not account-wide remaining allowance. We do not accumulate local usage, scrape login cookies or make paid inference probes. |
-| Gemini AI Pro | Official Gemini CLI documentation offers `/stats model` for supported model usage/quota information. | The existing OpenCodex Antigravity report is an intermediary connection, not a verified Google AI Pro quota contract. CLI model quotas, Gemini API billing, and all Google AI Pro benefits are different scopes. No supported machine-readable account-wide quota contract was established; no invented 5-hour/week fields. |
+The service executes exactly `agy -p '/usage'` with a fixed 20-second deadline.
+Only TSV rows whose first column is **Gemini Models** are accepted. Week/Weekly
+Limit Remaining and Five Hour Limit Remaining map to weekly and 5-hour windows.
+Claude/GPT and other model groups are excluded. Reset times are parsed as UTC;
+missing/invalid times stay unavailable. The UI displays the command source and
+successful retrieval time. The AI Pro label is a configured plan label; the CLI
+does not independently verify the subscription tier.
 
-Sources:
-- https://learn.chatgpt.com/docs/app-server (Rate limits)
-- https://opencode.ai/v2/docs/console/go/
-- https://opencode.ai/v2/docs/console/api/
-- https://opencode.ai/v2/docs/console/api/inference
-- https://geminicli.com/docs/get-started/
-- https://geminicli.com/docs/resources/quota-and-pricing/
+Install `agy` on the service PATH and sign in under the Workbench service account.
+Missing command, login failure, timeout, empty output and unrecognized TSV each
+have actionable states. Timeout/cancellation kills and reaps the command group.
 
-## Connection audit and security
+### OpenCode Go
 
-The checked-out source contains an existing Codex bridge configured through
-`CODEX_APP_SERVER_ENDPOINT`. It has no OpenCode Go quota adapter. Latest main also contains `provider_quotas.py`, which reads OpenCodex `/api/provider-quotas` for Antigravity model-family reports. That adapter assumes 5-hour/weekly meanings from `Gem`/`Gem (Weekly)` labels and does not preserve verified account identity, observation time or window duration. The aggregate dashboard therefore does not promote those values to a Google AI Pro subscription balance. The isolated worker has no configured OpenCodex quota credentials or home. The
-isolated development worker has no configured Workbench app-server endpoint;
-production account connectivity and subscription tiers have **not** been
-verified by a live authenticated call. Worker authentication is not treated as
-Workbench account authorization, and credential files are not read or copied.
+The service calls only `GET https://opencode.ai/zen/go/v1/usage`. Its `usage`
+object contains rolling, weekly and monthly windows with **used** `percent` and
+`resetsAt`; remaining is `100 - percent`. Missing windows stay unknown. The
+rolling label is kept explicit and monthly reset dates are never calculated locally.
 
-The API is behind the existing trusted-proxy gate. User/profile validation
-is reused from the bridge, cache and in-flight work are scoped to that identity,
-and the browser response has `Cache-Control: no-store`. No upstream error text,
-email, token, credit identifier or credential is exposed. Only known numeric
-quota fields are returned. This adds non-secret subscription configuration writes, but no login or billing mutation. The bridge's existing app-server account remains authoritative; a
-Workbench profile is not a separate provider account.
+The adapter first honors `WORKBENCH_OPENCODE_AUTH_FILE`, otherwise reuses the
+service account's `${XDG_DATA_HOME:-~/.local/share}/opencode/auth.json` API key
+for `opencode-go` or `opencode`. No persistent browser scraping runs in the app.
+If the existing login is absent, the card says “需要配置 OpenCode Go 登录” and
+shows the configuration steps:
 
-## Provider refresh semantics
+1. On the server, create a private JSON file owned by the Workbench service user
+   with mode **0600**, outside the repository and release directories.
+2. Store `{"token":"<OpenCode Go API key>"}` (preferred) or
+   `{"cookie":"<session cookie>"}` there. Cookie authentication depends on the
+   provider accepting that session; a 401 instructs the operator to renew login.
+3. Set `WORKBENCH_OPENCODE_AUTH_FILE` to the file's absolute path in the service
+   environment and press **Refresh** once the service has that configuration.
+   Updating an already configured file is picked up on the next Refresh.
 
-Initial reads use a 15-second bounded in-memory cache. Refresh bypasses completed
-cache entries; simultaneous requests share a single in-flight read. Upstream
-reads time out after 8 seconds; the browser aborts after 12 seconds. Checked time
-is distinct from the last successful retrieval time. Failed provider reads have
-no current numerical value. Failed dashboard refreshes discard old displayed
-numbers and offer retry. There is no automatic polling or model invocation.
+Never enter credentials in the browser. No token, cookie, file contents or
+upstream error body is logged or returned. Symlinks, foreign ownership and
+permissions exposing secrets to other users are rejected. Requests have an
+8-second transport deadline and redirects are refused to prevent credential
+forwarding. 401, 403, timeout, empty and malformed responses remain explicit.
 
-## Live verification prerequisites (separate from this PR)
+## Refresh and security
 
-No production configuration change is needed for a deployed instance that
-already has its authenticated Codex bridge. Verify the new read-only endpoint
-through that instance's normal authenticated proxy after an independently
-approved deployment. If the bridge is absent, stop: have the operator identify
-an existing authorized endpoint and approve any required configuration change;
-do not copy the worker's credentials. For OpenCode/Gemini, obtain a documented,
-authorized quota contract and confirm scope before proposing any connector.
-Do not request new API keys merely to turn unavailable cards into numbers.
+The existing authenticated API and identity-scoped cache remain in use with
+`Cache-Control: no-store`. Initial reads use a 15-second cache; Refresh bypasses
+completed cache entries and coalesces concurrent refreshes. Each adapter has an
+outer 24-second deadline; the browser waits 30 seconds to accommodate the measured
+roughly 10-second agy command. Failed reads remove current numbers. Source,
+checked time and successful update time remain separate. Disabled entries make
+no provider requests. No model inference or automatic polling is performed.
+
+## Data provenance and verification boundary
+
+- Actual Gemini TSV captured 2026-11-02, including non-Gemini groups to test
+  exclusion: `tests/fixtures/allowances/gemini-usage.tsv`.
+- Actual anonymous OpenCode 401 captured on the same date.
+- OpenCode success JSON is an explicitly labeled **contract fixture**, not a
+  live authenticated response. No OpenCode login was present in the task
+  container or its persistent browser's OpenCode cookies.
+- [Official OpenCode endpoint implementation](https://github.com/anomalyco/opencode/blob/d4704347465c1ee63d0c213ed00e648e7f0231c5/packages/console/app/src/routes/zen/go/v1/usage.ts)
+  establishes the response schema and used-percent semantics.
+- Codex continues using `account/rateLimits/read`; it is Codex allowance, not
+  a ChatGPT-wide balance.
+
+Localhost validation does not deploy, restart or switch the installed service.
+OpenCode authenticated verification needs only the service-side login file above.
 
 ## Configurable entries validation
 
@@ -154,3 +165,19 @@ inside the isolated task directory.
 [Desktop dashboard](../assets/subscription-allowances/desktop.png) ·
 [Mobile dashboard](../assets/subscription-allowances/mobile.png) ·
 [Mobile timeout](../assets/subscription-allowances/mobile-timeout.png)
+
+## Live-adapter localhost evidence (2026-11-02)
+
+Validated the built page at `http://127.0.0.1:4183/config?workbench=allowances&profile=default`
+against the real adapters behind a loopback-only test API. Desktop 1440×1000 and
+mobile 390×844 both displayed real Gemini 5-hour/weekly values and UTC-derived
+reset timestamps, OpenCode's missing-login instructions, and successful Refresh.
+Page identity, nonblank content, no framework overlay, console health and overflow
+checks passed. The preview's surrounding projects and Codex response are fixtures;
+Gemini is live. No installed loading route, deployment or production restart was
+exercised. Browser plugin unavailable; regular Playwright used the existing Chromium.
+Screenshots contain no credentials or account identifiers.
+
+[Desktop](../assets/live-allowances/desktop.png) ·
+[Mobile login](../assets/live-allowances/mobile-login.png) ·
+[Mobile Gemini](../assets/live-allowances/mobile-gemini.png)

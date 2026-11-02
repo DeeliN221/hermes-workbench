@@ -1,7 +1,7 @@
 import { defineConfig } from '@playwright/test';
 import path from 'node:path';
 export default defineConfig({
-  testDir: './browser', testMatch: ['quota-dashboard.spec.ts', 'subscription-entries.spec.ts'], workers: 1,
+  testDir: './browser', testMatch: ['quota-dashboard.spec.ts', 'subscription-entries.spec.ts', 'live-allowances.spec.ts'], workers: 1,
   outputDir: '../test-results/quota', reporter: 'list',
   use: { baseURL: 'http://127.0.0.1:4179', browserName: 'chromium',
     launchOptions: { executablePath: process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH },

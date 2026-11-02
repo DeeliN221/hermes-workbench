@@ -1,11 +1,20 @@
 """Quota truthfulness, isolation, refresh and failure contracts."""
 import asyncio
+import pytest
+from unittest.mock import AsyncMock
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).parents[1] / 'dashboard'))
 from quota_dashboard import QuotaDashboard, normalize
+
+@pytest.fixture(autouse=True)
+def offline_providers(monkeypatch):
+    import live_allowances as live
+    for name in ('gemini', 'opencode'):
+        monkeypatch.setattr(live, name, AsyncMock(return_value=live.result(name, 'unavailable', 'Offline fixture')))
+
 
 PAYLOAD = {'rateLimits': {'limitId': 'codex', 'primary': {
     'usedPercent': 25, 'windowDurationMins': 300, 'resetsAt': 1893456000},

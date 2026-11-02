@@ -5,9 +5,9 @@ type Entry = {
   preset: string | null; enabled: boolean; minutes: number; resetsAt: string | null;
   amount: number | null; limit: number | null; mode: 'remaining' | 'used'; unit: string; observedAt: string | null;
 };
-type WindowQuota = { minutes: number; remainingPercent: number; resetsAt: string | null };
+type WindowQuota = { label?: string; minutes: number; remainingPercent: number; resetsAt: string | null };
 type Provider = Pick<Entry, 'id' | 'name' | 'service' | 'plan' | 'adapter' | 'enabled'> & {
-  description?: string; status: string; reason: string; windows: WindowQuota[]; updatedAt: string | null; checkedAt: string | null;
+  description?: string; source?: string; status: string; reason: string; windows: WindowQuota[]; updatedAt: string | null; checkedAt: string | null;
   manual?: Pick<Entry, 'amount' | 'limit' | 'mode' | 'unit' | 'minutes' | 'resetsAt'>;
 };
 function element<K extends keyof HTMLElementTagNameMap>(tag: K, text?: string): HTMLElementTagNameMap[K] {
@@ -23,12 +23,17 @@ function card(provider: Provider): HTMLElement {
   article.className = 'quota-card';
   article.append(element('h3', provider.name || provider.id), element('p', [provider.service, provider.plan].filter(Boolean).join(' · ')));
   if (provider.description) article.append(element('p', provider.description));
-  const badge = element('strong', provider.status === 'disabled' ? 'Disabled' : provider.status === 'available' ? 'Available' : provider.status === 'timeout' ? 'Timed out' : provider.status === 'error' ? 'Refresh failed' : 'Unavailable');
+  if (provider.source) article.append(element('p', `Source: ${provider.source}`));
+  const statuses: Record<string, string> = { available: 'Available', disabled: 'Disabled', timeout: 'Timed out',
+    error: 'Refresh failed', login_required: 'Login required', configuration_error: 'Configuration required',
+    command_missing: 'Install agy', empty: 'Empty response', invalid: 'Unrecognized response', subscription_required: 'Subscription required' };
+  const badge = element('strong', statuses[provider.status] || 'Unavailable');
   badge.className = `quota-status quota-${provider.status}`;
   article.append(badge);
+  if (provider.status !== 'available') article.append(element('p', provider.reason));
   const windows = element('div');
   windows.className = 'quota-windows';
-  const durations = provider.adapter === 'manual' || provider.status === 'disabled' ? [] : [...new Set([300, 10080, ...provider.windows.map(w => w.minutes)])];
+  const durations = provider.adapter === 'manual' || provider.status === 'disabled' ? [] : [...new Set([300, 10080, ...(provider.source?.startsWith('OpenCode Go') ? [43200] : []), ...provider.windows.map(w => w.minutes)])];
   if (provider.manual) {
     const manual = provider.manual;
     const row = element('section');
@@ -40,7 +45,7 @@ function card(provider: Provider): HTMLElement {
   for (const duration of durations) {
     const quota = provider.windows.find(w => w.minutes === duration);
     const row = element('section');
-    row.append(element('h4', windowLabel(duration)));
+    row.append(element('h4', quota?.label || (duration === 300 && provider.source?.startsWith('OpenCode Go') ? 'Rolling window' : windowLabel(duration))));
     row.append(element('strong', quota ? `${quota.remainingPercent}% remaining` : 'Unavailable'));
     if (quota) {
       const meter = element('meter');
@@ -52,7 +57,9 @@ function card(provider: Provider): HTMLElement {
     if (!quota) row.append(element('small', 'No verified data for this window.'));
     windows.append(row);
   }
-  article.append(windows, element('p', provider.reason), element('small', `Updated: ${timestamp(provider.updatedAt)}`), element('small', `Last checked: ${timestamp(provider.checkedAt)}`));
+  article.append(windows);
+  if (provider.status === 'available') article.append(element('p', provider.reason));
+  article.append(element('small', `Updated: ${timestamp(provider.updatedAt)}`), element('small', `Last checked: ${timestamp(provider.checkedAt)}`));
   return article;
 }
 
@@ -196,7 +203,7 @@ export function mountQuotaDashboard(container: HTMLElement, fetcher: typeof fetc
   async function load(force = false): Promise<void> {
     if (controller || disposed) return;
     controller = new AbortController();
-    const timeout = window.setTimeout(() => controller?.abort(), 12000);
+    const timeout = window.setTimeout(() => controller?.abort(), 30000);
     busy(true); status.textContent = 'Refreshing…';
     try {
       const response = await fetcher(`${endpoint}?profile=default${force ? '&refresh=true' : ''}`, {

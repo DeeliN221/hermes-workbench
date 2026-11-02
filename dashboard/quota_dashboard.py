@@ -12,6 +12,7 @@ from fastapi import APIRouter, Request, Response, HTTPException
 from codex_bridge import _safe, _user
 from subscription_entries import Entry, SubscriptionStore, defaults
 from pydantic import ValidationError
+import live_allowances
 
 
 def now() -> str:
@@ -53,7 +54,7 @@ def normalize(payload: Any, checked: str) -> dict:
 
 class QuotaDashboard:
     """Bounded identity-scoped cache and single-flight refresh; no stored secrets."""
-    def __init__(self, bridge=None, timeout=8.0, ttl=15.0):
+    def __init__(self, bridge=None, timeout=24.0, ttl=15.0):
         self.bridge, self.timeout, self.ttl = bridge, timeout, ttl
         self.cache = {}
         self.pending = {}
@@ -65,11 +66,12 @@ class QuotaDashboard:
         return normalize(await self.bridge.read_quota(user, profile), now())
 
     async def unsupported(self, entry, user, profile):
-        reasons = {
-            'opencode': "No verified remaining-quota API or Workbench quota connection. Check OpenCode Console; per-request allowance is not an account balance.",
-            'gemini': "The existing Antigravity intermediary report has no verified Google AI Pro account/window provenance. Gemini CLI /stats model is a separate model-quota view; no subscription balance is confirmed.",
-        }
-        return unavailable(entry['id'], reasons.get(entry['preset'], 'No quota adapter configured.'), now())
+        # Preserve the persisted adapter ID while upgrading built-in presets.
+        if entry['preset'] == 'gemini':
+            return await live_allowances.gemini()
+        if entry['preset'] == 'opencode':
+            return await live_allowances.opencode()
+        return unavailable(entry['id'], 'No quota adapter configured.', now())
 
     async def manual(self, entry, user, profile):
         item = unavailable(entry['id'], 'Manually entered; not verified by the provider.', now())
@@ -97,6 +99,8 @@ class QuotaDashboard:
                 except Exception:
                     item = unavailable(entry['id'], 'Quota lookup failed. Check the existing server connection.', now())
                     item['status'] = 'error'
+            if entry['adapter'] == 'unsupported' and entry['preset'] in live_allowances.SOURCES:
+                item['source'] = live_allowances.SOURCES[entry['preset']]
             return {**item, 'id': entry['id'], 'name': entry['name'], 'service': entry['service'],
                     'plan': entry['plan'], 'adapter': entry['adapter'], 'enabled': entry['enabled'],
                     'description': 'Shared Workbench Codex connection · Plan unverified' if entry['adapter'] == 'codex' else ''}

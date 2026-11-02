@@ -88,3 +88,28 @@ test('save conflicts keep the editor and do not claim a successful write', async
   expect(findButton('Save subscription').disabled).toBe(false);
   dispose();
 });
+
+test.each(['gemini', 'opencode'])('%s shows source, provider error and refresh recovery', async id => {
+  const provider = { id, name: id, service: id, plan: '', adapter: 'unsupported', enabled: true,
+    status: 'available', source: id === 'gemini' ? "agy -p '/usage' · Gemini Models" : 'OpenCode Go · GET /zen/go/v1/usage',
+    reason: 'Provider fixture', windows: [{ minutes: 300, remainingPercent: 85, resetsAt: '2030-01-01T00:00:00Z' }],
+    updatedAt: '2030-01-01T00:00:00Z', checkedAt: '2030-01-01T00:00:00Z' };
+  const reply = (value: object) => new Response(JSON.stringify({ providers: [value] }));
+  const fetcher = vi.fn().mockResolvedValueOnce(reply(provider)).mockResolvedValueOnce(reply({ ...provider,
+    status: id === 'gemini' ? 'timeout' : 'login_required', reason: 'Configure the server connection then Refresh.',
+    windows: [], updatedAt: null })).mockResolvedValueOnce(reply(provider));
+  const root = document.createElement('div');
+  const dispose = mountQuotaDashboard(root, fetcher);
+  await vi.waitFor(() => expect(root.textContent).toContain('85% remaining'));
+  expect(root.textContent).toContain(`Source: ${provider.source}`);
+  if (id === 'opencode') expect(root.textContent).toContain('Monthly window');
+  const refresh = root.querySelector('button')!;
+  refresh.click();
+  expect(refresh.disabled).toBe(true);
+  expect(root.textContent).toContain('Refreshing…');
+  await vi.waitFor(() => expect(root.textContent).toContain(id === 'gemini' ? 'Timed out' : 'Login required'));
+  expect(root.textContent).not.toContain('85% remaining');
+  refresh.click();
+  await vi.waitFor(() => expect(root.textContent).toContain('85% remaining'));
+  dispose();
+});
