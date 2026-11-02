@@ -20,7 +20,8 @@ try {
     await new Promise(resolve => reserve.close(resolve));
     const env = { ...process.env, HERMES_DASHBOARD_TRUSTED_PROXY_SECRET: 'local-proxy-secret', HERMES_WORKBENCH_ALLOWED_USERS: 'preview' };
     for (const key of ['CODEX_HOME', 'CODEX_APP_SERVER_ENDPOINT', 'FLEET_URL', 'FLEET_TOKEN', 'HERMES_WORKBENCH_FLEET_DEMO_URL', 'HERMES_WORKBENCH_FLEET_TOKEN', 'HERMES_WORKBENCH_FLEET_MODE']) delete env[key];
-    if (mode === 'live') Object.assign(env, { FLEET_URL: fleet.origin, FLEET_TOKEN: 'mock-fleet-token', HERMES_WORKBENCH_FLEET_MODE: 'live' });
+    if (mode === 'demo') env.HERMES_WORKBENCH_FLEET_MODE = 'mock';
+    if (mode === 'live') Object.assign(env, { FLEETD_URL: fleet.origin + '/api/v1', FLEET_URL: fleet.origin, FLEET_TOKEN: 'mock-fleet-token', HERMES_WORKBENCH_FLEET_MODE: 'live' });
     const proxy = spawn('uv', ['run', '--no-project', '--with-requirements', 'requirements-dev.txt', 'python', '-m', 'uvicorn', 'fleet-proxy-app:app', '--app-dir', 'tests/fixtures', '--host', '127.0.0.1', '--port', String(port)], { env, stdio: ['ignore', 'pipe', 'pipe'] });
     let logs = '', host;
     proxy.stdout.on('data', data => logs += data);
@@ -29,7 +30,7 @@ try {
       let ready = false;
       for (let attempt = 0; attempt < 300; attempt++) {
         try {
-          const response = await fetch(`http://127.0.0.1:${port}/api/plugins/workbench/fleet/config`, { headers: { 'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' } });
+          const response = await fetch(`http://127.0.0.1:${port}/api/plugins/workbench/fleetd/config`, { headers: { 'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' } });
           if (response.ok) { assert.equal((await response.json()).mode, mode === 'demo' ? 'mock' : 'live'); ready = true; break; }
         } catch {}
         await new Promise(resolve => setTimeout(resolve, 100));

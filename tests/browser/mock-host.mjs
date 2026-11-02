@@ -210,7 +210,7 @@ let createdCounter = 0;
 
 /** Return deterministic plugin API data for the fixture routes. */
 function apiPayload(url, method, body = null, preferences = new Map()) {
-  if (url.pathname === '/api/plugins/workbench/fleet/config') return { mode: 'unconfigured', extended_workflow: false };
+  if (['/api/plugins/workbench/fleet/config', '/api/plugins/workbench/fleetd/config'].includes(url.pathname)) return { mode: 'unconfigured', extended_workflow: false };
   if (url.pathname.startsWith('/api/plugins/workbench/model-display')) {
     const profile = url.searchParams.get('profile') || 'default';
     const current = preferences.get(profile);
@@ -367,7 +367,7 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
       } catch { response.writeHead(502, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ detail: 'Local Codex test bridge unavailable' })); }
       return;
     }
-    if (fleetProxyOrigin && url.pathname.startsWith('/api/plugins/workbench/fleet/')) {
+    if (fleetProxyOrigin && /^\/api\/plugins\/workbench\/fleetd?\//.test(url.pathname)) {
       try {
         const body = ['GET', 'HEAD'].includes(request.method) ? undefined : JSON.stringify(await readRequestBody(request));
         const upstream = await fetch(fleetProxyOrigin + url.pathname + url.search, { method: request.method, headers: { 'Content-Type': 'application/json', ...(request.headers['if-match'] ? { 'If-Match': request.headers['if-match'] } : {}), 'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' }, body });

@@ -153,10 +153,13 @@ describe("task control tower", () => {
   it("forwards revisions and uses only contracted live operations", async () => {
     const calls: { url: string; init?: RequestInit }[] = [];
     const fetchJSON: FetchJSON = async <T>(url: string, init?: RequestInit) => {
+      if (url.endsWith("/config")) return { mode: "mock", extended_workflow: true } as T;
       calls.push({ url, init });
       return {} as T;
     };
     const api = fleetAPI(fetchJSON);
+
+    await api.config();
     await api.move({ ...base, status: "triage" }, "ready", false);
     expect(calls[0].url).toMatch(/\/dispatch$/);
     expect(calls[0].init?.headers).toMatchObject({ "If-Match": "1" });
@@ -205,8 +208,11 @@ describe("real v2 UI boundary", () => {
     );
   });
   it("uses review endpoints only for explicit live review actions", async () => {
-    const fetchJSON = vi.fn(async () => ({})) as unknown as FetchJSON;
+    const fetchJSON = vi.fn(async () => ({ mode: "mock", extended_workflow: true })) as unknown as FetchJSON;
     const api = fleetAPI(fetchJSON);
+
+    await api.config();
+    vi.mocked(fetchJSON).mockClear();
     const review = {
       ...base,
       status: "review" as const,
