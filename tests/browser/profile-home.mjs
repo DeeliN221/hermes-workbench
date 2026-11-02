@@ -60,8 +60,8 @@ try {
   assert.equal(requests.filter(url => url.includes('/profile-overview')).length, 1);
   assert.equal(requests.filter(url => url.includes('/api/profiles/sessions?profile=all')).length, 1);
   const geometry = await page.locator('.profile-overview-columns').evaluate(node => ({ scroll: node.scrollWidth, width: node.clientWidth }));
-  assert.ok(geometry.scroll > geometry.width, 'Columns scroll horizontally instead of squeezing titles');
-  assert.ok(await columns.first().locator('.profile-column-scroll').evaluate(node => node.scrollHeight > node.clientHeight), 'Each column scrolls vertically');
+  assert.ok(geometry.scroll <= geometry.width, 'Profile groups never overflow horizontally');
+  assert.ok(await columns.first().locator('.profile-column-scroll').evaluate(node => node.scrollHeight <= node.clientHeight), 'Groups use the page scroll, not nested scrolling');
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; localStorage.setItem('hermes-dashboard-theme', theme); }, theme);
     await page.screenshot({ path: `${shotDir}/after-desktop-${theme}.png` });
@@ -69,12 +69,15 @@ try {
     assert.match(gradient, /linear-gradient/);
     assert.equal(await page.locator('.profile-session[data-freshness="0"]').first().evaluate(node => getComputedStyle(node).backgroundImage), 'none');
   }
+  const visibleCount = await page.locator('.profile-session').evaluateAll(nodes => nodes.filter(node => { const r = node.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }).length);
+  assert.ok(visibleCount >= 13, `Compact desktop shows at least 13 complete sessions: ${visibleCount}`);
+  console.log(`Desktop fully visible sessions: ${visibleCount}`);
   assert.equal(await page.locator('.dashboard-global-nav').isVisible(), false);
   assert.equal(await page.locator('.dashboard-action-rail').isVisible(), false);
   assert.equal((await page.locator('.dashboard-owned-page').boundingBox()).x, 0);
-  const move = page.locator('[data-profile=writer]').getByRole('button', { name: /Move left/ });
+  const move = page.locator('[data-profile=writer]').getByRole('button', { name: /Move up/ });
   await move.focus(); await page.keyboard.press('Enter');
-  await page.getByRole('status').filter({ hasText: 'Column order saved' }).waitFor();
+  await page.getByRole('status').filter({ hasText: 'Group order saved' }).waitFor();
   assert.equal(await columns.first().getAttribute('data-profile'), 'writer');
   await page.reload(); await columns.nth(3).waitFor();
   await page.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'writer');
@@ -116,12 +119,31 @@ try {
     assert.ok(await tabs.isVisible());
     assert.ok(await columns.first().locator('h2').isVisible());
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
-    assert.equal(await page.locator('.profile-overview-columns').evaluate(node => getComputedStyle(node).scrollSnapType), 'x mandatory');
+    assert.equal(await page.locator('.profile-overview-columns').evaluate(node => getComputedStyle(node).scrollSnapType), 'none');
+    assert.ok(await columns.evaluateAll(nodes => nodes.every((node, i) => !i || node.getBoundingClientRect().top >= nodes[i - 1].getBoundingClientRect().bottom)), 'Mobile groups stack vertically');
+    assert.ok(await page.locator('.profile-overview-columns').evaluate(node => node.scrollWidth <= node.clientWidth));
     await page.screenshot({ path: `${shotDir}/after-mobile-${theme}.png` });
+    await columns.nth(1).scrollIntoViewIfNeeded();
+    await page.screenshot({ path: `${shotDir}/after-mobile-groups-${theme}.png` });
+    await page.locator('.profile-overview').evaluate(node => { node.scrollTop = 0; });
   }
   await columns.nth(1).scrollIntoViewIfNeeded();
   assert.ok(await columns.nth(1).locator('h2').isVisible());
   assert.ok(await tabs.isVisible());
+  const originalTitle = profiles[0].sessions[0].title;
+  profiles[0].sessions[0].title = 'LongUnbrokenSessionTitle'.repeat(15);
+  await page.reload(); await columns.nth(3).waitFor();
+  for (const width of [390, 800, 1024, 1440]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.ok(await page.locator('.profile-overview-columns').evaluate(node => node.scrollWidth <= node.clientWidth), `Long titles fit at ${width}px`);
+    assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
+  }
+  profiles[0].sessions[0].title = originalTitle;
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-profile="writer"] .profile-session').first().click();
+  await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'writer');
+  await page.locator('.codex-pane-slot').first().waitFor();
+  await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
   mode = 'partial'; await page.reload();
   await columns.nth(1).getByRole('alert').waitFor();
   assert.equal(await columns.first().getByRole('alert').count(), 0);
