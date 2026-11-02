@@ -1480,7 +1480,7 @@ class BridgeStore:
             rows = self.connection.execute("SELECT seq,method,payload,created_at FROM codex_events WHERE user_id=? AND profile=? AND session_id=? AND seq>? AND seq<=? ORDER BY seq", (user, profile, session_id, after, through)).fetchall()
         return [{"seq": row["seq"], "method": row["method"], "payload": json.loads(row["payload"]), "created_at": row["created_at"]} for row in rows]
 
-    def cached_history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT) -> dict[str, Any] | None:
+    def cached_history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT, *, full: bool = False) -> dict[str, Any] | None:
         """Rebuild a small recent-turn snapshot from the local history archive."""
 
         bounded_limit = min(max(int(limit), 1), _PREVIEW_TURN_LIMIT)
@@ -1527,7 +1527,7 @@ class BridgeStore:
                     params = json.loads(row["payload"]).get("params", {})
                     item = params.get("item") if isinstance(params, dict) else None
                     if isinstance(item, dict):
-                        items_by_turn[turn_id].append(_compact_preview_item(item))
+                        items_by_turn[turn_id].append(item if full else _compact_preview_item(item))
             turns: list[dict[str, Any]] = []
             for _, turn in reversed(selected):
                 value = dict(turn)
@@ -2733,18 +2733,18 @@ class CodexBridge:
         value = await asyncio.shield(task)
         return await asyncio.to_thread(self.store.public_messages, user, profile, session_id, value)
 
-    async def history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT) -> dict[str, Any]:
-        value = await self._history_preview(user, profile, session_id, limit)
+    async def history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT, *, full: bool = False) -> dict[str, Any]:
+        value = await self._history_preview(user, profile, session_id, limit, full=full)
         return await asyncio.to_thread(self.store.public_messages, user, profile, session_id, value)
 
-    async def _history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT) -> dict[str, Any]:
+    async def _history_preview(self, user: str, profile: str, session_id: str, limit: int = _PREVIEW_TURN_LIMIT, *, full: bool = False) -> dict[str, Any]:
         """Return a local recent-turn preview without contacting Codex upstream."""
 
         session = self.store.session(user, profile, session_id)
         if session is None:
             raise HTTPException(status_code=404, detail="Session not found")
-        if session.get("deleted"):
-            raise HTTPException(status_code=410, detail="Restore the archived session before reading its history")
+        # Search previews may inspect archived local history without restoring it
+        # or contacting the upstream runtime. Active history still requires restore.
         if str(session["thread_id"]).startswith("pending:"):
             return {
                 "session": session,
@@ -2760,7 +2760,7 @@ class CodexBridge:
                 "cached": True,
                 "lastError": "",
             }
-        preview = await asyncio.to_thread(self.store.cached_history_preview, user, profile, session_id, limit)
+        preview = await asyncio.to_thread(self.store.cached_history_preview, user, profile, session_id, limit, full=full)
         if preview is None:
             return {
                 "cached": False,
@@ -3423,10 +3423,10 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
         return await service.history(_user(request), _safe(profile, "profile"), _safe(session_id, "session"), max(after, 0), min(max(limit, 1), _MAX_PAGE), defer_persistence=defer_persistence)
 
     @router.get("/session/preview")
-    async def session_preview(request: Request, profile: str, session_id: str, turns: int = _PREVIEW_TURN_LIMIT) -> dict[str, Any]:
+    async def session_preview(request: Request, profile: str, session_id: str, turns: int = _PREVIEW_TURN_LIMIT, full: bool = False) -> dict[str, Any]:
         """Return a recent local snapshot for fast first paint."""
 
-        return await service.history_preview(_user(request), _safe(profile, "profile"), _safe(session_id, "session"), min(max(turns, 1), _PREVIEW_TURN_LIMIT))
+        return await service.history_preview(_user(request), _safe(profile, "profile"), _safe(session_id, "session"), min(max(turns, 1), _PREVIEW_TURN_LIMIT), full=full)
 
     @router.get("/session/replication")
     async def session_replication(request: Request, profile: str, session_id: str, after: int = 0, limit: int = 100) -> dict[str, Any]:

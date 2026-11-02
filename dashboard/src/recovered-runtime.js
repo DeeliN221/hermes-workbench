@@ -1,3 +1,4 @@
+import { createSessionSearch } from './session-search';
 import { createWorkbenchTerminal } from './terminal-runtime';
 import { renderMarkdownSource as S2 } from './markdown-source';
 import { reconcileMarkdownHtml } from './markdown-html';
@@ -5698,7 +5699,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       K(i, Ki, { React: i, content: String(e.content || "") }),
     );
   }
-  function lR({ React: i, hooks: e, turn: t, rawOpen: r, index: n }) {
+  function lR({ React: i, hooks: e, turn: t, rawOpen: r, index: n, collapsed = false }) {
     const s = t,
       o = e.useMemo(() => I2(Z2(s)), [t]);
     return K(
@@ -5716,7 +5717,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               K(i, sR, {
                 React: i,
                 hooks: e,
-                block: a,
+                block: collapsed ? { ...a, defaultOpen: false } : a,
                 key: `${a.turnKey}:process`,
               }),
             ]
@@ -5748,7 +5749,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function Jb(i) {
     const e = i.React,
       t = i.hooks;
-    function r({ turns: n, rawOpen: s }) {
+    function r({ turns: n, rawOpen: s, collapsed = false }) {
       const [o, a] = t.useState(z2),
         l = Math.max(0, n.length - o),
         c = n.slice(l);
@@ -5779,6 +5780,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             hooks: t,
             turn: u,
             rawOpen: s,
+            collapsed,
             index: l + h,
             key: u.key,
           }),
@@ -7506,7 +7508,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function u_(i) {
     const e = i.React,
       { TranscriptTimeline: t } = Jb(i);
-    function r({ transcript: n }) {
+    function r({ transcript: n, collapsed = false }) {
       return e.createElement(
         "div",
         {
@@ -7514,7 +7516,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           "data-testid": "hermes-history-transcript",
           "data-session-id": n.sessionId,
         },
-        e.createElement(t, { turns: n.turns, rawOpen: !1 }),
+        e.createElement(t, { turns: n.turns, rawOpen: !1, collapsed }),
       );
     }
     return { HermesHistoryTimeline: r };
@@ -8451,16 +8453,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return i.status === "running" || i.status === "waiting";
   }
   const ks = { title: 1300, id: 1050, group: 950, source: 650 },
-    f0 = { session: 0, hermes: 1, archived: 2 },
-    xd = 80;
+    f0 = { session: 0, hermes: 1, archived: 2 };
   function qn(i) {
     return String(i ?? "")
       .normalize("NFKC")
       .toLocaleLowerCase()
       .replace(/\s+/gu, "");
-  }
-  function Cd(i) {
-    return `codex-session-search-result-${i.kind}-${i.id.replace(/[^a-zA-Z0-9_-]/gu, "-")}`;
   }
   function a5(i, e) {
     const t = Array.from(qn(i)),
@@ -8569,38 +8567,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             (o.groupId && r.get(o.groupId)) || runtimeText("未整理", "Unorganized"),
             e,
           );
-    for (const o of i.serverHits || []) {
-      const kind = o.kind === "hermes" ? "hermes" : o.deleted ? "archived" : "session",
-        id = String(o.id || ""),
-        key = `${kind}:${id}`;
-      if (!id) continue;
-      const existing = n.find((row) => `${row.kind}:${row.id}` === key);
-      if (existing) {
-        existing.snippet ||= o.snippet || "";
-        existing.updatedAt ??= o.updatedAt;
-        continue;
-      }
-      if (s.has(key)) continue;
-      const known =
-        kind === "hermes"
-          ? i.hermesSessions.find((row) => String(row.id ?? row.session_id) === id)
-          : [...i.sessions, ...i.archivedSessions].find((row) => String(row.id) === id);
-      s.add(key);
-      n.push({
-        kind,
-        id,
-        title: o.title || known?.title || o.snippet || id,
-        updatedAt: o.updatedAt ?? known?.updatedAt,
-        groupName:
-          kind === "hermes"
-            ? runtimeText("Hermes 历史", "Hermes history")
-            : (known?.groupId && r.get(known.groupId)) || o.groupName || runtimeText("未整理", "Unorganized"),
-        score: 0,
-        matchedField: o.matched || "content",
-        snippet: o.snippet || "",
-        session: kind === "archived" ? known || { id, title: o.title || id, deleted: !0 } : void 0,
-      });
-    }
     return n.sort((o, a) => {
       if (t && a.score !== o.score) return a.score - o.score;
       const l = p0(a.updatedAt) - p0(o.updatedAt);
@@ -8612,389 +8578,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       );
     });
   }
-  function Mt(i, e, t, ...r) {
-    return i.createElement(e, t, ...r);
-  }
   function h5(i) {
-    const e = i.React,
-      { useEffect: t, useMemo: r, useRef: n, useState: s } = i.hooks;
-    return function (a) {
-      const l = n(null),
-        c = n(null),
-        u = n(new Map()),
-        h = n(a.open),
-        d = n(0);
-      h.current = a.open;
-      const [f, S] = s(""),
-        [b, p] = s(0),
-        [m, O] = s(""),
-        [g, _] = s(""),
-        [serverHits, setServerHits] = s([]),
-        [serverLoading, setServerLoading] = s(!1),
-        [serverError, setServerError] = s(""),
-        w = r(
-          () =>
-            c5({
-              query: f,
-              sessions: a.sessions,
-              archivedSessions: a.archivedSessions,
-              groups: a.groups,
-              hermesSessions: a.hermesSessions,
-              serverHits,
-            }),
-          [a.archivedSessions, a.groups, a.hermesSessions, a.sessions, f, serverHits],
-        ),
-        v = w.slice(0, xd),
-        x = w.length > v.length;
-      if (
-        (t(() => {
-          if (!a.open) {
-            d.current += 1;
-            return;
-          }
-          (++d.current, S(""), p(0), O(""), _(""));
-          const R = l.current;
-          if (!R) return;
-          R.open ||
-            (typeof R.showModal == "function"
-              ? R.showModal()
-              : R.setAttribute("open", ""));
-          const M = () => c.current?.focus();
-          return (
-            typeof window.requestAnimationFrame == "function"
-              ? window.requestAnimationFrame(M)
-              : window.setTimeout(M, 0),
-            () => {
-              ((d.current += 1),
-                R.open &&
-                  (typeof R.close == "function"
-                    ? R.close()
-                    : R.removeAttribute("open")));
-            }
-          );
-        }, [a.open]),
-        t(() => {
-          if (!a.open) {
-            (setServerHits([]), setServerLoading(!1), setServerError(""));
-            return;
-          }
-          const R = f.trim();
-          if (!R) {
-            (setServerHits([]), setServerLoading(!1), setServerError(""));
-            return;
-          }
-          let M = !0;
-          (setServerLoading(!0), setServerError(""));
-          const H = window.setTimeout(() => {
-            Promise.allSettled([
-              a.fetchJSON && a.profile ? yQ(a.fetchJSON, a.profile, R) : Promise.resolve([]),
-              a.fetchJSON && a.profile ? Jx(a.fetchJSON, a.profile, R) : Promise.resolve([]),
-            ])
-              .then(([U, ee]) => {
-                if (!M) return;
-                const ne = [];
-                if (U.status === "fulfilled")
-                  for (const xe of U.value)
-                    ne.push({
-                      ...xe,
-                      kind: xe.deleted ? "archived" : "session",
-                      updatedAt: searchStamp(xe.updatedAt),
-                    });
-                if (ee.status === "fulfilled")
-                  for (const xe of ee.value) {
-                    if (String(xe.source || "").toLowerCase() === "codex") continue;
-                    const Ge = String(xe.session_id || "");
-                    Ge &&
-                      ne.push({
-                        kind: "hermes",
-                        id: Ge,
-                        title: "",
-                        snippet: String(xe.snippet || ""),
-                        updatedAt: searchStamp(xe.session_started),
-                        matched: "content",
-                      });
-                  }
-                (setServerHits(ne),
-                  U.status === "rejected" &&
-                    ee.status === "rejected" &&
-                    setServerError(
-                      runtimeText(
-                        "全量会话搜索暂时不可用，仅显示已加载的会话。",
-                        "Full session search is unavailable; showing loaded sessions only.",
-                      ),
-                    ));
-              })
-              .finally(() => {
-                M && setServerLoading(!1);
-              });
-          }, 220);
-          return () => {
-            ((M = !1), window.clearTimeout(H));
-          };
-        }, [a.open, a.profile, f]),
-        t(() => {
-          p((R) => Math.min(R, Math.max(v.length - 1, 0)));
-        }, [v.length]),
-        t(() => {
-          const R = v[b];
-          R && u.current.get(Cd(R))?.scrollIntoView?.({ block: "nearest" });
-        }, [v, b]),
-        !a.open)
-      )
-        return null;
-      const y = (R) => {
-          if (R.kind === "archived") {
-            if (!R.session || m) return;
-            const M = d.current;
-            (O(R.session.id),
-              _(""),
-              a
-                .onRestoreArchived(R.session)
-                .then((H) => {
-                  if (!H) {
-                    h.current && d.current === M && _(runtimeText("恢复失败，请稍后重试。", "Restore failed. Please retry later."));
-                    return;
-                  }
-                  !h.current ||
-                    d.current !== M ||
-                    (a.onClose(), a.onSelectSession(R.session.id));
-                })
-                .catch(() => {
-                  h.current && d.current === M && _(runtimeText("恢复失败，请稍后重试。", "Restore failed. Please retry later."));
-                })
-                .finally(() => {
-                  h.current && d.current === M && O("");
-                }));
-            return;
-          }
-          (a.onClose(),
-            R.kind === "hermes"
-              ? a.onSelectHermes(R.id)
-              : a.onSelectSession(R.id));
-        },
-        C = (R) => {
-          R.isComposing ||
-            R.nativeEvent?.isComposing ||
-            R.keyCode === 229 ||
-            (R.key === "ArrowDown" && v.length
-              ? (R.preventDefault(), p((M) => (M + 1) % v.length))
-              : R.key === "ArrowUp" && v.length
-                ? (R.preventDefault(), p((M) => (M - 1 + v.length) % v.length))
-                : R.key === "Enter" && v[b]
-                  ? (R.preventDefault(), y(v[b]))
-                  : R.key === "Escape" && (R.preventDefault(), a.onClose()));
-        },
-        P = (R) => {
-          R.target === R.currentTarget && a.onClose();
-        },
-        E = (R) =>
-          R.kind === "archived"
-            ? runtimeText(`已归档 · ${R.groupName} · ${R.id}`, `Archived · ${R.groupName} · ${R.id}`)
-            : R.kind === "hermes"
-              ? runtimeText(`Hermes 历史 · ${R.id}`, `Hermes history · ${R.id}`)
-              : `${R.groupName} · ${R.id}`,
-        D = v.map((R, M) => {
-          const H = M === b,
-            F = R.title || R.id,
-            j = Cd(R);
-          return R.kind === "archived"
-            ? Mt(
-                e,
-                "div",
-                {
-                  key: `${R.kind}:${R.id}`,
-                  className: `codex-session-search-result codex-session-search-result-archived${H ? " is-selected" : ""}`,
-                  role: "option",
-                  "aria-selected": H,
-                  id: j,
-                  ref: (Q) => {
-                    Q ? u.current.set(j, Q) : u.current.delete(j);
-                  },
-                  "data-result-id": R.id,
-                  "data-result-kind": R.kind,
-                },
-                Mt(
-                  e,
-                  "div",
-                  { className: "codex-session-search-result-copy" },
-                  Mt(
-                    e,
-                    "strong",
-                    {
-                      className: "codex-session-search-result-title",
-                      title: F,
-                    },
-                    F,
-                  ),
-                  Mt(
-                    e,
-                    "span",
-                    { className: "codex-session-search-result-meta" },
-                    E(R),
-                  ),
-                  R.snippet
-                    ? Mt(
-                        e,
-                        "span",
-                        { className: "codex-session-search-result-snippet" },
-                        R.snippet,
-                      )
-                    : null,
-                ),
-                Mt(
-                  e,
-                  "button",
-                  {
-                    type: "button",
-                    className: "codex-session-search-result-action",
-                    disabled: m !== "" && m !== R.id,
-                    onClick: () => y(R),
-                    "aria-label": runtimeText(`恢复并打开：${F}`, `Restore and open: ${F}`),
-                    title: runtimeText("恢复后打开会话", "Restore and open the session"),
-                  },
-                  m === R.id ? runtimeText("恢复中…", "Restoring…") : runtimeText("恢复并打开", "Restore and open"),
-                ),
-              )
-            : Mt(
-                e,
-                "button",
-                {
-                  key: `${R.kind}:${R.id}`,
-                  type: "button",
-                  className: `codex-session-search-result${H ? " is-selected" : ""}`,
-                  role: "option",
-                  "aria-selected": H,
-                  id: j,
-                  ref: (Q) => {
-                    Q ? u.current.set(j, Q) : u.current.delete(j);
-                  },
-                  "data-result-id": R.id,
-                  "data-result-kind": R.kind,
-                  onClick: () => y(R),
-                  title: F,
-                },
-                Mt(
-                  e,
-                  "strong",
-                  { className: "codex-session-search-result-title" },
-                  F,
-                ),
-                Mt(
-                  e,
-                  "span",
-                  { className: "codex-session-search-result-meta" },
-                  E(R),
-                ),
-                R.snippet
-                  ? Mt(
-                      e,
-                      "span",
-                      { className: "codex-session-search-result-snippet" },
-                      R.snippet,
-                    )
-                  : null,
-              );
-        }),
-        A = w.length
-          ? null
-          : Mt(
-              e,
-              "div",
-              { className: "codex-session-search-empty", role: "status" },
-              a.hermesHistoryLoading || serverLoading
-                ? runtimeText("正在搜索全部会话…", "Searching all sessions…")
-                : f.trim()
-                  ? runtimeText("没有匹配的会话", "No matching sessions")
-                  : runtimeText("暂无最近会话", "No recent sessions"),
-            );
-      return Mt(
-        e,
-        "dialog",
-        {
-          ref: l,
-          className: "codex-session-search-dialog-backdrop",
-          "aria-label": runtimeText("搜索会话", "Search sessions"),
-          onCancel: (R) => {
-            (R.preventDefault(), a.onClose());
-          },
-          onClick: P,
-        },
-        Mt(
-          e,
-          "section",
-          { className: "codex-session-search-dialog" },
-          Mt(
-            e,
-            "header",
-            { className: "codex-session-search-header" },
-            Mt(e, "h2", null, runtimeText("搜索会话", "Search sessions")),
-            Mt(
-              e,
-              "button",
-              {
-                type: "button",
-                className: "codex-session-search-close",
-                onClick: a.onClose,
-                "aria-label": runtimeText("关闭搜索", "Close search"),
-                title: runtimeText("关闭搜索", "Close search"),
-              },
-              "×",
-            ),
-          ),
-          Mt(e, "input", {
-            ref: c,
-            className: "codex-session-search-input",
-            name: "session-search",
-            value: f,
-            onChange: (R) => {
-              (S(R.target.value), p(0));
-            },
-            onKeyDown: C,
-            placeholder: runtimeText("搜索标题、内容、会话 ID 或项目", "Search titles, content, session IDs or projects"),
-            "aria-label": runtimeText("搜索会话", "Search sessions"),
-            "aria-activedescendant": v[b] ? Cd(v[b]) : void 0,
-            autoComplete: "off",
-          }),
-          a.hermesHistoryComplete
-            ? null
-            : Mt(
-                e,
-                "div",
-                { className: "codex-session-search-notice", role: "status" },
-                runtimeText("Hermes 历史列表未全部加载；内容搜索仍覆盖服务端历史", "The Hermes history list is partial; content search still covers server history"),
-              ),
-          x
-            ? Mt(
-                e,
-                "div",
-                { className: "codex-session-search-limit", role: "status" },
-                qn(f)
-                  ? runtimeText(`仅显示相关度最高的 ${xd} 条，请继续输入以缩小范围`, `Showing the top ${xd} results. Keep typing to narrow the search.`)
-                  : runtimeText(`仅显示最近的 ${xd} 条，可输入关键词查找其他会话`, `Showing the latest ${xd} sessions. Enter keywords to find others.`),
-              )
-            : null,
-          g || serverError
-            ? Mt(
-                e,
-                "div",
-                { className: "codex-session-search-error", role: "alert" },
-                g || serverError,
-              )
-            : null,
-          Mt(
-            e,
-            "div",
-            {
-              className: "codex-session-search-results",
-              role: "listbox",
-              "aria-label": runtimeText("搜索结果", "Search results"),
-            },
-            D,
-            A,
-          ),
-        ),
-      );
-    };
+    return createSessionSearch(i, (props) => c5(props), {
+      Transcript: createChatTranscript(i.React),
+      HermesHistoryTimeline: u_(i).HermesHistoryTimeline,
+    });
   }
   function Fe(i, e, t, ...r) {
     return i.createElement(e, t, ...r);
@@ -10067,6 +9655,17 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function E5(i, e) {
     return `${window.location.protocol === "https:" ? "wss:" : "ws:"}//${window.location.host}${Ml}/events?profile=${encodeURIComponent(i)}&session_id=${encodeURIComponent(e)}&defer_persistence=true`;
   }
+  /** Shared presentation only: no session hooks, subscriptions, or navigation. */
+  function createChatTranscript(e) {
+    const MemoMessage = e.memo(T5),
+      MemoProcess = e.memo(Q5, (before, after) => before.detail === after.detail
+        && before.showDuration === after.showDuration
+        && before.hasFollowingBody === after.hasFollowingBody
+        && before.messages.length === after.messages.length
+        && before.messages.every((message, index) => message === after.messages[index])),
+      Transcript = e.memo(({ messages, detail }) => W(e, e.Fragment, null, ...P5(e, messages, MemoProcess, MemoMessage, detail)));
+    return Transcript;
+  }
   function A5(i) {
     const e = i.React,
       {
@@ -10082,13 +9681,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       ProjectNavigation = createProjectNavigation(i),
       ChatComposerInput = createChatComposerInput(i),
       CodexUserInput = createCodexUserInput(i),
-      MemoMessage = e.memo(T5),
-      MemoProcess = e.memo(Q5, (before, after) => before.detail === after.detail
-        && before.showDuration === after.showDuration
-        && before.hasFollowingBody === after.hasFollowingBody
-        && before.messages.length === after.messages.length
-        && before.messages.every((message, index) => message === after.messages[index])),
-      Transcript = e.memo(({ messages, detail }) => W(e, e.Fragment, null, ...P5(e, messages, MemoProcess, MemoMessage, detail))),
+      Transcript = createChatTranscript(e),
       u = LL(i, {
         imageLoading: runtimeText("图片加载中…", "Loading image…"),
         imageError: runtimeText("图片加载失败", "Could not load image"),

@@ -153,6 +153,7 @@ export function createProjectNavigation(sdk: Record<string, any>) {
     const moving = useRef(false);
     const folders = useRef(new Map<string, HTMLDetailsElement>());
     const activeProjectId = sessions.find(session => session.id === props.activeSessionId)?.groupId;
+    const activeProjectAvailable = projects.some(project => project.id === activeProjectId);
     useEffect(() => {
       const sync = () => setCollapsed(document.documentElement.dataset.workbenchNavCollapsed === 'true');
       window.addEventListener('workbench:nav-state', sync);
@@ -177,11 +178,12 @@ export function createProjectNavigation(sdk: Record<string, any>) {
       if (!collapsed) setRailProjectId(undefined);
     }, [collapsed]);
     useEffect(() => {
-      if (activeProjectId) {
+      if (activeProjectId && activeProjectAvailable) {
+        if (collapsed) setRailProjectId(activeProjectId);
         const folder = folders.current.get(activeProjectId);
         if (folder) folder.open = true;
       }
-    }, [activeProjectId, props.activeSessionId]);
+    }, [activeProjectId, props.activeSessionId, profile, activeProjectAvailable, collapsed]);
     const { groups, temporary } = partitionProjectSessions(sessions, projects);
     splitValue.current = projectSplit;
     const applyProjectSplit = (value: number) => {
@@ -277,7 +279,8 @@ export function createProjectNavigation(sdk: Record<string, any>) {
         h('section', { className: 'project-rail', 'aria-label': sourceText("项目与临时会话", "Projects and temporary sessions") },
           groups.length ? h('div', { className: 'project-rail-section' }, ...groups.map(({ project, sessions: members }) =>
             h('button', {
-              key: project.id, type: 'button', className: 'project-rail-folder', 'data-project-rail-folder': project.id,
+              key: project.id, type: 'button', className: `project-rail-folder${activeProjectId === project.id ? ' is-active' : ''}`, 'data-project-rail-folder': project.id,
+              'aria-current': activeProjectId === project.id ? 'true' : undefined,
               title: `${project.name} (${members.length})`, 'aria-label': sourceText(`项目：${project.name}，${members.length} 个会话`, `Project: ${project.name}, ${members.length} sessions`),
               'aria-expanded': railProjectId === project.id,
               onClick: (event: MouseEvent) => {
