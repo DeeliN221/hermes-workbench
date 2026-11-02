@@ -6,6 +6,7 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { chromium } from 'playwright';
+import { expect } from '@playwright/test';
 import { createMockHost } from './mock-host.mjs';
 
 const reserve = createServer();
@@ -79,7 +80,10 @@ try {
   await send('Review this folder.', [], true);
   assert.match(await messages.last().innerText(), /project.*1 file/s);
   await send('Compare the image, file and folder.', [image, file], true);
-  assert.equal(await messages.last().locator('.codex-message-file').count(), 2);
+  // Authenticated image loading initially renders a file placeholder. Wait for
+  // the image projection before asserting the two remaining file/folder cards.
+  await expect(messages.last().locator('.codex-message-attachment')).toHaveCount(1);
+  await expect(messages.last().locator('.codex-message-file')).toHaveCount(2);
   await send('', [file]);
   const evidence = await (await fetch(origin + '/api/plugins/workbench/qa/attachments', { headers })).json();
   assert.equal(evidence.requests, 5);
@@ -110,7 +114,7 @@ try {
   assert.doesNotMatch(await page.locator('.codex-session-search-dialog').innerText(), /Path:|private native search/);
   if (shots) await page.screenshot({ path: `${shots}/attachments-search.png` });
   await page.locator('input[name="session-search"]').fill('.workbench-attachments');
-  await page.locator('.codex-session-search-empty').waitFor();
+  await page.locator('.codex-session-search-results').getByText('No matching sessions', { exact: true }).waitFor();
   await page.locator('.codex-session-search-close').click();
   await page.locator('.codex-session-row').filter({ hasText: 'Home rendering regression' }).first().click();
   await page.waitForFunction(() => [...document.querySelectorAll('.codex-message.is-user .codex-message-body')].some(node => node.textContent === 'Original legacy message.'));
