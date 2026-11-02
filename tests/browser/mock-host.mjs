@@ -210,7 +210,7 @@ let createdCounter = 0;
 
 /** Return deterministic plugin API data for the fixture routes. */
 function apiPayload(url, method, body = null, preferences = new Map()) {
-  if (url.pathname === '/api/plugins/workbench/fleet/config') return { mode: 'unconfigured', extended_workflow: false };
+  if (['/api/plugins/workbench/fleet/config', '/api/plugins/workbench/fleetd/config'].includes(url.pathname)) return { mode: 'unconfigured', extended_workflow: false };
   if (url.pathname.startsWith('/api/plugins/workbench/model-display')) {
     const profile = url.searchParams.get('profile') || 'default';
     const current = preferences.get(profile);
@@ -343,7 +343,7 @@ async function readRequestBody(request) {
 }
 
 /** Start a same-origin preview host or an ephemeral server for browser tests. */
-export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '' } = {}) {
+export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '', codexProxyOrigin = '' } = {}) {
   const preferences = new Map();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
@@ -352,7 +352,22 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
       response.writeHead(204).end();
       return;
     }
-    if (fleetProxyOrigin && url.pathname.startsWith('/api/plugins/workbench/fleet/')) {
+    if (codexProxyOrigin && /^\/api\/plugins\/workbench\/codex\/(?:session(?:\/preview|\/read|\/steer)?|search|attachments(?:\/.*)?)$/.test(url.pathname)) {
+      try {
+        // Forward the browser's real multipart bytes. CDP route.fetch can omit
+        // file-backed directory bodies even though in-memory File uploads work.
+        const chunks = [];
+        for await (const chunk of request) chunks.push(chunk);
+        const body = ['GET', 'HEAD'].includes(request.method) ? undefined : Buffer.concat(chunks);
+        const upstream = await fetch(codexProxyOrigin + url.pathname + url.search, { method: request.method,
+          headers: { ...(request.headers['content-type'] ? { 'Content-Type': request.headers['content-type'] } : {}),
+            'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' }, body });
+        response.writeHead(upstream.status, Object.fromEntries([...upstream.headers].filter(([key]) => !['transfer-encoding', 'content-length', 'connection'].includes(key))));
+        response.end(Buffer.from(await upstream.arrayBuffer()));
+      } catch { response.writeHead(502, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ detail: 'Local Codex test bridge unavailable' })); }
+      return;
+    }
+    if (fleetProxyOrigin && /^\/api\/plugins\/workbench\/fleetd?\//.test(url.pathname)) {
       try {
         const body = ['GET', 'HEAD'].includes(request.method) ? undefined : JSON.stringify(await readRequestBody(request));
         const upstream = await fetch(fleetProxyOrigin + url.pathname + url.search, { method: request.method, headers: { 'Content-Type': 'application/json', ...(request.headers['if-match'] ? { 'If-Match': request.headers['if-match'] } : {}), 'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' }, body });

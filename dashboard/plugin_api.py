@@ -1641,3 +1641,6 @@ def put_profile_display(request: Request, body: ProfileDisplayBody, profile: str
 # receives a product projection only, never the server token or raw run events.
 from fleet_proxy import router as fleet_router
 router.include_router(fleet_router)
+
+from fleetd_proxy import router as fleetd_router
+router.include_router(fleetd_router)

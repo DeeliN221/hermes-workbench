@@ -4,6 +4,7 @@ import {
   fleetAPI,
   downloadArtifact,
   type FleetConfig,
+  type Worker,
 } from "./task-control-api";
 import {
   attention,
@@ -52,6 +53,12 @@ export function createTaskControlTower(
   function TaskControlTower({ profile }: { profile: string }) {
     const [tasks, setTasks] = useState([] as Task[]),
       [config, setConfig] = useState(null as FleetConfig | null);
+    const [workers, setWorkers] = useState([] as Worker[]),
+      [lastSuccess, setLastSuccess] = useState(""),
+      [connectionError, setConnectionError] = useState(""),
+      [refreshing, setRefreshing] = useState(false),
+      [truncated, setTruncated] = useState(false);
+    const refreshLock = useRef(false);
     const [detail, setDetail] = useState(null as Detail | null),
       [selected, setSelected] = useState("");
     const [error, setError] = useState(""),
@@ -82,7 +89,8 @@ export function createTaskControlTower(
       opener = useRef(null as HTMLElement | null),
       order = useRef([] as string[]);
     const refresh = async () => {
-      const rows = await api.list();
+      const snapshot = await api.snapshot();
+      const rows = snapshot.tasks;
       if (!alive.current) return;
       const index = new Map<string, number>(
         order.current.map((id: string, i: number) => [id, i]),
@@ -92,38 +100,48 @@ export function createTaskControlTower(
           (a, b) => (index.get(a.id) ?? 1e6) - (index.get(b.id) ?? 1e6),
         ),
       );
+      setWorkers(snapshot.workers);
+      setTruncated(snapshot.truncated);
+      setLastSuccess(new Date().toISOString());
+      setConnectionError("");
       const id = selection.current;
       if (id) {
-        const data = await api.detail(id);
-        if (alive.current && id === selection.current) setDetail(data);
+        try {
+          const data = await api.detail(id);
+          if (alive.current && id === selection.current) setDetail(data);
+        } catch {
+          if (alive.current) setError(tr("详情已过期，请重新打开重试", "Details are stale. Reopen to retry."));
+        }
+      }
+    };
+    const load = async () => {
+      if (refreshLock.current) return;
+      refreshLock.current = true;
+      setRefreshing(true);
+      try {
+        const cfg = await api.config();
+        if (!alive.current) return;
+        setConfig(cfg);
+        if (cfg.mode !== "unconfigured") await refresh();
+      } catch (e) {
+        if (alive.current) setConnectionError(e instanceof Error ? e.message : tr("连接失败，请重试", "Connection failed. Retry."));
+      } finally {
+        refreshLock.current = false;
+        if (alive.current) { setLoading(false); setRefreshing(false); }
       }
     };
     useEffect(() => {
       alive.current = true;
-      let polling = false;
-      const load = async () => {
-        if (polling) return;
-        polling = true;
-        try {
-          const cfg = await api.config();
-          if (!alive.current) return;
-          setConfig(cfg);
-          if (cfg.mode !== "unconfigured") await refresh();
-        } catch {
-          if (alive.current)
-            setError(
-              tr("任务加载失败，请重试", "Tasks failed to load. Retry."),
-            );
-        } finally {
-          polling = false;
-          if (alive.current) setLoading(false);
-        }
-      };
       void load();
-      const timer = setInterval(load, 15000);
+      const visibleLoad = () => { if (!document.hidden) void load(); };
+      const timer = setInterval(visibleLoad, 15000);
+      document.addEventListener("visibilitychange", visibleLoad);
+      window.addEventListener("focus", visibleLoad);
       return () => {
         alive.current = false;
         clearInterval(timer);
+        document.removeEventListener("visibilitychange", visibleLoad);
+        window.removeEventListener("focus", visibleLoad);
       };
     }, []);
     useEffect(() => {
@@ -181,6 +199,9 @@ export function createTaskControlTower(
     };
     useEffect(() => {
       if (!selected) return;
+      const nav = document.querySelector<HTMLElement>(".dashboard-global-nav");
+      const wasInert = nav?.inert;
+      if (nav) nav.inert = true;
       const key = (event: KeyboardEvent) => {
         if (event.key === "Escape") close();
         if (event.key === "Tab") {
@@ -202,7 +223,10 @@ export function createTaskControlTower(
       };
       document.addEventListener("keydown", key);
       dialog.current?.focus();
-      return () => document.removeEventListener("keydown", key);
+      return () => {
+        document.removeEventListener("keydown", key);
+        if (nav) nav.inert = !!wasInert;
+      };
     }, [selected]);
     const run = async (work: () => Promise<unknown>) => {
       if (writing.current) return;
@@ -238,14 +262,9 @@ export function createTaskControlTower(
       try {
         const data = await api.detail(id);
         if (selection.current === id) setDetail(data);
-      } catch {
+      } catch (e) {
         if (selection.current === id)
-          setError(
-            tr(
-              "详情加载失败，请关闭后重试",
-              "Details failed to load. Close and retry.",
-            ),
-          );
+          setError(e instanceof Error ? e.message : tr("详情加载失败，请关闭后重试", "Details failed to load. Close and retry."));
       }
     };
     const move = (task: Task, to: Status, before?: string) => {
@@ -306,11 +325,11 @@ export function createTaskControlTower(
     });
     const pending = tasks.filter(attention),
       running = tasks.filter((t) => t.status === "running"),
-      blocked = tasks.filter((t) => t.status === "blocked"),
+      blocked = tasks.filter((t) => t.status === "blocked" || t.fleet_status === "blocked"),
       done = delivered(tasks);
     const decisions = pending.filter((t) => t.decision).length,
       reviews = pending.filter(
-        (t) => t.status === "review" && verifyMode(t) === "human",
+        (t) => t.status === "review" && !t.decision && verifyMode(t) === "human",
       ).length;
     const today = tasks.filter(
       (t) =>
@@ -336,7 +355,7 @@ export function createTaskControlTower(
           key: t.id,
           className: `tower-card ${compact ? "is-row" : ""}`,
           "data-task-id": t.id,
-          draggable: !busy && t.status !== "done",
+          draggable: !busy && !t.read_only && t.status !== "done",
           onDragStart: (e: DragEvent) => {
             e.dataTransfer?.setData("text/workbench-task", t.id);
             if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
@@ -347,8 +366,12 @@ export function createTaskControlTower(
         h(
           "div",
           { className: "tower-card-meta" },
+          h("span", null, t.id),
+          h("span", null, statusLabel(t.status)),
           h("span", null, t.repo || "—"),
-          h("span", null, t.machine || "—"),
+          h("span", null, [t.machine, t.assignee].filter(Boolean).join(" / ") || "—"),
+          t.attempt_count !== undefined ? h("span", { title: tr("Fleet 列表计数；详情显示实际执行记录数", "Fleet list counter; details show execution records") }, `${t.attempt_count} attempts`) : null,
+          t.updated_at ? h("time", { dateTime: t.updated_at }, new Date(t.updated_at).toLocaleString()) : null,
         ),
         h(
           "div",
@@ -356,12 +379,12 @@ export function createTaskControlTower(
           h("span", { className: `tower-risk risk-${t.risk}` }, t.risk),
           h("span", null, t.priority),
           h("time", null, age(t)),
-          h(
+          !t.read_only ? h(
             "span",
             null,
             `${t.acceptance.filter((c) => c.checked).length}/${t.acceptance.length}`,
-          ),
-          verifyMode(t) === "auto"
+          ) : null,
+          !t.read_only && verifyMode(t) === "auto"
             ? h(
                 "span",
                 { className: "tower-auto" },
@@ -369,11 +392,11 @@ export function createTaskControlTower(
               )
             : null,
         ),
-        h("progress", {
+        !t.read_only ? h("progress", {
           value: t.acceptance.filter((c) => c.checked).length,
           max: t.acceptance.length || 1,
           "aria-label": tr("交付进度", "Delivery progress"),
-        }),
+        }) : null,
       );
     const group = (status: Status) => {
       const rows =
@@ -463,6 +486,7 @@ export function createTaskControlTower(
                   (t.status !== "review" || verifyMode(t) === "human"),
               ),
       })),
+      ...(config?.mode === "live" ? [{ id: "archived", label: tr("已归档", "Archived"), rows: tasks.filter(t => t.status === "archived") }] : []),
     ];
     return h(
       "main",
@@ -498,8 +522,8 @@ export function createTaskControlTower(
           }),
           btn(tr("新建草稿", "New draft"), () => setCreating(true), {
             className: "tower-primary",
-            disabled: !config || busy,
-            title: !config
+            disabled: config?.mode !== "mock" || busy,
+            title: config?.mode !== "mock"
               ? tr(
                   "等待 Fleet 新建任务接口",
                   "Waiting for Fleet task creation API",
@@ -507,6 +531,15 @@ export function createTaskControlTower(
               : undefined,
           }),
         ),
+      ),
+      h("div", { className: "tower-connection", role: "status" },
+        h("span", null, connectionError
+          ? tr("连接错误 · 数据已过期", "Connection error · Data stale")
+          : refreshing ? tr("正在连接…", "Connecting…") : lastSuccess ? config?.mode === "mock" ? tr("演示数据", "Demo data") : tr("已连接 Fleet", "Connected to Fleet") : tr("尚未连接", "Not connected")),
+        h("span", null, tr("最后成功：", "Last success: ") + (lastSuccess ? new Date(lastSuccess).toLocaleString() : tr("尚无", "Never"))),
+        btn(connectionError ? tr("重试", "Retry") : tr("刷新", "Refresh"), () => void load(), { disabled: refreshing }),
+        connectionError ? h("span", { role: "alert" }, connectionError) : null,
+        truncated ? h("span", null, tr("当前为最近 100 项；计数仅覆盖已加载任务", "Latest 100 tasks; counts cover loaded tasks only")) : null,
       ),
       h(
         "div",
@@ -517,7 +550,9 @@ export function createTaskControlTower(
           h(
             "strong",
             null,
-            pending.length
+            !lastSuccess
+              ? loading ? tr("正在读取任务…", "Loading tasks…") : tr("任务数据不可用", "Task data unavailable")
+              : pending.length
               ? tr(
                   `现在需要你 ${pending.length} 件`,
                   `${pending.length} need you now`,
@@ -535,16 +570,10 @@ export function createTaskControlTower(
               )
             : null,
         ),
-        pending.length
-          ? h(
-              "span",
-              null,
-              tr(
-                `${running.length} 在跑 · ${blocked.length} 阻塞 · ${today} 今日交付`,
-                `${running.length} running · ${blocked.length} blocked · ${today} delivered today`,
-              ),
-            )
-          : null,
+        h("span", null, tr(
+          `${running.length} 在跑 · ${blocked.length} 阻塞 · ${today} 今日交付`,
+          `${running.length} running · ${blocked.length} blocked · ${today} delivered today`,
+        )),
       ),
       error
         ? h(
@@ -633,7 +662,7 @@ export function createTaskControlTower(
                     ).length,
                   ),
                 ),
-                c.statuses.map(group),
+                c.statuses.filter(s => config?.mode === "mock" || !["triage", "blocked"].includes(s)).map(group),
                 c.id === "done"
                   ? btn(
                       tr(
@@ -699,6 +728,11 @@ export function createTaskControlTower(
                     "div",
                     { key: t.id, className: "tower-action" },
                     h("strong", null, t.title),
+                    t.decision ? h("div", { className: "tower-decision-summary" },
+                      h("p", null, t.decision.question),
+                      ...decisionOptions(t.decision, t.read_only).map((o, i) => h("p", { key: o.id }, `${/^[A-Z][ .·]/.test(o.label) ? "" : String.fromCharCode(65 + i) + " · "}${o.label}`)),
+                      t.read_only ? h("small", null, tr("只读：请在 Fleet 中提交决策", "Read-only: submit decisions in Fleet")) : null,
+                    ) : null,
                     btn(
                       t.decision
                         ? tr("做决策 →", "Decide →")
@@ -719,6 +753,7 @@ export function createTaskControlTower(
             "section",
             null,
             h("h2", null, tr("在跑", "Running")),
+            h("p", { className: "tower-muted" }, tr(`执行器 ${workers.length}`, `${workers.length} workers`)),
             running.slice(0, 4).map((t) =>
               h(
                 "div",
@@ -840,12 +875,14 @@ export function createTaskControlTower(
                       "section",
                       { className: "tower-next" },
                       h("h3", null, tr("下一步动作", "Next action")),
-                      h("p", null, nextAction(t)),
+                      h("p", null, t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
+                      h("p", null, [t.id, t.fleet_status, t.machine, t.assignee, t.attempt_count !== undefined ? `${t.attempt_count} attempts` : ""].filter(Boolean).join(" · ")),
+                      t.spec_json?.summary ? h("p", { style: { whiteSpace: "pre-wrap" } }, t.spec_json.summary) : null,
                       t.status === "triage"
                         ? btn(
                             tr("补全草稿", "Complete draft"),
                             () => setDraft(structuredClone(t)),
-                            { disabled: busy },
+                            { disabled: busy || !!t?.read_only },
                           )
                         : null,
                       h(
@@ -900,7 +937,7 @@ export function createTaskControlTower(
                                 type: "checkbox",
                                 checked: c.checked,
                                 disabled:
-                                  busy ||
+                                  busy || !!t.read_only ||
                                   (!config?.extended_workflow &&
                                     !["triage"].includes(t.status)),
                                 onChange: () =>
@@ -928,7 +965,7 @@ export function createTaskControlTower(
                       h(
                         "p",
                         { className: "tower-muted" },
-                        verifyMode(t) === "auto"
+                        t.read_only ? `Fleet: ${t.fleet_status}` : verifyMode(t) === "auto"
                           ? tr(
                               "智能体自动验收",
                               "Verified automatically by the agent",
@@ -943,15 +980,15 @@ export function createTaskControlTower(
                           { className: "tower-decision" },
                           h("h3", null, tr("需要你的决策", "Your decision")),
                           h("p", null, decision.question),
-                          decisionOptions(decision).length
-                            ? decisionOptions(decision).map((o, i) =>
+                          decisionOptions(decision, t.read_only).length
+                            ? decisionOptions(decision, t.read_only).map((o, i) =>
                                 btn(
-                                  `${String.fromCharCode(65 + i)} · ${o.label}${o.recommended ? tr("（推荐）", " (Recommended)") : ""}\n${o.impact}`,
+                                  `${/^[A-Z][ .·]/.test(o.label) ? "" : String.fromCharCode(65 + i) + " · "}${o.label}${o.recommended ? tr("（推荐）", " (Recommended)") : ""}\n${o.impact}`,
                                   () =>
                                     void run(() =>
                                       api.decide(t, decision.id, o.id),
                                     ),
-                                  { key: o.id, disabled: busy },
+                                  { key: o.id, disabled: busy || !!t.read_only, title: t.read_only ? tr("只读：请在 Fleet 中提交决策", "Read-only: submit decisions in Fleet") : undefined },
                                 ),
                               )
                             : h(
@@ -1168,7 +1205,7 @@ export function createTaskControlTower(
                                               })),
                                         ),
                                       ),
-                                    { disabled: busy },
+                                    { disabled: busy || !!t?.read_only },
                                   ),
                             ),
                           )

@@ -347,14 +347,15 @@
 }
 .tower-backdrop {
   position: fixed;
-  inset: 0;
+  inset: 0 0 0 var(--dashboard-nav-width, 0px);
   background: #0005;
   z-index: 150;
   display: flex;
   justify-content: flex-end;
 }
 .tower-drawer {
-  width: min(520px, 100vw);
+  width: min(520px, 100%);
+  overflow-wrap: anywhere;
   height: 100%;
   overflow-y: auto;
   background: var(--mc-surface, #f3f0e7);
@@ -589,3 +590,7 @@
     padding: 20px 16px;
   }
 }
+
+.tower-connection { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; margin: 10px 0; font-size: 12px; }
+.tower-connection [role="alert"] { flex-basis: 100%; color: var(--text-danger, #bc5148); }
+.tower-card-meta, .tower-decision-summary { overflow-wrap: anywhere; }
