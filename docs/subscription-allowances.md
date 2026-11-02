@@ -1,9 +1,68 @@
-# Subscription allowance dashboard
+# Subscription allowances
 
-Open **Allowances** in the Workbench home-page header. The dashboard checks the default
-Workbench profile, shows all three subscriptions together, and labels the scope
-of each result. It does not verify that a user owns a particular subscription.
-“200x” is retained only as a user label, never a quota multiplier.
+Open **Settings → Subscription allowances**. The default Workbench profile starts
+with three built-in presets: OpenCode Go, Gemini AI Pro and OpenAI ChatGPT Pro.
+The browser renders the server's ordered entries; provider names and counts are
+not compiled into the UI. Add any service with **Add subscription**, including
+multiple accounts or plans from the same vendor. The entry-source selector also
+offers the server-provided built-in presets, so deleted presets can be restored. Edit labels and manual values,
+enable/disable entries, move them up/down, or delete with inline confirmation.
+Deleting all entries is supported and does not recreate the defaults.
+
+## Configuration and adapters
+
+Each entry has its own stable ID, display name, service, plan/account label,
+enabled flag and adapter. Array position is its display order. Manual entries
+support a 5-hour, weekly or monthly window, an explicit timezone-qualified reset
+time, remaining or used amount, optional total allowance and a unit. Blank
+amounts are unavailable, not zero. A monthly window is a label, not an assumed
+30-day reset schedule. The server stamps changed observations; refreshing does
+not make an old manual observation look newly measured. Expired manual values
+are unavailable on the next read, including when a cached read spans the reset.
+There is no automatic rollover or polling.
+
+`GET /api/plugins/workbench/quotas?profile=default` returns provider results,
+non-secret entries and a revision. `PUT /api/plugins/workbench/quotas/entries`
+accepts `{revision, entries}` and atomically replaces the ordered list. A stale
+revision returns 409 instead of overwriting another tab. A failed save preserves
+the editor; refresh reloads authoritative configuration. Requests and responses
+contain no credential fields. Unknown fields are rejected with generic errors
+without echoing their values. Do not put secrets in display labels.
+
+Configuration is stored in SQLite, separately for each authenticated user and
+profile, with file mode 0600. Set `HERMES_WORKBENCH_SUBSCRIPTIONS_DB` to select a
+persistent database path; the default is
+`~/.local/share/hermes-workbench/subscriptions.sqlite3`. The example deployment's
+HOME is inside its persistent data volume. Keep this database outside versioned
+release directories and back it up with application state. No browser storage is
+used. Defaults are returned only for identities without a saved configuration.
+
+### Upgrade and rollback
+
+This release adds a separate SQLite database; it does not migrate or rewrite the
+existing session, profile or credential stores. The table is created on first
+access. Existing identities see the three presets until they first save; an
+explicitly saved empty list stays empty. Writes replace the list and increment
+its revision in one transaction, so a failed transaction preserves both.
+
+Before upgrading, back up the database with SQLite's backup API (or copy it while
+the application is stopped). Rolling back the application to the previous
+release restores its fixed preset UI and ignores this database; retain the file
+to recover the saved configuration when upgrading again. Do not delete or modify
+credential/session stores as part of this rollback. No destructive schema
+migration is required for this version.
+
+The backend adapter registry currently contains `manual`, `codex` and
+`unsupported`. Future API adapters belong on the server, must return whitelisted
+quota fields, and must resolve credentials there. Adding a manual vendor requires
+no adapter or code change. The Codex preset uses the existing server bridge;
+changing a label never switches the authenticated upstream account. Separate
+accounts can be tracked manually now; separate automatic account connections are
+not implemented. Unsupported built-ins retain their explicit limitations below.
+Each enabled adapter runs independently with the existing 8-second timeout;
+disabled entries make no upstream calls. Cache keys include the full configuration
+so edits cannot reuse results from the previous configuration. The existing
+identity-scoped single-flight refresh and 12-second browser deadline remain.
 
 ## Verified capability boundary
 
@@ -32,15 +91,14 @@ production account connectivity and subscription tiers have **not** been
 verified by a live authenticated call. Worker authentication is not treated as
 Workbench account authorization, and credential files are not read or copied.
 
-The new API is behind the existing trusted-proxy gate. User/profile validation
+The API is behind the existing trusted-proxy gate. User/profile validation
 is reused from the bridge, cache and in-flight work are scoped to that identity,
 and the browser response has `Cache-Control: no-store`. No upstream error text,
 email, token, credit identifier or credential is exposed. Only known numeric
-quota fields are returned. This adds no secret, configuration, login or billing
-mutation. The bridge's existing app-server account remains authoritative; a
+quota fields are returned. This adds non-secret subscription configuration writes, but no login or billing mutation. The bridge's existing app-server account remains authoritative; a
 Workbench profile is not a separate provider account.
 
-## Refresh semantics
+## Provider refresh semantics
 
 Initial reads use a 15-second bounded in-memory cache. Refresh bypasses completed
 cache entries; simultaneous requests share a single in-flight read. Upstream
@@ -60,7 +118,11 @@ do not copy the worker's credentials. For OpenCode/Gemini, obtain a documented,
 authorized quota contract and confirm scope before proposing any connector.
 Do not request new API keys merely to turn unavailable cards into numbers.
 
-## Validation evidence
+## Configurable entries validation
+
+See the [validation report and light/dark desktop/mobile screenshots](validation/subscription-entries/README.md).
+
+## Original dashboard validation (historical)
 
 Validated in an isolated NAS worktree on 2026-10-31. No production process was
 restarted, deployed, or reconfigured. The production installation route and live

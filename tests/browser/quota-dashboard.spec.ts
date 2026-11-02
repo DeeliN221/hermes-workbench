@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 const data = () => ({ providers: ['opencode', 'gemini', 'openai'].map(id => ({
-  id, status: id === 'openai' ? 'available' : 'unavailable',
+  id, description: 'Plan unverified', name: id, service: id, plan: 'Test plan', adapter: id === 'openai' ? 'codex' : 'unsupported', enabled: true, status: id === 'openai' ? 'available' : 'unavailable',
   reason: id === 'openai' ? 'Codex allowance only; not a ChatGPT-wide balance.' : 'No verified quota connection. Check the provider console.',
   windows: id === 'openai' ? [{ minutes: 300, remainingPercent: 75, resetsAt: '2030-01-01T00:00:00Z' },
     { minutes: 10080, remainingPercent: 40, resetsAt: '2030-01-07T00:00:00Z' }] : [],
