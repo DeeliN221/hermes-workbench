@@ -101,7 +101,7 @@ try {
       } catch {}
     }
   });
-  await page.goto(host.origin + "/sessions?profile=default");
+  await page.goto(host.origin + "/kanban?profile=default");
   await page.addStyleTag({ content: "#preview-banner { display: none }" });
   await page
     .getByRole("heading", { name: "Task control tower", exact: true })
@@ -124,19 +124,6 @@ try {
       .evaluateAll((nodes) => nodes.map((n) => n.dataset.taskId)),
     ["delivered-new", "delivered-old"],
   );
-  await page
-    .locator(".tower-session")
-    .first()
-    .getByRole("button", { name: "Pin session", exact: true })
-    .click();
-  await page
-    .locator(".tower-session")
-    .filter({
-      has: page.getByRole("button", { name: "Pin session", exact: true }),
-    })
-    .first()
-    .getByRole("button", { name: "Pin session", exact: true })
-    .click();
   await page.evaluate(
     () => (document.documentElement.dataset.workbenchTheme = "light"),
   );
@@ -298,15 +285,6 @@ try {
   });
   await page
     .locator(".tower-bottom-nav")
-    .getByRole("button", { name: "Sessions", exact: true })
-    .click();
-  assert.ok(
-    await page
-      .getByRole("heading", { name: "Main sessions", exact: false })
-      .isVisible(),
-  );
-  await page
-    .locator(".tower-bottom-nav")
     .getByRole("button", { name: "Needs you", exact: true })
     .click();
   assert.ok(await page.locator(".tower-sidebar").isVisible());
@@ -321,19 +299,10 @@ try {
     () => (document.documentElement.dataset.workbenchTheme = "light"),
   );
   await page.screenshot({ path: path.join(shotDir, "desktop-empty.png") });
-  await page
-    .getByRole("button", { name: "All recent sessions", exact: true })
-    .click();
-  await page.locator(".workbench-home-card").first().waitFor();
-  await page.screenshot({
-    path: path.join(shotDir, "recent-home-secondary.png"),
-  });
-  await page
-    .getByRole("button", { name: "Back to task control tower", exact: true })
-    .click();
-  await page
-    .getByRole("heading", { name: "Task control tower", exact: true })
-    .waitFor();
+  await page.locator('.overview-tabs').getByRole('link', { name: 'Project sessions' }).click();
+  await page.locator('.profile-overview').waitFor();
+  await page.locator('.overview-tabs').getByRole('link', { name: 'Kanban' }).click();
+  await page.locator('.task-tower').waitFor();
   assert.ok(!responses.join("").includes("mock-fleet-token"));
   assert.ok(!responses.join("").includes("RAW LOG"));
   assert.ok(!responses.join("").includes("never-open-this"));

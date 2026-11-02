@@ -237,6 +237,8 @@ function apiPayload(url, method, body = null, preferences = new Map()) {
     codexChat: true, codexUserInput: true, codexThreadReasoningConfig: true,
     newChatProviders: ['codex'], historyOnlyProviders: [], supportsExternalContinuation: false,
   };
+  if (pathname.endsWith('/profile-overview')) return { profiles: ['default', 'writer'].map(name => ({ name, failed: [],
+    projects: [{ id: 'preview-project-1', name: 'Preview Project 1' }], sessions: codexSessions(name).map(row => ({ ...row, groupId: 'preview-project-1' })) })) };
   if (pathname.endsWith('/profile-names')) return { profiles: [{ name: 'default' }, { name: 'writer' }] };
   if (pathname === '/api/profiles') return { profiles: [{ name: 'default' }, { name: 'writer' }] };
   if (pathname.endsWith('/home-read-state')) return method === 'GET' ? { items: [] } : { ok: true };
@@ -307,7 +309,7 @@ function apiPayload(url, method, body = null, preferences = new Map()) {
     id: 'preview-workspace', name: 'hermes-workbench', path: '/home/preview/hermes-workbench', profile,
   } };
   if (pathname === '/api/plugins/workbench/session-prompts') return { first: 'Verify the local preview.', latest: 'Confirm that the home page and chat panes open correctly.' };
-  if (pathname === '/api/profiles/sessions') return { sessions: hermes, total: hermes.length };
+  if (pathname === '/api/profiles/sessions') { const rows = profile === 'all' ? ['default', 'writer'].flatMap(name => hermesSessions(name).map(row => ({ ...row, profile: name }))) : hermes; return { sessions: rows, total: rows.length }; }
   if (pathname === '/api/sessions/search') return { results: [{
     session_id: 'hermes-preview', snippet: 'Server-side content needle: release workflow drill notes.',
     role: 'user', source: 'web', model: 'preview-model', session_started: hermes[0].updated_at,

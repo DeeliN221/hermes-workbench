@@ -40,8 +40,9 @@ async function assertPaintedAboveBoard(page) {
 
 async function installNativeBoundary(page) {
   await page.addStyleTag({ content: `
-    #native-board{margin-left:280px;padding:24px;background:var(--color-card);min-height:80vh}
-    @media(max-width:800px){#native-board{margin-left:48px}}
+    .task-tower{display:none!important}
+    #native-board{margin-left:0;padding:24px;background:var(--color-card);min-height:80vh}
+    @media(max-width:800px){#native-board{margin-left:0}}
     .hermes-kanban-drawer-shade{position:fixed;inset:0;background:#0006;display:flex;justify-content:flex-end;z-index:60}
     .hermes-kanban-drawer{width:min(600px,95vw);height:100vh;background:var(--color-card);display:flex;flex-direction:column}
     .hermes-kanban-drawer-head{display:flex;justify-content:space-between}
@@ -56,7 +57,9 @@ async function installNativeBoundary(page) {
     const aside = document.createElement('aside'); aside.id = 'app-sidebar';
     const host = document.createElement('div'); host.id = 'native-board';
     host.innerHTML = '<header role="banner">Kanban</header><button id="open-card">home-only repo</button><span id="task-status">todo</span><output id="heartbeat">0</output>';
-    document.body.prepend(aside, host);
+    document.body.prepend(aside);
+    // /kanban now owns its content; exercise the SDK portal contract inside that surface.
+    document.querySelector('.dashboard-owned-page').append(host);
     let ticks = 0;
     const timer = setInterval(() => { host.querySelector('#heartbeat').textContent = String(++ticks); }, 100);
     const closeDrawer = () => host.querySelector('.hermes-kanban-drawer-shade')?.remove();
