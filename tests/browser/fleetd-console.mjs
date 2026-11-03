@@ -61,13 +61,14 @@ try {
     const layout = width > 800 ? '.tower-board' : '.tower-list';
     assert.ok(await page.locator(layout).isVisible());
     assert.equal(await page.locator(layout+' > section').count(),4);
-    assert.deepEqual(await page.locator(layout+' > section > h2').allTextContents(), width > 800
-      ? (await page.locator(layout+' > section > h2').allTextContents()).map((s,i)=>['Pending','Queued','In progress','Completed'][i]+s.match(/\d+$/)[0])
-      : ['Pending','Queued','In progress','Completed']);
+    assert.deepEqual((await page.locator(layout+' > section > h2').allTextContents()).map(text => text.replace(/\d+$/, '')),
+      ['Pending', 'Queued', 'In progress', 'Completed']);
     if (width > 800) assert.equal(await page.locator('.dashboard-global-nav').isVisible(),false);
     else assert.ok(await page.locator('.dashboard-action-rail').isVisible());
-    const meta = await page.locator(`${layout} [data-task-id="T-review"] .tower-card-meta`).innerText();
-    for (const field of ['Device:', 'CLI:', 'Model:', 'Reasoning:', 'Total time:']) assert.ok(meta.includes(field));
+    await page.waitForFunction(layout => document.querySelector(`${layout} [data-task-id="T-review"]`)?.getAttribute('data-runtime')?.endsWith('11m'), layout);
+    const meta = await page.locator(`${layout} [data-task-id="T-review"] .tower-card-meta`).textContent();
+    assert.match(meta, /^test-machine codex sample-model high 11m$/);
+    assert.ok(!/Device:|CLI:|Model:|Reasoning:|Total time:|Not recorded/.test(meta));
     assert.ok(!meta.includes('T-review') && !meta.includes('attempts') && !meta.includes('Human review'));
     assert.equal(await page.locator(`${layout} [data-task-id="T-archived"]`).count(), 0);
     await page.screenshot({path:path.join(shotDir,`kanban-${width}-${theme}.png`)});
@@ -111,7 +112,7 @@ try {
   await page.locator('.tower-drawer [role="status"]').filter({hasText:'Feedback saved'}).waitFor();
   await page.locator('.column-active [data-task-id="T-review"]').waitFor();
   assert.deepEqual(fleet.calls.filter(c=>c.method==='POST' && c.path.includes('/T-review/') && !c.path.endsWith('/approve')).map(c=>c.path.split('/').at(-1)),['note','request_changes']);
-  await page.getByRole('button',{name:'Close details'}).click();
+  await page.keyboard.press('Escape');
   fleet.reviewTask().status='review'; await refresh();
   await page.locator('.column-pending [data-task-id="T-review"] .tower-card-title').click();
   await page.getByRole('button',{name:'Approve',exact:true}).click();
@@ -121,7 +122,7 @@ try {
   await page.getByRole('button',{name:/Retry safely/}).click();
   await page.locator('.column-queued [data-task-id="T-decision"]').waitFor();
   assert.deepEqual(fleet.calls.find(c => c.method === 'POST' && c.path.endsWith('/T-decision/decide')).body, {choice:'Retry safely',note:''});
-  await page.getByRole('button',{name:'Close details',exact:true}).click();
+  await page.keyboard.press('Escape');
   // Single selection, select all, partial failure, retry and archived discovery.
   const board = page.locator('.tower-board');
   await board.locator('[data-task-id="T-review"] input[type="checkbox"]').check();
@@ -134,36 +135,36 @@ try {
   await page.unroute('**/fleetd/tasks/T-review/archive');
   await board.getByRole('button',{name:'Archive selected',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('.tower-board .column-done .tower-card'));
-  await board.getByRole('button',{name:'View archived',exact:true}).click();
-  const search = page.locator('.tower-search');
-  await search.getByRole('button',{name:'Load more',exact:true}).click();
-  await search.getByRole('button',{name:'Sample archived task',exact:true}).waitFor();
-  await search.getByRole('button',{name:'Close search',exact:true}).click();
-  await board.getByRole('button',{name:'Search all tasks',exact:true}).click();
-  await search.getByRole('searchbox').fill('T-archived');
+  await board.getByRole('button',{name:/Show archived/}).click();
+  await board.getByRole('button',{name:'Sample archived task',exact:true}).waitFor();
+  await page.locator('.tower-search-toggle').click();
+  const search = page.locator('.tower-search-results');
+  const searchInput = page.locator('.tower-searchbar input');
+  await searchInput.fill('T-archived');
   await search.getByRole('button',{name:'Sample archived task',exact:true}).click();
   await page.getByRole('dialog').getByRole('heading',{name:'Sample archived task',exact:true}).waitFor();
-  await page.getByRole('button',{name:'Close details',exact:true}).click();
+  await page.keyboard.press('Escape');
   await page.route('**/fleetd/tasks/search?**', route => route.fulfill({status:501,json:{detail:'Unsupported'}}));
-  await search.getByRole('searchbox').fill('unsupported-query');
+  await searchInput.fill('unsupported-query');
   await search.getByRole('alert').filter({hasText:'search API is unavailable'}).waitFor();
   await page.unroute('**/fleetd/tasks/search?**');
   await search.getByRole('button',{name:'Retry',exact:true}).click();
   await search.getByText('No matching tasks',{exact:true}).waitFor();
-  await search.getByRole('button',{name:'Close search',exact:true}).click();
+  await page.keyboard.press('Escape');
   await board.locator('[data-task-id="T-blocked"] .tower-card-title').click();
   await page.getByRole('button',{name:'Unblock and retry',exact:true}).click();
   await board.locator('.column-queued [data-task-id="T-blocked"]').waitFor();
-  await page.getByRole('button',{name:'Close details',exact:true}).click();
+  await page.keyboard.press('Escape');
   // Only explicit upstream profile/kind associations become navigation controls.
-  await board.getByRole('button',{name:'Search all tasks',exact:true}).click();
-  await search.getByRole('searchbox').fill('T-review');
+  await page.locator('.tower-search-toggle').click();
+  await searchInput.fill('T-review');
   await search.getByRole('button',{name:'Sample review task',exact:true}).click();
   await page.locator('.tower-sessions button').first().click();
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'default' && url.searchParams.get('session') === 'codex-preview');
   await page.goto(host.origin + '/kanban'); await loaded();
-  await board.getByRole('button',{name:'Search all tasks',exact:true}).click();
-  await search.getByRole('searchbox').fill('T-review');
+  await board.getByRole('button',{name:/Show archived/}).click();
+  await page.locator('.tower-search-toggle').click();
+  await searchInput.fill('T-review');
   await search.getByRole('button',{name:'Sample review task',exact:true}).click();
   await page.locator('.tower-sessions button').last().click();
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'writer' && url.searchParams.get('session') === 'codex-preview');

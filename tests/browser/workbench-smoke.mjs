@@ -277,7 +277,10 @@ try {
   await settingsReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
   await openSecondSession(settingsReturnPage);
   const splitChatUrl = settingsReturnPage.url();
-  await settingsReturnPage.evaluate(() => document.querySelector('.dashboard-crafting-grid a[aria-label="Settings"]')?.click());
+  await settingsReturnPage.locator('.dashboard-action-rail').waitFor({ state: 'detached' });
+  await settingsReturnPage.locator('.codex-pane-color-trigger').first().focus();
+  await settingsReturnPage.keyboard.press('w');
+  await settingsReturnPage.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Settings', exact: true }).click();
   await settingsReturnPage.waitForFunction(() => location.pathname === '/config' && new URLSearchParams(location.search).get('panel') === '1');
   await settingsReturnPage.locator('.dashboard-accessory-close').waitFor({ state: 'visible', timeout: 5000 });
   for (const [selector, tab] of [
@@ -754,7 +757,7 @@ try {
   const mobileSplitChatUrl = mobileReturnPage.url();
   await mobileReturnPage.setViewportSize({ width: 390, height: 844 });
   await mobileReturnPage.waitForTimeout(300);
-  await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-rail-actions a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
+  await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-action-rail a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
   await mobileReturnPage.waitForFunction(() => location.pathname === '/config');
   await mobileReturnPage.locator('.workbench-mobile-tab-header').waitFor({ state: 'visible', timeout: 5000 });
   const returnButton = mobileReturnPage.locator('.workbench-mobile-tab-chat');
@@ -763,7 +766,7 @@ try {
   await mobileReturnPage.waitForFunction(() => location.pathname === '/chat');
   assert.equal(mobileReturnPage.url(), mobileSplitChatUrl, 'Back to chat must restore the original split chat route');
   assert.equal(await mobileReturnPage.locator('.codex-pane-slot').count(), 2, 'Back to chat must preserve both panes');
-  await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-rail-actions a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
+  await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-action-rail a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
   await mobileReturnPage.waitForFunction(() => location.pathname === '/config');
   await mobileReturnPage.locator('.workbench-mobile-settings-back').click();
   await mobileReturnPage.locator('[data-settings-group=preferences] button').click();
