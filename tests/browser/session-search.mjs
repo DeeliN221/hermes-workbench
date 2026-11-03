@@ -36,6 +36,19 @@ try {
       ] }];
       await route.fulfill({ json: data });
     });
+    // Search must retain conversations omitted from the home profile's top three.
+    await page.route('**/api/plugins/workbench/profile-overview', route => route.fulfill({ json: { profiles: [
+      { name: 'writer', projects: [], failed: [], sessions: [
+        { id: 'codex-regression', title: 'Home rendering regression', updatedAt: 1793537000 },
+        ...[2, 0, 1].map(i => ({ id: `newer-${i}`, title: `Newer conversation ${i}`, updatedAt: 1793538000 + i })),
+      ] },
+    ] } }));
+    await page.route('**/api/profiles/sessions?*', route => route.fulfill({ json: { sessions: [], total: 0 } }));
+    await page.goto(host.origin + '/');
+    await page.waitForFunction(() => document.querySelector('.profile-overview')?.getAttribute('aria-busy') === 'false');
+    assert.deepEqual(await page.locator('[data-profile="writer"] .profile-session').evaluateAll(nodes => nodes.map(n => new URL(n.href).searchParams.get('session'))), ['newer-2', 'newer-1', 'newer-0']);
+    assert.equal(await page.locator('.profile-session[href*="codex-regression"]').count(), 0);
+    if (shots) await page.screenshot({ path: `${shots}/${mobile ? 'mobile' : 'desktop'}-${theme}-hidden-on-home.png` });
     await page.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
     await page.locator('.codex-pane-slot').first().waitFor();
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);

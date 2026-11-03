@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { createMockHost } from './mock-host.mjs';
-const host = await createMockHost();
+const host = await createMockHost({ host: 'localhost' });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
 const shotDir = process.env.SHOT_DIR || 'node_modules/.cache/profile-overview-screenshots';
 await mkdir(shotDir, { recursive: true });
@@ -11,6 +11,10 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [], writes = [], requests = [];
   page.on('pageerror', error => errors.push(String(error)));
+  page.on('console', message => {
+    // Failure fixtures intentionally return HTTP 503; healthy routes must stay clean.
+    if (message.type() === 'error' && !['failed', 'all-failed'].includes(mode)) errors.push(message.text());
+  });
   page.on('request', request => { requests.push(request.url()); if (request.method() !== 'GET') writes.push(request.url()); });
   let mode = 'ready', savedOrder = [];
   await page.route('**/api/plugins/workbench/profile-order', async route => {
@@ -32,10 +36,12 @@ try {
       session('writer-two', 'Refine the release notes', day, { groupId: 'writing' }),
       session('writer-three', 'Draft the onboarding guide', 3 * day, { groupId: 'writing' }),
     ] },
-    { name: 'research', projects: [{ id: 'research', name: 'Research notebook' }], failed: [], sessions: [session('research-one', 'Compare findings across projects', 3 * day, { groupId: 'research' })] },
+    { name: 'research', projects: [{ id: 'research', name: 'Research notebook' }], failed: [], sessions: [session('research-one', 'Compare findings across projects', 9 * day, { groupId: 'research' })] },
     { name: 'empty', projects: [], failed: [], sessions: [] },
     { name: 'archive', projects: [], failed: [], sessions: [] },
   ];
+  // Deliberately unordered input proves selection happens after freshness sorting.
+  profiles[0].sessions.reverse();
   await page.route('**/api/plugins/workbench/profile-overview', async route => {
     if (mode === 'loading') await new Promise(resolve => setTimeout(resolve, 500));
     if (mode === 'failed') return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
@@ -52,8 +58,18 @@ try {
   const columns = page.locator('.profile-overview-column');
   assert.deepEqual(await columns.evaluateAll(nodes => nodes.map(n => n.dataset.profile)), ['default', 'writer', 'research', 'empty', 'archive']);
   assert.equal(await page.locator('.task-tower').count(), 0);
-  assert.equal(await page.locator('[data-profile="default"] .profile-session').count(), 13);
-  assert.deepEqual(await page.locator('[data-profile="default"] .profile-session').evaluateAll(nodes => nodes.slice(0, 4).map(n => n.dataset.freshness)), ['1', '2', '3', '0']);
+  assert.equal(await page.locator('[data-profile="default"] .profile-session').count(), 3);
+  assert.deepEqual(await page.locator('[data-profile="default"] .profile-session').evaluateAll(nodes => nodes.map(n => n.dataset.freshness)), ['1', '2', '3']);
+  const assertLimited = async () => {
+    assert.deepEqual(await columns.evaluateAll(nodes => nodes.map(n => n.querySelectorAll('.profile-session').length)), [3, 3, 1, 0, 0]);
+    assert.deepEqual(await columns.first().locator('.profile-session').evaluateAll(nodes => nodes.map(n => new URL(n.href).searchParams.get('session'))), ['codex-preview', 'codex-regression', 'third']);
+    assert.equal(await page.locator('.profile-session[href*="older-"]').count(), 0, 'Older sessions are absent from DOM');
+    assert.equal(await page.getByText(/Show all|Expand all/i).count(), 0);
+    assert.equal(await page.locator('vite-error-overlay').count(), 0);
+    assert.ok(await page.title());
+    assert.equal(new URL(page.url()).hostname, 'localhost');
+  };
+  await assertLimited();
   assert.match(await columns.nth(3).textContent(), /No projects or sessions yet/);
   assert.match(await columns.first().textContent(), /Upcoming project.*No sessions yet/s);
   assert.deepEqual(writes.filter(url => /session|read-state/.test(url)), [], 'Overview does not mutate sessions or read cursors');
@@ -70,7 +86,7 @@ try {
     assert.equal(await page.locator('.profile-session[data-freshness="0"]').first().evaluate(node => getComputedStyle(node).backgroundImage), 'none');
   }
   const visibleCount = await page.locator('.profile-session').evaluateAll(nodes => nodes.filter(node => { const r = node.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }).length);
-  assert.ok(visibleCount >= 13, `Compact desktop shows at least 13 complete sessions: ${visibleCount}`);
+  assert.ok(visibleCount === 7, `Compact desktop shows all seven retained sessions: ${visibleCount}`);
   console.log(`Desktop fully visible sessions: ${visibleCount}`);
   assert.equal(await page.locator('.dashboard-global-nav').isVisible(), false);
   assert.equal(await page.locator('.dashboard-action-rail').isVisible(), false);
@@ -115,6 +131,7 @@ try {
   await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
   for (const theme of ['light', 'dark']) {
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; localStorage.setItem('hermes-dashboard-theme', theme); }, theme);
+    await assertLimited();
     assert.ok(await page.locator('.dashboard-action-rail').isVisible());
     assert.ok(await tabs.isVisible());
     assert.ok(await columns.first().locator('h2').isVisible());
@@ -130,15 +147,16 @@ try {
   await columns.nth(1).scrollIntoViewIfNeeded();
   assert.ok(await columns.nth(1).locator('h2').isVisible());
   assert.ok(await tabs.isVisible());
-  const originalTitle = profiles[0].sessions[0].title;
-  profiles[0].sessions[0].title = 'LongUnbrokenSessionTitle'.repeat(15);
+  const visibleSession = profiles[0].sessions.find(row => row.id === 'codex-preview');
+  const originalTitle = visibleSession.title;
+  visibleSession.title = 'LongUnbrokenSessionTitle'.repeat(15);
   await page.reload(); await columns.nth(3).waitFor();
   for (const width of [390, 800, 1024, 1440]) {
     await page.setViewportSize({ width, height: 900 });
     assert.ok(await page.locator('.profile-overview-columns').evaluate(node => node.scrollWidth <= node.clientWidth), `Long titles fit at ${width}px`);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
   }
-  profiles[0].sessions[0].title = originalTitle;
+  visibleSession.title = originalTitle;
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('[data-profile="writer"] .profile-session').first().click();
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'writer');
@@ -147,7 +165,7 @@ try {
   mode = 'partial'; await page.reload();
   await columns.nth(1).getByRole('alert').waitFor();
   assert.equal(await columns.first().getByRole('alert').count(), 0);
-  assert.equal(await columns.first().locator('.profile-session').count(), 13);
+  assert.equal(await columns.first().locator('.profile-session').count(), 3);
   await columns.nth(1).scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${shotDir}/partial-mobile.png` });
   mode = 'failed'; await page.reload(); await page.getByRole('alert').filter({ hasText: 'Session overview unavailable' }).waitFor();
