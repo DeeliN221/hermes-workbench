@@ -54,6 +54,15 @@ export function createWorkbenchDialog(sdk: Record<string, any>) {
     return h('dialog', {
       ref, className: 'workbench-actions-dialog', 'aria-labelledby': titleId,
       onCancel: onClose, onClose,
+      onKeyDown: (event: KeyboardEvent) => {
+        if (event.key !== 'Tab' || (event.target instanceof Element && event.target.closest('dialog') !== ref.current)) return;
+        const dialog = ref.current as HTMLDialogElement | null;
+        const nodes = Array.from(dialog?.querySelectorAll<HTMLElement>('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex="0"]') || [])
+          .filter(node => node.getClientRects().length && getComputedStyle(node).visibility !== 'hidden');
+        const first = nodes[0], last = nodes.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+      },
       onClick: (event: MouseEvent) => { if (event.target === ref.current) {
         const rect = ref.current!.getBoundingClientRect();
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();

@@ -59,6 +59,7 @@ export function createProfileControls(sdk: SDK) {
       const escape = (event: KeyboardEvent) => {
         if (event.key !== 'Escape') return;
         event.stopPropagation();
+        event.preventDefault();
         setOpen(false);
         trigger.current?.focus();
       };

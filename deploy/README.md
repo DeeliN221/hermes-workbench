@@ -127,3 +127,23 @@ source to an external service. No server or endpoint configuration is needed.
 Sources with `!include` or `!import` are rejected; inline the definitions, and
 keep each diagram below 100,000 characters. The browser build does not include
 the `@startdot`, `@startditaa`, or `@startsalt` extensions.
+
+## Fleet human review
+
+Set `FLEET_REVIEW_TOKEN` in the Workbench **server** environment to the same
+operator credential configured on fleetd. It must differ from `FLEET_TOKEN`.
+Never put either credential in browser configuration, URLs or client request
+bodies. Missing review configuration returns 503; ordinary task reads still work.
+Back up deployment/env files before editing them. Environment changes require
+recreating only the affected service; a plain container restart retains its old
+environment. If fleetd lacks the operator token, arrange its configuration update
+separately before enabling live reviews.
+
+The authenticated `/fleetd/tasks/{id}/approve`, `/request_changes` and `/note`
+endpoints accept POST JSON only, a same-origin `Origin`, and the existing proxy
+secret plus allowed `Remote-User`. Approve accepts `{}`; the other two accept
+`{"text":"multiline feedback"}` (at most 8000 characters). Request changes saves
+the note first, then returns the task to running. If the transition fails, the
+response says the note was saved and the drawer retains the draft for retry.
+Repeated feedback within the same review is not appended twice when fleetd's
+recent events contain the saved note. Worker clients can read it in task events.

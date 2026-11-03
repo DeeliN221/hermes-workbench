@@ -32,15 +32,7 @@
 .profile-session[data-freshness="2"] { --fresh-strength: 9%; }
 .profile-session[data-freshness="3"] { --fresh-strength: 5%; }
 .profile-session:not([data-freshness="0"]) { background-image: linear-gradient(115deg, color-mix(in srgb, var(--mc-accent) var(--fresh-strength), transparent), transparent 92%); }
-@media (min-width: 801px) {
-  :root[data-workbench-view="/"] .dashboard-action-rail,
-  :root[data-workbench-view="/"] .dashboard-global-nav:not(:has(.workbench-actions-dialog[open])),
-  :root[data-workbench-view="/"] #app-sidebar { display: none !important; }
-  :root[data-workbench-view="/"] .dashboard-global-nav:has(.workbench-actions-dialog[open]) { visibility: hidden; }
-  :root[data-workbench-view="/"] .workbench-actions-dialog[open] { visibility: visible; }
-  :root[data-workbench-view="/"] .dashboard-owned-page { left: 0 !important; }
-  :root[data-workbench-view="/"] #app-sidebar + div { margin-left: 0 !important; }
-}
+
 
 @media (min-width: 801px) and (max-width: 1199px) {
   .profile-overview-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }

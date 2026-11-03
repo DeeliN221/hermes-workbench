@@ -14,7 +14,7 @@ export type FleetConfig = {
   mode: "live" | "mock" | "unconfigured";
   extended_workflow: boolean;
 };
-export function fleetAPI(fetchJSON: FetchJSON) {
+export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?: RequestInit) => Promise<Response>) {
   const explicitDemo = typeof location !== "undefined" && new URLSearchParams(location.search).get("demo") === "1";
   let base = explicitDemo
     ? FLEET_PROXY : "/api/plugins/workbench/fleetd";
@@ -24,19 +24,32 @@ export function fleetAPI(fetchJSON: FetchJSON) {
     body?: unknown,
     revision?: number,
   ) => {
-    if (method !== "GET" && base !== FLEET_PROXY)
+    if (method !== "GET" && base !== FLEET_PROXY && !(method === "POST" && /^\/tasks\/[A-Za-z0-9_-]+\/(approve|request_changes|note)$/.test(path)))
       throw new Error(uiText("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes"));
     try {
-      return await fetchJSON<T>(base + path + (explicitDemo ? (path.includes("?") ? "&" : "?") + "demo=1" : ""), {
+      const url = base + path + (explicitDemo ? (path.includes("?") ? "&" : "?") + "demo=1" : "");
+      const reviewWrite = method === "POST" && base !== FLEET_PROXY;
+      const init = {
         method,
         headers: {
           "Content-Type": "application/json",
           ...(revision === undefined ? {} : { "If-Match": String(revision) }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(12000),
-      });
+        signal: AbortSignal.timeout(reviewWrite ? 35000 : 12000),
+      };
+      if (reviewWrite && authedFetch) {
+        const response = await authedFetch(url, init);
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(`HTTP ${response.status}: ${typeof data.detail === "string" ? data.detail : "Review failed"}`);
+        return data as T;
+      }
+      return await fetchJSON<T>(url, init);
     } catch (error) {
+      if (/Feedback saved/.test(String(error)))
+        throw new Error(uiText("意见已保存，但任务退回失败。请刷新状态后重试；输入已保留。", "Feedback saved, but returning the task failed. Refresh and retry; your input is preserved."));
+      if (/FLEET_REVIEW_TOKEN/.test(String(error)))
+        throw new Error(uiText("服务端缺少独立的 FLEET_REVIEW_TOKEN，请配置后重试", "Configure a separate FLEET_REVIEW_TOKEN on the server, then retry."));
       if (/\b409\b/.test(String(error)))
         throw new Error(
           uiText(
@@ -102,6 +115,8 @@ export function fleetAPI(fetchJSON: FetchJSON) {
       const data = await request<{ tasks: Task[] } | Task[]>("/tasks");
       return Array.isArray(data) ? data : data.tasks;
     },
+    review: (id: string, action: "approve" | "request_changes", text?: string) =>
+      request(`/tasks/${encodeURIComponent(id)}/${action}`, "POST", action === "approve" ? {} : { text }),
     detail: (id: string) => request<Detail>(`/tasks/${encodeURIComponent(id)}`),
     patch: (t: Task, changes: Partial<Task>) =>
       request(

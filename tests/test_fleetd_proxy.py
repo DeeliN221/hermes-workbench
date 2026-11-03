@@ -143,3 +143,94 @@ def test_status_isolation_across_routes(client, monkeypatch, status, expected):
         response = client.get(BASE + "/" + resource, headers=HEADERS)
         assert response.status_code == 200
         assert len(response.json()[resource]) == 1
+
+WRITE_HEADERS = {**HEADERS, "origin": "http://testserver"}
+
+
+def test_review_sequence_and_retry(client, monkeypatch):
+    monkeypatch.setenv("FLEET_REVIEW_TOKEN", "private-review-token")
+    calls, events = [], []
+    monkeypatch.setattr(transport.FleetClient, "get", lambda self, path: {"task": {"status": "review"}, "events": events})
+    def post(self, path, body, **kwargs):
+        calls.append((path, body, kwargs))
+        if path.endswith("/note"):
+            events.append({"type": "task.note", "payload": body["text"]})
+        elif path.endswith("/request_changes") and len(calls) == 2:
+            raise HTTPException(504, "Fleet request timed out; retry")
+        return {"token": "private-review-token"}
+    monkeypatch.setattr(transport.FleetClient, "post", post)
+    url = BASE + "/tasks/T-test/request_changes"
+    response = client.post(url, headers=WRITE_HEADERS, json={"text": "Fix contrast\nAdd keyboard support"})
+    assert response.status_code == 504 and "Feedback saved" in response.text
+    response = client.post(url, headers=WRITE_HEADERS, json={"text": "Fix contrast\nAdd keyboard support"})
+    assert response.json() == {"ok": True}
+    assert [c[0].split("/")[-1] for c in calls] == ["note", "request_changes", "request_changes"]
+    assert calls[-1][2] == {"review": True}
+    assert client.post(BASE + "/tasks/T-test/approve", headers=WRITE_HEADERS, json={}).json() == {"ok": True}
+
+
+@pytest.mark.parametrize("action,body", [("approve", {}), ("request_changes", {"text": "Fix it"}), ("note", {"text": "Fix it"})])
+def test_review_missing_token_and_state(client, monkeypatch, action, body):
+    monkeypatch.delenv("FLEET_REVIEW_TOKEN", raising=False)
+    url = BASE + "/tasks/T-test/" + action
+    response = client.post(url, headers=WRITE_HEADERS, json=body)
+    assert response.status_code == 503 and "FLEET_REVIEW_TOKEN" in response.text
+    monkeypatch.setenv("FLEET_REVIEW_TOKEN", "private-fixture-token")
+    assert client.post(url, headers=WRITE_HEADERS, json=body).status_code == 503
+    monkeypatch.setenv("FLEET_REVIEW_TOKEN", "private-review-token")
+    monkeypatch.setattr(transport.FleetClient, "get", lambda self, path: {"task": {"status": "blocked"}})
+    assert client.post(url, headers=WRITE_HEADERS, json=body).status_code == 409
+
+
+@pytest.mark.parametrize("headers,status", [({},401), ({"remote-user":"preview"},401),
+    ({"x-hermes-proxy-secret":"local-secret"},401), (HEADERS,403),
+    ({**WRITE_HEADERS,"origin":"https://evil.test"},403),
+    ({**WRITE_HEADERS,"sec-fetch-site":"cross-site"},403)])
+def test_review_auth_and_origin(client, headers, status):
+    assert client.post(BASE + "/tasks/T-test/approve", headers=headers, json={}).status_code == status
+
+
+@pytest.mark.parametrize("suffix,body,status", [("approve?token=forbidden",{},400),
+    ("dispatch",{},404), ("approve",{"url":"http://evil.test"},422),
+    ("request_changes",{},422), ("note",{"text":" "},422),
+    ("note",{"text":"x"*8001},422), ("note",{"text":"x"*33000},413),
+    ("note",{"text":12},422)])
+def test_review_restricts_inputs(client, suffix, body, status):
+    assert client.post(BASE + "/tasks/T-test/" + suffix, headers=WRITE_HEADERS, json=body).status_code == status
+    assert client.put(BASE + "/tasks/T-test/approve", headers=WRITE_HEADERS, json={}).status_code == 405
+    assert client.post(BASE + "/tasks/bad.id/approve", headers=WRITE_HEADERS, json={}).status_code == 422
+
+
+def test_review_transport_and_redaction(client, monkeypatch):
+    import io
+    monkeypatch.setenv("FLEET_REVIEW_TOKEN", "private-review-token")
+    class Opener:
+        def open(self, request, timeout):
+            assert request.full_url.endswith("/tasks/T-test/approve")
+            assert request.get_header("Authorization") == "Bearer private-review-token"
+            assert request.method == "POST"
+            assert b"private-review-token" not in request.data
+            return io.BytesIO(b'{"title":"private-fixture-token private-review-token"}')
+    monkeypatch.setattr(transport, "build_opener", lambda *args: Opener())
+    c = transport.FleetClient()
+    assert c.post("tasks/T-test/approve", {}, review=True) == {"title": "[redacted] [redacted]"}
+    assert c.redact(["private-review-token"]) == ["[redacted]"]
+
+
+def test_forwarded_origin_and_note_projection(client, monkeypatch):
+    monkeypatch.setenv('FLEET_REVIEW_TOKEN', 'private-review-token')
+    monkeypatch.setattr(transport.FleetClient, 'get', lambda self, path: {
+        'task': {**FIXTURE['task']['task'], 'status': 'review'},
+        'events': [{'type': 'task.note', 'payload': 'First line\nSecond line', 'at': '2026-01-01'},
+                   {'type': 'worker.log', 'payload': 'not a review note'}],
+    })
+    monkeypatch.setattr(transport.FleetClient, 'collection', lambda *args, **kwargs: [])
+    monkeypatch.setattr(transport.FleetClient, 'post', lambda *args, **kwargs: {'ok': True})
+    headers = {**HEADERS, 'origin': 'https://workbench.example',
+               'x-forwarded-host': 'workbench.example', 'x-forwarded-proto': 'https'}
+    assert client.post(BASE + '/tasks/T-test/approve', headers=headers, json={}).status_code == 200
+    assert client.post(BASE + '/tasks/T-test/approve', headers={**headers, 'origin': 'https://evil.example'}, json={}).status_code == 403
+    detail = client.get(BASE + '/tasks/T-test', headers=HEADERS).json()
+    assert detail['review_notes'] == [{'text': 'First line\nSecond line', 'at': '2026-01-01'}]
+    for status, _ in V1_STATUSES:
+        assert proxy.task({'status': status})['review_actions'] == (status == 'review')

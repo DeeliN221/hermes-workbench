@@ -349,3 +349,20 @@ html[data-workbench-accessory][data-workbench-accessory-settings="true"][data-wo
   html[data-workbench-accessory] .dashboard-accessory-backdrop,
   html[data-workbench-accessory] .dashboard-accessory-close { display: none; }
 }
+
+/* Desktop navigation is available from the W dialog on every route. Keep the
+   dialog's ancestor mounted so showModal, its palette and focus trap still work. */
+@media (min-width: 801px) {
+  :root[data-workbench-shell="true"] { --dashboard-nav-width: 0px !important; }
+  :root[data-workbench-shell="true"] :is(.dashboard-action-rail, #app-sidebar, .dashboard-nav-resizer, .hti-host-sidebar-resizer) { display: none !important; }
+  :root[data-workbench-shell="true"] .dashboard-global-nav { visibility: hidden; width: 0; padding: 0; border: 0; }
+  :root[data-workbench-shell="true"] .workbench-actions-dialog[open] { visibility: visible; }
+  :root[data-workbench-shell="true"] #app-sidebar + div { margin-left: 0 !important; }
+  :root[data-workbench-shell="true"][data-workbench-page="settings"] #app-sidebar + div { margin-left: var(--dashboard-settings-width) !important; }
+}
+
+.workbench-menu-sessions { margin-top: 14px; }
+.workbench-menu-sessions > summary { padding: 8px; cursor: pointer; }
+.workbench-menu-sessions > div { max-height: 40vh; overflow: auto; }
+.workbench-actions-dialog > .workbench-profile-action { margin-bottom: 10px; }
+.workbench-actions-dialog > .workbench-profile-action > button { width: 100%; padding: 8px; color: inherit; background: var(--craft-slot); border: 1px solid var(--dashboard-line); font: inherit; cursor: pointer; }

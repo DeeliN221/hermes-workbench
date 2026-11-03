@@ -40,7 +40,7 @@ export function createTaskControlTower(
 ) {
   const h = sdk.React.createElement,
     { useState, useEffect, useRef } = sdk.hooks,
-    api = fleetAPI(sdk.fetchJSON);
+    api = fleetAPI(sdk.fetchJSON, sdk.authedFetch);
   const btn = (
     label: string,
     onClick: () => void,
@@ -66,6 +66,11 @@ export function createTaskControlTower(
     const [draft, setDraft] = useState(null as Task | null),
       [newTitle, setNewTitle] = useState(""),
       [creating, setCreating] = useState(false);
+    const [feedbackOpen, setFeedbackOpen] = useState(false),
+      [feedback, setFeedback] = useState({} as Record<string, string>),
+      [reviewStatus, setReviewStatus] = useState("");
+    const feedbackInput = useRef(null as HTMLTextAreaElement | null);
+    useEffect(() => { if (feedbackOpen) feedbackInput.current?.focus(); }, [feedbackOpen]);
     const archiving = useRef(new Set<string>());
     const writing = useRef(false);
     const selection = useRef(""),
@@ -221,6 +226,8 @@ export function createTaskControlTower(
       opener.current = document.activeElement as HTMLElement;
       selection.current = id;
       setSelected(id);
+      setFeedbackOpen(false);
+      setReviewStatus("");
       setDetail(null);
       setDraft(null);
       setError("");
@@ -230,6 +237,31 @@ export function createTaskControlTower(
       } catch (e) {
         if (selection.current === id)
           setError(e instanceof Error ? e.message : tr("详情加载失败，请关闭后重试", "Details failed to load. Close and retry."));
+      }
+    };
+    const review = async (task: Task, action: "approve" | "request_changes") => {
+      if (writing.current) return;
+      writing.current = true;
+      setBusy(true);
+      setError("");
+      setReviewStatus(tr("正在提交…", "Submitting…"));
+      try {
+        await api.review(task.id, action, feedback[task.id]);
+        if (selection.current === task.id) {
+          setReviewStatus(action === "approve" ? tr("已确认验收", "Delivery approved") : tr("意见已保存，任务已退回处理中", "Feedback saved; task returned to running"));
+          setFeedbackOpen(false);
+        }
+        setFeedback(previous => ({ ...previous, [task.id]: "" }));
+        try { await refresh(); }
+        catch { setError(tr("操作已成功，但刷新失败，请点击刷新", "Action succeeded, but refresh failed. Refresh to see the latest state.")); }
+      } catch (e) {
+        if (selection.current === task.id) {
+          setReviewStatus("");
+          setError(e instanceof Error ? e.message : tr("操作失败，请重试", "Action failed. Retry."));
+        }
+      } finally {
+        writing.current = false;
+        setBusy(false);
       }
     };
     const move = (task: Task, to: Status, before?: string) => {
@@ -772,6 +804,7 @@ export function createTaskControlTower(
               error
                 ? h("p", { role: "alert", className: "tower-error" }, error)
                 : null,
+              reviewStatus ? h("p", { role: "status", "aria-live": "polite" }, reviewStatus) : null,
               t
                 ? h(
                     sdk.React.Fragment,
@@ -780,9 +813,19 @@ export function createTaskControlTower(
                       "section",
                       { className: "tower-next" },
                       h("h3", null, tr("下一步动作", "Next action")),
-                      h("p", null, t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
+                      h("p", null, t.review_actions ? tr("核对交付后确认，或提交修改意见", "Review the delivery, then approve or request changes") : t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
                       h("p", null, [t.id, t.fleet_status, t.machine, t.assignee, t.attempt_count !== undefined ? `${t.attempt_count} attempts` : ""].filter(Boolean).join(" · ")),
                       t.spec_json?.summary ? h("p", { style: { whiteSpace: "pre-wrap" } }, t.spec_json.summary) : null,
+                      t.review_actions ? h("section", { className: "tower-review", "aria-busy": busy },
+                        h("div", { className: "tower-move-actions" },
+                          btn(tr("确认", "Approve"), () => void review(t, "approve"), { disabled: busy, className: "tower-primary" }),
+                          btn(tr("根据意见修改", "Request changes"), () => setFeedbackOpen(true), { disabled: busy, "aria-expanded": feedbackOpen, "aria-controls": "tower-review-feedback" })),
+                        feedbackOpen ? h("form", { id: "tower-review-feedback", onSubmit: (e: Event) => { e.preventDefault(); if (feedback[t.id]?.trim()) void review(t, "request_changes"); } },
+                          h("label", { htmlFor: "tower-review-note" }, tr("修改意见", "Review feedback")),
+                          h("textarea", { id: "tower-review-note", ref: feedbackInput, rows: 5, maxLength: 8000, required: true, disabled: busy,
+                            value: feedback[t.id] || "", placeholder: tr("请说明需要修改的内容…", "Describe what needs to change…"),
+                            onChange: (e: any) => setFeedback(previous => ({ ...previous, [t.id]: e.target.value })) }),
+                          h("button", { type: "submit", disabled: busy || !feedback[t.id]?.trim(), className: "tower-primary" }, busy ? tr("正在提交…", "Submitting…") : tr("提交修改意见", "Submit feedback"))) : null) : null,
                       t.status === "triage"
                         ? btn(
                             tr("补全草稿", "Complete draft"),
@@ -1126,6 +1169,9 @@ export function createTaskControlTower(
                       h("summary", null, tr("规格", "Specification")),
                       h("p", null, t.spec_json?.summary || "—"),
                     ),
+                    detail?.review_notes?.length ? h("section", { className: "tower-review-notes" },
+                      h("h3", null, tr("修改意见", "Review feedback")),
+                      ...detail.review_notes.map((note, i) => h("p", { key: i, style: { whiteSpace: "pre-wrap" } }, note.text))) : null,
                     h(
                       "details",
                       null,

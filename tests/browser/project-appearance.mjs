@@ -22,6 +22,9 @@ try {
     return route.fulfill({ json: { items: groups } });
   });
   await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
+  await page.locator('.codex-center-title').first().click();
+  await page.keyboard.press('w');
+  await page.locator('.workbench-menu-sessions > summary').click();
   await page.locator('.project-temporary').waitFor();
   assert.equal(await page.locator('.project-navigation').count(), 0);
   assert.equal(await page.locator('.project-navigation-resizer').count(), 0);
@@ -38,6 +41,10 @@ try {
   await editor.getByRole('button', { name: 'Save', exact: true }).click();
   await editor.waitFor({ state: 'detached' });
   await page.reload();
+  await page.locator(".codex-pane-slot").first().waitFor();
+  await page.locator(".codex-center-title").first().click();
+  await page.keyboard.press("w");
+  await page.locator(".workbench-menu-sessions > summary").click();
   await page.locator('.project-folder').waitFor();
   assert.equal(await page.locator('.project-folder-heading .project-appearance-mark').textContent(), '☆');
   assert.equal(await page.locator('.project-folder-heading .project-appearance-mark').evaluate(n => getComputedStyle(n).color), 'rgb(51, 155, 114)');

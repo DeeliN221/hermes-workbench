@@ -18,7 +18,7 @@ const port = reserve.address().port;
 await new Promise(r => reserve.close(r));
 const env = {...process.env, HERMES_DASHBOARD_TRUSTED_PROXY_SECRET:'local-proxy-secret', HERMES_WORKBENCH_ALLOWED_USERS:'preview'};
 for (const key of ['CODEX_HOME','CODEX_APP_SERVER_ENDPOINT','HERMES_WORKBENCH_FLEET_MODE','HERMES_WORKBENCH_FLEET_DEMO_URL']) delete env[key];
-if (fleet) Object.assign(env, {FLEETD_URL: fleet.origin + '/api/v1', FLEET_TOKEN:'mock-fleet-token'});
+if (fleet) Object.assign(env, {FLEETD_URL: fleet.origin + '/api/v1', FLEET_TOKEN:'mock-fleet-token', FLEET_REVIEW_TOKEN:'mock-review-token'});
 const proxy = spawn('uv', ['run','--no-project','--with-requirements','requirements-dev.txt','python','-m','uvicorn','fleet-proxy-app:app','--app-dir','tests/fixtures','--host','127.0.0.1','--port',String(port)], {env, stdio:['ignore','pipe','pipe']});
 let logs = '', host, browser;
 proxy.stdout.on('data', data => logs += data);
@@ -44,6 +44,19 @@ try {
     if (response.url().includes('/fleet')) responses.push(await response.text().catch(()=>''));
   });
   console.log(`Local validation: ${host.origin}/kanban?profile=default`);
+  if (process.env.BASELINE_DIST) {
+    const baseline = process.env.BASELINE_DIST;
+    await page.route('**/workbench.js', route=>route.fulfill({path:path.join(baseline,'index.js'),contentType:'text/javascript'}));
+    await page.route('**/style.css', route=>route.fulfill({path:path.join(baseline,'style.css'),contentType:'text/css'}));
+    await page.goto(host.origin+'/kanban?profile=default');
+    await page.getByText('Connected to Fleet',{exact:true}).waitFor();
+    await page.addStyleTag({content:'#preview-banner {display:none}'});
+    await page.locator('.tower-board [data-task-id="T-review"] .tower-card-title').click();
+    await page.locator('.tower-drawer').waitFor();
+    await page.screenshot({path:path.join(shotDir,'before-review.png')});
+    await page.unroute('**/workbench.js');
+    await page.unroute('**/style.css');
+  }
   await page.goto(host.origin+'/kanban?profile=default');
   await page.getByText('Connected to Fleet',{exact:true}).waitFor();
   assert.equal(await page.title(),'default');
@@ -188,6 +201,96 @@ try {
     assert.match(await denied.locator('.tower-connection').innerText(),/401/);
     await denied.screenshot({path:path.join(shotDir,'initial-401.png')});
     await denied.close();
+  }
+  if (!live) {
+    for (const width of [1536, 390]) for (const theme of ['light', 'dark']) {
+      await page.setViewportSize({width, height: 960});
+      await page.goto(host.origin+'/kanban?profile=default');
+      await page.getByText('Connected to Fleet',{exact:true}).waitFor();
+      await page.addStyleTag({content:'#preview-banner {display:none}'});
+      await page.evaluate(theme=>document.documentElement.dataset.workbenchTheme=theme,theme);
+      const content = await page.locator('.dashboard-owned-page').boundingBox();
+      if (width > 800) {
+        assert.equal(Math.round(content.x), 0);
+        assert.equal(await page.locator('.dashboard-global-nav').isVisible(),false);
+      } else assert.ok(content.x >= 48 && content.x <= 56, 'Mobile retains the compact rail and page spacing');
+      if (width > 800) {
+        const refresh = page.getByRole('button',{name:'Refresh',exact:true});
+        await refresh.focus();
+        await page.keyboard.press('w');
+        const menu = page.locator('.workbench-actions-dialog[open]');
+        await menu.waitFor();
+        for (const label of ['Home','Settings','Kanban','Scheduled jobs','Terminal','Achievements'])
+          assert.ok(await menu.getByRole('link',{name:label,exact:true}).isVisible());
+        assert.ok(await menu.getByRole('button',{name:'Files',exact:true}).isVisible());
+        assert.ok(await menu.locator('.workbench-profile-action > button').isVisible());
+        for (let i=0;i<18;i++) {
+          await page.keyboard.press('Tab');
+          assert.ok(await menu.evaluate(n=>n.contains(document.activeElement)),'W menu traps focus');
+        }
+        await page.screenshot({path:path.join(shotDir,`menu-${theme}.png`)});
+        await page.keyboard.press('Escape');
+        assert.ok(await refresh.evaluate(n=>n===document.activeElement),'Escape restores focus');
+      } else assert.ok(await page.locator('.dashboard-action-rail').isVisible());
+      const layout = width > 800 ? '.tower-board' : '.tower-list';
+      await page.locator(`${layout} [data-task-id="T-review"] .tower-card-title`).first().click();
+      const approve = page.getByRole('button',{name:'Approve',exact:true});
+      assert.ok(await approve.isEnabled());
+      await page.getByRole('button',{name:'Request changes',exact:true}).click();
+      const input = page.getByRole('textbox',{name:'Review feedback'});
+      assert.ok(await input.evaluate(n=>n===document.activeElement));
+      await input.fill('Improve contrast.\nAdd keyboard coverage.');
+      await page.keyboard.press('w');
+      assert.equal(await page.locator('.workbench-actions-dialog[open]').count(),0);
+      await input.fill('Improve contrast.\nAdd keyboard coverage.');
+      const submit = page.getByRole('button',{name:'Submit feedback',exact:true});
+      await page.screenshot({path:path.join(shotDir,`review-ready-${width}-${theme}.png`)});
+      let release;
+      await page.route('**/fleetd/tasks/T-review/request_changes',async route=>{
+        await new Promise(r=>release=r);
+        await route.fulfill({status:503,json:{detail:'FLEET_REVIEW_TOKEN missing or invalid'}});
+      });
+      await submit.click();
+      await page.getByRole('button',{name:'Submitting…',exact:true}).waitFor();
+      assert.ok(await approve.isDisabled());
+      release();
+      await page.locator('.tower-drawer').getByRole('alert').filter({hasText:'FLEET_REVIEW_TOKEN'}).waitFor();
+      assert.equal(await input.inputValue(),'Improve contrast.\nAdd keyboard coverage.');
+      await page.screenshot({path:path.join(shotDir,`review-${width}-${theme}.png`)});
+      await page.unroute('**/fleetd/tasks/T-review/request_changes');
+      await page.getByRole('button',{name:'Close details'}).click();
+    }
+    // Exercise the authenticated proxy and both upstream writes, only on fixture data.
+    await page.setViewportSize({width:1536,height:960});
+    await page.locator('.tower-board [data-task-id="T-review"] .tower-card-title').click();
+    await page.getByRole('button',{name:'Request changes',exact:true}).click();
+    await page.getByRole('textbox',{name:'Review feedback'}).fill('Fix keyboard access.\nKeep multiline notes.');
+    const savedResponse = page.waitForResponse(r=>r.url().endsWith('/T-review/request_changes') && r.request().method()==='POST');
+    await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
+    const saved = await savedResponse;
+    assert.equal(saved.status(),200,await saved.text());
+    await page.getByRole('status').filter({hasText:'Feedback saved; task returned to running'}).waitFor();
+    await page.locator('.column-active [data-task-id="T-review"]').waitFor();
+    await page.locator('.tower-review-notes').getByText('Fix keyboard access.\nKeep multiline notes.',{exact:true}).waitFor();
+    const writes = fleet.calls.filter(c=>c.method==='POST' && c.path.includes('/T-review/'));
+    assert.deepEqual(writes.map(c=>c.path.split('/').at(-1)),['note','request_changes']);
+    assert.equal(writes[0].body.text,'Fix keyboard access.\nKeep multiline notes.');
+    await page.getByRole('button',{name:'Close details'}).click();
+    // Reset a fixture card for approval, never a live task.
+    fleet.reviewTask().status = 'review';
+    await page.getByRole('button',{name:'Refresh',exact:true}).click();
+    await page.locator('.column-review [data-task-id="T-review"] .tower-card-title').click();
+    await page.route('**/fleetd/tasks/T-review/approve',route=>route.fulfill({status:409,json:{detail:'Task changed (409)'}}));
+    await page.getByRole('button',{name:'Approve',exact:true}).click();
+    await page.locator('.tower-drawer').getByRole('alert').filter({hasText:'Task changed elsewhere'}).waitFor();
+    await page.unroute('**/fleetd/tasks/T-review/approve');
+    await page.getByRole('button',{name:'Approve',exact:true}).click();
+    await page.getByRole('status').filter({hasText:'Delivery approved'}).waitFor();
+    await page.locator('.column-done [data-task-id="T-review"]').waitFor();
+    await page.getByRole('button',{name:'Close details'}).click();
+    assert.ok(!responses.join('').includes('mock-review-token'));
+    assert.ok(!logs.includes('mock-review-token'));
+    assert.deepEqual(errors,[]);
   }
   // Explicit demo is isolated and never selected as a fallback.
   await page.setViewportSize({width:1536,height:960});

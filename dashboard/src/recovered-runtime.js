@@ -2977,7 +2977,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 onClick: () => setNavCollapsed((value) => !value),
               }, zc(t, navIsCollapsed ? "chevron-right" : "chevron-left"))),
             !mobileActions ? l(WorkbenchDialog, { open: actionsOpen, onClose: () => setActionsOpen(false) },
-              renderActions(false), P ? l("p", { className: "workbench-theme-error", role: "status" }, P) : null) : null,
+              l(ProfileAction, { profile: F, className: "workbench-profile-action" }),
+              renderActions(false),
+              j ? l("details", { className: "workbench-menu-sessions" },
+                l("summary", null, runtimeText("项目与会话", "Projects and sessions")),
+                l("div", { onClickCapture: (event) => { if (event.target.closest(".codex-session-row")) setActionsOpen(false); } }, _?.element))
+                : k("/chat", runtimeText("项目与会话", "Projects and sessions"), "home", false),
+              P ? l("p", { className: "workbench-theme-error", role: "status" }, P) : null) : null,
             l(
               "div",
               {
@@ -2999,7 +3005,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   },
                   hidden: isTaskBoard,
                 },
-                isTaskBoard ? null : isHome ? l("div", { className: "workbench-home-nav" },
+                !mobileActions || isTaskBoard ? null : isHome ? l("div", { className: "workbench-home-nav" },
                   l("p", null, runtimeText("按 Profile 浏览全部项目会话。", "Browse project sessions across all profiles.")),
                   l("a", { href: "/profiles?profile=default", onClick: (event) => { event.preventDefault(); Kp("/profiles", "default"); } }, runtimeText("管理档案与显示名", "Manage profiles and display names"))) : _?.element ?? l("div", { className: "project-section-heading workbench-project-placeholder" }, l("span", null, runtimeText("项目", "Projects"))),
               ),

@@ -116,6 +116,9 @@ try {
   await page.locator('input[name="session-search"]').fill('.workbench-attachments');
   await page.locator('.codex-session-search-results').getByText('No matching sessions', { exact: true }).waitFor();
   await page.locator('.codex-session-search-close').click();
+  await page.locator('.codex-center-title').first().click();
+  await page.keyboard.press('w');
+  await page.locator('.workbench-menu-sessions > summary').click();
   await page.locator('.codex-session-row').filter({ hasText: 'Home rendering regression' }).first().click();
   await page.waitForFunction(() => [...document.querySelectorAll('.codex-message.is-user .codex-message-body')].some(node => node.textContent === 'Original legacy message.'));
   const legacy = page.locator('.codex-pane-slot').filter({ hasText: 'Original legacy message.' });
