@@ -284,6 +284,7 @@ export function createTaskControlTower(
         if (selection.current === task.id) {
           setReviewStatus(action === "approve" ? tr("已确认验收", "Delivery approved") : tr("意见已保存，任务已退回处理中", "Feedback saved; task returned to running"));
           setFeedbackOpen(false);
+          if (action === "approve") close();
         }
         setFeedback(previous => ({ ...previous, [task.id]: "" }));
         try { await refresh(); }
