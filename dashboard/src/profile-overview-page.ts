@@ -1,3 +1,4 @@
+import { createProjectEditor, projectMark } from './project-appearance';
 import type { FetchJSON } from './workbench-api';
 import { loadProfileOverview, freshnessRank, type ProfileColumn } from './profile-overview';
 import { openHomeConversation } from './home-navigation';
@@ -9,6 +10,7 @@ const HOME_SESSIONS_PER_PROFILE = 3;
 
 export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: FetchJSON }, navigate: (path: string, profile: string) => void) {
   const h = sdk.React.createElement, { useState, useEffect } = sdk.hooks;
+  const ProjectEditor = createProjectEditor(sdk);
   return function ProfileOverview() {
     useProfileDisplay(sdk);
     const initialQuery = new URLSearchParams(window.location.search);
@@ -20,6 +22,7 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       window.history.replaceState(window.history.state, '', url);
       if (key === 'project') setProject(value); else setSort(value);
     };
+    const [editing, setEditing] = useState(null as any);
     const [columns, setColumns] = useState([] as ProfileColumn[]);
     const [loading, setLoading] = useState(true), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
     const [order, setOrder] = useState([] as string[]);
@@ -44,7 +47,7 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       return rank(a.name) - rank(b.name);
     });
     const projectName = (column: ProfileColumn, row: ProfileColumn['rows'][number]) => column.projects.find(item => item.id === row.groupId)?.name || row.projectName || (row.source === 'Codex' ? row.workspace.split('/').filter(Boolean).at(-1) : '') || tr('未分组项目', 'Ungrouped project');
-    const projects = [...new Set<string>(columns.flatMap((column: ProfileColumn) => column.rows.map(row => projectName(column, row))))].sort((a, b) => a.localeCompare(b));
+    const projects = [...new Set<string>(columns.flatMap((column: ProfileColumn) => column.projects.map(item => item.name)))].sort((a, b) => a.localeCompare(b));
     const [now, setNow] = useState(Date.now());
     useEffect(() => {
       const controller = new AbortController();
@@ -63,36 +66,37 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       loading && !columns.length ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载 Profile 和项目会话…', 'Loading profiles and project sessions…')) : null,
       !loading && !error && !columns.length ? h('p', { className: 'overview-notice' }, tr('暂无 Profile。', 'No profiles available.')) : null,
       h('div', { className: 'profile-order-toolbar' },
-        h('select', { 'aria-label': tr('按项目筛选', 'Filter by project'), value: project, onChange: (event: any) => updateView('project', event.target.value) },
+        projects.length ? h('select', { 'aria-label': tr('按项目筛选', 'Filter by project'), value: project, onChange: (event: any) => updateView('project', event.target.value) },
           h('option', { value: '' }, tr('全部项目', 'All projects')),
-          (project && !projects.includes(project) ? [project, ...projects] : projects).map(name => h('option', { key: name, value: name }, name))),
+          (project && !projects.includes(project) ? [project, ...projects] : projects).map(name => h('option', { key: name, value: name }, name))) : null,
         h('select', { 'aria-label': tr('会话排序', 'Sort sessions'), value: sort, onChange: (event: any) => updateView('sort', event.target.value) },
           [['recent', tr('最近打开', 'Recently opened')], ['updated', tr('最近更新', 'Recently updated')], ['project', tr('项目名称', 'Project name')]].map(([value, label]) => h('option', { key: value, value }, label))), h('button', { type: 'button', disabled: saving || !orderReady, onClick: () => void saveOrder([]) }, tr('恢复默认顺序', 'Restore default order')), h('a', { href: '/profiles', className: 'profile-home-navigation' }, tr('管理 Profile', 'Manage profiles')), h('span', { role: 'status', 'aria-live': 'polite' }, notice)),
       h('div', { className: 'profile-overview-columns', 'aria-label': tr('按 Profile 分组的会话', 'Sessions grouped by profile') },
         sorted.map((column: ProfileColumn, position: number) => {
-          const rows = column.rows.filter(row => !project || projectName(column, row) === project);
+          const rows = column.rows.filter(row => !column.projects.length || !project || projectName(column, row) === project);
           if (sort === 'updated') rows.sort((a, b) => b.updated - a.updated);
           if (sort === 'project') rows.sort((a, b) => projectName(column, a).localeCompare(projectName(column, b)) || b.updated - a.updated);
           return h('section', { key: column.name, className: 'profile-overview-column', 'data-profile': column.name, 'aria-labelledby': `overview-${column.name}` },
             h('header', { className: 'profile-column-heading' }, h('span', { className: 'profile-column-icon', 'aria-hidden': true }, column.icon || '◈'),
               h('h2', { id: `overview-${column.name}` }, profileTabName(column.name)), h('span', { className: 'profile-column-count' }, `${rows.length} ${tr('会话', 'sessions')}`),
-              h('button', { type: 'button', className: 'profile-new-session', 'aria-label': `${tr('新增会话', 'New session')} · ${profileTabName(column.name)}`, title: tr('新增会话', 'New session'), onClick: () => openHomeConversation('/chat?new=1', column.name, navigate) }, '+')),
+              h('button', { type: 'button', className: 'profile-new-session', 'aria-label': `${tr('新增会话', 'New session')} · ${profileTabName(column.name)}`, title: tr('新增会话；右键新建项目', 'New session; right-click for new project'), onContextMenu: (event: MouseEvent) => { event.preventDefault(); setEditing({ profile: column.name }); }, onKeyDown: (event: KeyboardEvent) => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) { event.preventDefault(); setEditing({ profile: column.name }); } }, onClick: () => openHomeConversation('/chat?new=1', column.name, navigate) }, '+'), h('button', { type: 'button', 'aria-label': tr('新建项目', 'New project') + ' · ' + profileTabName(column.name), title: tr('新建项目', 'New project'), onClick: () => setEditing({ profile: column.name }) }, '▰+')),
             h('div', { className: 'profile-order-controls' }, ...([-1, 1] as const).map(direction => h('button', { type: 'button', disabled: saving || !orderReady || position + direction < 0 || position + direction >= sorted.length, 'aria-label': `${profileTabName(column.name)} ${direction < 0 ? tr('上移', 'Move up') : tr('下移', 'Move down')}`, onClick: () => { const next = sorted.map((item: ProfileColumn) => item.name); [next[position], next[position + direction]] = [next[position + direction], next[position]]; void saveOrder(next); } }, direction < 0 ? '↑' : '↓'))),
             h('div', { className: 'profile-column-scroll', 'aria-label': profileTabName(column.name) },
               column.failed.length ? h('p', { role: 'alert', className: 'overview-notice' }, tr('部分数据加载失败', 'Some sessions unavailable.'), retry()) : null,
               column.loading ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载历史会话…', 'Loading conversation history…')) : null,
+              column.projects.length ? h('div', { className: 'profile-project-actions' }, column.projects.map(item => h('button', { key: item.id, type: 'button', title: tr('编辑项目外观', 'Edit project appearance'), 'aria-label': tr('编辑项目外观', 'Edit project appearance') + ': ' + item.name, onClick: () => setEditing({ profile: column.name, project: item }) }, projectMark(h, item), item.name))) : null,
               // Filter and sort before limiting; freshness keeps its original rank.
               rows.slice(0, HOME_SESSIONS_PER_PROFILE).map((row) => {
                 const rank = freshnessRank(row, column.rows.indexOf(row), now);
                 const href = `/chat?${row.source === 'Codex' ? 'session' : 'hermesSession'}=${encodeURIComponent(row.id)}&profile=${encodeURIComponent(column.name)}`;
                 return h('a', { key: `${row.source}:${row.id}`, href, className: 'profile-session', 'data-freshness': rank,
                   onClick: (event: MouseEvent) => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openHomeConversation(href, column.name, navigate); } },
-                  h('span', { className: 'profile-session-project', title: projectName(column, row) }, projectName(column, row)),
+                  column.projects.length ? h('span', { className: 'profile-session-project', title: projectName(column, row) }, projectMark(h, column.projects.find(item => item.id === row.groupId) || {}), projectName(column, row)) : null,
                   h('strong', null, row.title),
                   row.unread ? h('span', { className: 'profile-session-indicator', role: 'img', 'aria-label': tr('未读', 'Unread'), title: tr('未读', 'Unread') }, '●') : null,
                   ['running', 'active', 'streaming', 'in_progress'].includes(row.status) ? h('span', { className: 'profile-session-indicator', role: 'img', 'aria-label': tr('运行中', 'Running'), title: tr('运行中', 'Running') }, '◉') : null);
               }),
               !column.loading && !rows.length && !column.failed.length ? h('p', { className: 'overview-notice' }, project ? tr('无匹配会话', 'No matching sessions') : tr('暂无会话', 'No sessions yet')) : null));
-        })));
+        })), editing ? h(ProjectEditor, { key: editing.profile + (editing.project?.id || ''), ...editing, onClose: () => setEditing(null), onSaved: (saved: any) => { setColumns((current: ProfileColumn[]) => current.map(column => column.name === editing.profile ? { ...column, projects: [...column.projects.filter(item => item.id !== saved.id), saved] } : column)); setNotice(tr('项目已保存', 'Project saved')); } }) : null);
   };
 }

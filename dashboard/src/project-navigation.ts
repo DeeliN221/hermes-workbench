@@ -1,3 +1,4 @@
+import { createProjectEditor, projectMark } from './project-appearance';
 import { uiText as sourceText } from './ui-locale';
 /** Manual project navigation. Membership persists through the existing organization API. */
 export interface ProjectSession {
@@ -12,7 +13,7 @@ export interface ProjectSession {
   /** Creation time from the Codex session API (Unix seconds or milliseconds). */
   createdAt?: number | string;
 }
-export interface SessionProject { id: string; name: string }
+export interface SessionProject { color?: string; icon?: string; id: string; name: string }
 export const PANE_DRAG_TYPE = 'application/x-hermes-pane-sessions';
 export const SESSION_DRAG_TYPE = 'application/x-hermes-project-session';
 export const PROJECT_SPLIT_DEFAULT = 0.56;
@@ -127,13 +128,21 @@ export function createProjectNavigation(sdk: Record<string, any>) {
   const icon = (path: string) => h('svg', { viewBox: '0 0 24 24', width: 18, height: 18,
     fill: 'none', stroke: 'currentColor', strokeWidth: 1.6, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
   h('path', { d: path }));
-  const folderIcon = () => h('svg', { viewBox: '0 0 24 24', width: 22, height: 22,
-    fill: 'none', stroke: 'currentColor', strokeWidth: 1.5, strokeLinecap: 'round', strokeLinejoin: 'round', 'aria-hidden': true },
-  h('path', { d: 'M2 5h7l2 2h11v13H2z', fill: 'currentColor', fillOpacity: 0.22 }),
-  h('path', { d: 'M2 9h20' }));
   const bubblePath = 'M4 3h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-5 4V4a1 1 0 0 1 1-1z';
+  const ProjectEditor = createProjectEditor(sdk);
   return function ProjectNavigation(props: ProjectNavigationProps) {
-    const { profile, sessions, projects, renderSession, onMove } = props;
+    const { profile, sessions, renderSession, onMove } = props;
+    const [styles, setStyles] = useState({} as Record<string, Pick<SessionProject, 'color' | 'icon'>>);
+    const [editing, setEditing] = useState(null as SessionProject | null);
+    const projects = props.projects.map(project => ({ ...project, ...styles[profile + ':' + project.id] }));
+    const editor = editing ? h(ProjectEditor, { key: profile + editing.id, profile, project: editing, onClose: () => setEditing(null), onSaved: (saved: SessionProject) => { setStyles((current: any) => ({ ...current, [profile + ':' + saved.id]: { color: saved.color, icon: saved.icon } })); setNotice(sourceText('项目外观已保存', 'Project appearance saved')); } }) : null;
+    const createProject = (event: MouseEvent | KeyboardEvent) => { event.preventDefault(); props.onCreate(event.currentTarget as HTMLElement); };
+    const newSessionActions = {
+      onContextMenu: createProject,
+      onKeyDown: (event: KeyboardEvent) => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) createProject(event); },
+    };
+    const createProjectButton = () => h('button', { type: 'button', className: 'project-create', title: sourceText('新建项目', 'New project'), 'aria-label': sourceText('新建项目', 'New project'), onClick: createProject }, '▰+');
+
     const [dropTarget, setDropTarget] = useState(undefined);
     const [notice, setNotice] = useState('');
     const [historyOpen, setHistoryOpen] = useState(false);
@@ -289,28 +298,28 @@ export function createProjectNavigation(sdk: Record<string, any>) {
                 setRailTop(Math.max(12, Math.min(rect.top, window.innerHeight - flyoutHeight - 12)));
                 setRailProjectId((current: string | undefined) => current === project.id ? undefined : project.id);
               },
-            }, folderIcon(), members.length ? h('span', { className: 'project-rail-count' }, members.length) : null))) : null,
+            }, projectMark(h, project), members.length ? h('span', { className: 'project-rail-count' }, members.length) : null))) : null,
           h('div', { className: 'project-rail-section project-rail-temporary' },
             h('button', { type: 'button', className: 'project-rail-session-new', title: sourceText("新建临时会话", "New temporary session"),
-              'aria-label': sourceText("新建临时会话", "New temporary session"), onClick: props.onNewSession },
-              icon(`${bubblePath} M12 8v5 M9.5 10.5h5`)),
+              'aria-label': sourceText("新建临时会话", "New temporary session"), ...newSessionActions, onClick: props.onNewSession },
+              icon(`${bubblePath} M12 8v5 M9.5 10.5h5`)), createProjectButton(),
             ...temporary.map(session => h('div', { key: session.id, className: 'project-rail-session' },
               h('span', { className: 'project-rail-session-icon', 'aria-hidden': true }, icon(bubblePath)),
               renderSession(session, false))))),
         railProject ? h('div', { ref: railFlyout, className: 'project-rail-flyout', style: { top: `${railTop}px` },
           role: 'dialog', 'aria-label': railProject.project.name },
-          h('header', null, h('strong', null, railProject.project.name), h('button', { type: 'button',
+          h('header', null, h('strong', null, projectMark(h, railProject.project), railProject.project.name), h('button', { type: 'button', 'aria-label': sourceText('编辑项目外观', 'Edit project appearance'), onClick: () => setEditing(railProject.project) }, '◐'), h('button', { type: 'button',
             'aria-label': sourceText("关闭项目列表", "Close project list"),
             onClick: () => setRailProjectId(undefined) }, '×')),
           h('div', { className: 'project-rail-flyout-list', onClickCapture: (event: MouseEvent) => {
             if ((event.target as Element | null)?.closest?.('.codex-session-row')) setRailProjectId(undefined);
           } }, railProject.sessions.length ? railProject.sessions.map(row)
             : h('p', { className: 'project-empty' }, sourceText("此项目还没有会话", "No sessions in this project")))) : null,
-        notice ? h('p', { className: 'project-rail-notice', role: 'status' }, notice) : null);
+        editor, notice ? h('p', { className: 'project-rail-notice', role: 'status' }, notice) : null);
     }
     return h(sdk.React.Fragment, null,
       h('div', { className: `project-navigation-split${resizingSplit ? ' is-resizing' : ''}`, ref: splitLayout },
-      h('section', { className: 'project-navigation', 'aria-label': sourceText("项目", "Projects"),
+      groups.length ? h('section', { className: 'project-navigation', 'aria-label': sourceText("项目", "Projects"),
         style: { flexBasis: `calc((100% - ${PROJECT_SPLIT_RESIZER_HEIGHT}px) * ${projectSplit})` } },
         h('div', { className: 'project-section-heading' }, h('span', null, sourceText("项目", "Projects")),
           h('div', { className: 'project-heading-actions' },
@@ -337,32 +346,32 @@ export function createProjectNavigation(sdk: Record<string, any>) {
             event.dataTransfer.effectAllowed = 'copy';
             startPaneDrag(event, members.map(session => session.id));
           }, onDragEnd: endDrag },
-          icon('M3 7V5h6l2 2h10v13H3z'),
+          projectMark(h, project),
           h('span', { className: 'project-name', title: project.name }, project.name),
           h('span', { className: 'project-count' }, members.length)),
           members.length ? members.map(row) : h('p', { className: 'project-empty' }, sourceText("拖拽会话到此项目", "Drag sessions into this project"))),
           // Keep independent actions beside the disclosure, outside its summary.
-          h('span', { className: 'project-actions' },
+          h('span', { className: 'project-actions' }, h('button', { type: 'button', 'aria-label': sourceText('编辑项目外观', 'Edit project appearance') + ': ' + project.name, title: sourceText('编辑项目外观', 'Edit project appearance'), onClick: () => setEditing(project) }, '◐'),
             h('button', { type: 'button', title: sourceText("重命名项目", "Rename project"), 'aria-label': sourceText(`重命名项目：${project.name}`, `Rename project: ${project.name}`),
               onClick: (event: MouseEvent) => { event.preventDefault(); props.onRename(project, event.currentTarget as HTMLElement); } }, icon('m16 3 5 5-12 12H4v-5z')),
             h('button', { type: 'button', title: sourceText("删除项目", "Delete project"), 'aria-label': sourceText(`删除项目：${project.name}`, `Delete project: ${project.name}`),
               onClick: (event: MouseEvent) => { event.preventDefault(); props.onDelete(project); } }, icon('M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14'))))),
-        groups.length ? null : h('p', { className: 'project-empty' }, sourceText("新建项目后，将会话拖入整理", "Create a project, then drag in sessions to organize them")))),
-      h('div', { className: 'project-navigation-resizer', role: 'separator', 'aria-orientation': 'horizontal',
+        groups.length ? null : h('p', { className: 'project-empty' }, sourceText("新建项目后，将会话拖入整理", "Create a project, then drag in sessions to organize them")))) : null,
+      groups.length ? h('div', { className: 'project-navigation-resizer', role: 'separator', 'aria-orientation': 'horizontal',
         'aria-label': sourceText("调整项目与临时会话的高度", "Resize projects and temporary sessions"),
         'aria-valuemin': Math.round(PROJECT_SPLIT_MIN * 100), 'aria-valuemax': Math.round(PROJECT_SPLIT_MAX * 100),
         'aria-valuenow': Math.round(projectSplit * 100), tabIndex: 0,
         title: sourceText("拖动调整项目与临时会话的高度", "Drag to resize projects and temporary sessions"),
         onPointerDown: startSplitDrag, onPointerMove: moveSplitDrag, onPointerUp: endSplitDrag,
         onPointerCancel: endSplitDrag, onLostPointerCapture: endSplitDrag, onKeyDown: keyProjectSplit },
-        h('span', { className: 'project-navigation-resizer-grip', 'aria-hidden': true })),
+        h('span', { className: 'project-navigation-resizer-grip', 'aria-hidden': true })) : null,
       h('section', { className: `project-temporary${dropTarget === null ? ' is-drop-target' : ''}`,
         'aria-label': sourceText("临时会话", "Temporary sessions"), ...dropProps(null) },
         h('div', { className: 'project-section-heading' }, h('span', null, sourceText("临时会话", "Temporary sessions")),
           h('button', { type: 'button', className: 'project-create', title: sourceText("新建临时会话", "New temporary session"), 'aria-label': sourceText("新建临时会话", "New temporary session"),
-            onClick: props.onNewSession }, icon('M12 5v14M5 12h14'))),
+            ...newSessionActions, onClick: props.onNewSession }, icon('M12 5v14M5 12h14')), createProjectButton()),
         ...temporary.map(row),
         temporary.length ? null : h('p', { className: 'project-empty' }, sourceText("未加入项目的会话显示在这里", "Sessions outside projects appear here")))),
-      notice ? h('p', { className: 'project-empty', role: 'status' }, notice) : null);
+      editor, notice ? h('p', { className: 'project-empty', role: 'status' }, notice) : null);
   };
 }

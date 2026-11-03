@@ -40,6 +40,23 @@ try {
     { name: 'empty', projects: [], failed: [], sessions: [] },
     { name: 'archive', projects: [], failed: [], sessions: [] },
   ];
+  let failStyle = false;
+  await page.route('**/api/plugins/workbench/codex/groups**', async route => {
+    const url = new URL(route.request().url());
+    const profile = profiles.find(p => p.name === (url.searchParams.get('profile') || route.request().postDataJSON()?.profile));
+    if (url.pathname.endsWith('/appearance')) {
+      if (failStyle) return route.fulfill({ status: 503, json: { detail: 'Unavailable' } });
+      const group = profile.projects.find(p => p.id === url.pathname.split('/').at(-2));
+      Object.assign(group, route.request().postDataJSON());
+      return route.fulfill({ json: { group } });
+    }
+    if (route.request().method() === 'POST') {
+      const group = { id: 'new-project', name: route.request().postDataJSON().name };
+      profile.projects.push(group);
+      return route.fulfill({ json: { group } });
+    }
+    return route.fulfill({ json: { items: profile?.projects || [] } });
+  });
   // Deliberately unordered input proves selection happens after freshness sorting.
   profiles[0].sessions.reverse();
   await page.route('**/api/plugins/workbench/profile-overview', async route => {
@@ -77,6 +94,30 @@ try {
   assert.deepEqual(writes.filter(url => /session|read-state/.test(url)), [], 'Overview does not mutate sessions or read cursors');
   assert.equal(requests.filter(url => url.includes('/profile-overview')).length, 1);
   assert.equal(requests.filter(url => url.includes('/api/profiles/sessions?profile=all')).length, 1);
+  for (const name of ['empty', 'archive']) {
+    assert.equal(await page.locator(`[data-profile="${name}"] .profile-project-actions`).count(), 0);
+    assert.equal(await page.locator(`[data-profile="${name}"] .profile-session-project`).count(), 0);
+  }
+  await columns.first().getByRole('button', { name: 'Edit project appearance: Workbench', exact: true }).click();
+  const editor = page.getByRole('dialog');
+
+  await editor.getByLabel('Color', { exact: true }).selectOption('purple');
+  await editor.getByLabel('Icon', { exact: true }).selectOption('book');
+  injectedFailure = true; failStyle = true;
+  await editor.getByRole('button', { name: 'Save', exact: true }).click();
+  await editor.getByRole('alert').waitFor();
+  failStyle = false;
+  await editor.getByRole('button', { name: 'Save', exact: true }).click();
+  await editor.waitFor({ state: 'detached' });
+  await page.reload(); await columns.nth(3).waitFor();
+  assert.equal(await columns.first().getByRole('button', { name: 'Edit project appearance: Workbench', exact: true }).locator('.project-appearance-mark').textContent(), '▤');
+  await columns.first().locator('.profile-new-session').click({ button: 'right' });
+  await page.getByRole('dialog', { name: 'New project', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
+  await columns.first().locator('.profile-new-session').focus();
+  await page.keyboard.press('Shift+F10');
+  await page.getByRole('dialog', { name: 'New project', exact: true }).waitFor();
+  await page.keyboard.press('Escape');
   const geometry = await page.locator('.profile-overview-columns').evaluate(node => ({ scroll: node.scrollWidth, width: node.clientWidth }));
   assert.ok(geometry.scroll <= geometry.width, 'Profile groups never overflow horizontally');
   assert.ok(await columns.first().locator('.profile-column-scroll').evaluate(node => node.scrollHeight <= node.clientHeight), 'Groups use the page scroll, not nested scrolling');
@@ -103,7 +144,7 @@ try {
   assert.equal(await filter.inputValue(), 'Planning');
   assert.equal(await sorter.inputValue(), 'updated');
   await filter.selectOption(''); await sorter.selectOption('project');
-  assert.equal(await columns.first().locator('.profile-session-project').first().textContent(), 'Planning');
+  assert.match(await columns.first().locator('.profile-session-project').first().textContent(), /Planning$/);
   assert.equal(await columns.first().locator('.profile-session').first().getAttribute('data-freshness'), '3');
   await sorter.selectOption('recent');
   await assertLimited();
@@ -202,6 +243,24 @@ try {
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const theme of ['light', 'dark']) {
+      await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; }, theme);
+      await columns.first().getByRole('button', { name: 'Edit project appearance: Workbench', exact: true }).click();
+      await page.getByRole('dialog', { name: 'Project appearance' }).waitFor();
+      await page.screenshot({ path: `${shotDir}/editor-${width}-${theme}.png` });
+      assert.ok(await page.getByRole('dialog', { name: 'Project appearance' }).evaluate(n => n.getBoundingClientRect().right <= innerWidth));
+      await page.keyboard.press('Escape');
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.locator('[data-profile="empty"]').getByRole('button', { name: /New project/ }).click();
+  await page.getByRole('dialog', { name: 'New project', exact: true }).getByLabel('Project name', { exact: true }).fill('New folder');
+  await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
+  await page.getByRole('status').filter({ hasText: 'Project saved' }).waitFor();
+  await page.reload(); await columns.nth(3).waitFor();
+  await page.locator('[data-profile="empty"]').getByRole('button', { name: 'Edit project appearance: New folder', exact: true }).waitFor();
   mode = 'partial'; await page.reload();
   await columns.nth(1).getByRole('alert').waitFor();
   assert.equal(await columns.first().getByRole('alert').count(), 0);

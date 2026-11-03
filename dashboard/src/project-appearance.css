@@ -1,0 +1,18 @@
+.project-appearance-mark { display: inline-block; margin-right: 5px; font-size: 18px; line-height: 1; flex: none; }
+.project-editor { color: var(--mc-text); background: var(--mc-surface, white); border: 1px solid var(--mc-line-soft); border-radius: 10px; padding: 18px; width: min(340px, calc(100vw - 88px)); max-height: 80dvh; overflow: auto; }
+.project-editor::backdrop { background: #0008; }
+.project-editor h3 { margin: 0 0 16px; overflow-wrap: anywhere; }
+.project-editor label { display: grid; gap: 6px; min-width: 0; }
+.project-editor-options { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.project-editor input, .project-editor select, .project-editor button { font: inherit; color: inherit; background: var(--mc-surface); border: 1px solid var(--mc-line-soft); border-radius: 5px; padding: 6px; min-width: 0; }
+.project-editor footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+.project-editor :focus-visible { outline: 2px solid var(--mc-accent); }
+.profile-project-actions { display: flex; gap: 4px; flex-wrap: wrap; padding: 4px 10px; border-bottom: 1px solid var(--mc-line-soft); }
+.profile-project-actions button { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 480px) {
+  .profile-column-count { display: none; }
+  .profile-column-heading { gap: 4px; }
+}
+@media (max-width: 800px) {
+  .project-editor { left: 48px; }
+}
