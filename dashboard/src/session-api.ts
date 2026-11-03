@@ -117,10 +117,10 @@ export async function searchSessions(
   profile: string,
   search: string,
   includeAutomation = false,
+  signal?: AbortSignal,
 ): Promise<HermesRecord[]> {
-  const response = await fetchJSON<SearchResponse>(
-    `/api/sessions/search?q=${query(search)}&limit=100&profile=${query(profile)}${includeAutomation ? '' : '&exclude_sources=cron'}`,
-  );
+  const url = `/api/sessions/search?q=${query(search)}&limit=100&profile=${query(profile)}${includeAutomation ? '' : '&exclude_sources=cron'}`;
+  const response = await (signal ? fetchJSON<SearchResponse>(url, { signal }) : fetchJSON<SearchResponse>(url));
   return Array.isArray(response.results) ? response.results.filter(row => row.hidden !== true) : [];
 }
 

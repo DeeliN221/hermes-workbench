@@ -85,8 +85,13 @@ export interface CodexSessionSearchHit {
   updatedAt: number | undefined; deleted: boolean; groupName: string; status: string; workspace: string; workspacePath: string;
 }
 /** Search all mapped Codex sessions; content comes from the native thread index. */
-export async function searchCodexSessions(read: FetchJSON, profile: string, query: string, limit = 60): Promise<CodexSessionSearchHit[]> {
-  const response = record(await read(`${API}/search?profile=${encode(profile)}&q=${encode(query)}&limit=${Math.max(1, Math.min(limit, 100))}`));
+export async function searchCodexSessions(
+  read: FetchJSON, profile: string, query: string, limit = 60,
+  options: { signal?: AbortSignal; content?: boolean } = {},
+): Promise<CodexSessionSearchHit[]> {
+  const url = `${API}/search?profile=${encode(profile)}&q=${encode(query)}&limit=${Math.max(1, Math.min(limit, 100))}`
+    + (options.content === false ? '&content=false' : '');
+  const response = record(await (options.signal ? read(url, { signal: options.signal }) : read(url)));
   return rows(response, 'results').flatMap(value => {
     const row = record(value), id = text(row.session_id ?? row.sessionId ?? row.id).trim();
     if (!id || row.hidden === true) return [];
