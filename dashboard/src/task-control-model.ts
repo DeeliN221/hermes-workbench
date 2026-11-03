@@ -25,6 +25,7 @@ export type Task = {
   status: Status;
   revision: number;
   read_only?: boolean;
+  review_actions?: boolean;
   fleet_status?: string;
   assignee?: string;
   attempt_count?: number;
@@ -61,6 +62,7 @@ export type Detail = {
   artifacts: Artifact[];
   decision?: Decision | null;
   open_decision?: Decision | null;
+  review_notes?: { text: string; at: string }[];
   events?: { type: string; created_at: string }[];
   attempts?: unknown[];
   links?: { label: string; url: string }[];

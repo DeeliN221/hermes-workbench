@@ -89,7 +89,9 @@ try {
   await profilePage.locator('.profile-overview').waitFor({ state: 'attached', timeout: 5000 });
   await profilePage.getByRole('link', { name: 'Manage profiles', exact: true }).click();
   await profilePage.waitForURL(url => url.pathname === '/profiles');
-  const profileTrigger = profilePage.locator('.dashboard-nav-profile > button');
+  await profilePage.evaluate(() => document.activeElement?.blur());
+  await profilePage.keyboard.press('w');
+  const profileTrigger = profilePage.locator('.workbench-actions-dialog .workbench-profile-action > button');
   await profileTrigger.click();
   const profileMenu = profilePage.locator('#workbench-profile-menu');
   await profileMenu.waitFor({ state: 'visible', timeout: 5000 });
@@ -168,6 +170,9 @@ try {
     'A single pane must not show session accent bars');
   assert.equal(await panePage.locator('.codex-session-id').count(), 0, 'The session id must not occupy a second header line');
   assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip');
+  await panePage.evaluate(() => document.activeElement?.blur());
+  await panePage.keyboard.press('w');
+  await panePage.locator('.workbench-menu-sessions > summary').click();
   const projectList = await panePage.locator('.project-list').evaluate(node => ({
     count: node.querySelectorAll('.project-folder-row').length,
     clientHeight: node.clientHeight,
@@ -182,6 +187,7 @@ try {
   assert.equal(projectList.scrollHeight, projectList.clientHeight, 'The inner project list must not clip rows');
   assert.ok(projectList.scrollWidth <= projectList.clientWidth, 'The project list must not scroll horizontally');
   assert.equal(await panePage.locator('.project-navigation-resizer').count(), 1, 'Each split has one draggable separator');
+  await panePage.keyboard.press('Escape');
   const headerLayout = await panePage.evaluate(() => {
     const picker = document.querySelector('.codex-pane-color-picker')?.getBoundingClientRect();
     const title = document.querySelector('.codex-center-title')?.getBoundingClientRect();
@@ -212,6 +218,9 @@ try {
       value: { writeText: async value => { window.__copiedSessionId = value; } },
     });
   });
+  await panePage.locator('.codex-center-title').first().click();
+  await panePage.evaluate(() => document.activeElement?.blur());
+  await panePage.keyboard.press('w');
   const temporaryRow = panePage.locator('.project-temporary .codex-session-row-wrap').first();
   await temporaryRow.hover();
   await temporaryRow.locator('.codex-session-row-menu-toggle').click();
@@ -251,6 +260,9 @@ try {
   await compactProjectsPage.goto(host.origin + '/chat?session=codex-preview&profile=writer', { waitUntil: 'domcontentloaded' });
   await compactProjectsPage.locator('.project-list').waitFor({ state: 'attached', timeout: 5000 });
   await compactProjectsPage.waitForFunction(() => document.querySelectorAll('.project-folder-row').length === 2);
+  await compactProjectsPage.evaluate(() => document.activeElement?.blur());
+  await compactProjectsPage.keyboard.press('w');
+  await compactProjectsPage.locator('.workbench-menu-sessions > summary').click();
   const compactProjectList = await compactProjectsPage.locator('.project-list').evaluate(node => ({
     count: node.querySelectorAll('.project-folder-row').length,
     clientHeight: node.clientHeight,
@@ -266,6 +278,9 @@ try {
   settingsReturnPage.on('pageerror', error => settingsReturnErrors.push(error.stack || error.message));
   await settingsReturnPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await settingsReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  await settingsReturnPage.evaluate(() => document.activeElement?.blur());
+  await settingsReturnPage.keyboard.press('w');
+  await settingsReturnPage.locator('.workbench-menu-sessions > summary').click();
   await settingsReturnPage.locator('.project-temporary .codex-session-row').nth(1).click();
   await settingsReturnPage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
   const splitChatUrl = settingsReturnPage.url();
@@ -740,6 +755,9 @@ try {
   mobileReturnPage.on('pageerror', error => mobileReturnErrors.push(error.stack || error.message));
   await mobileReturnPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await mobileReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
+  await mobileReturnPage.evaluate(() => document.activeElement?.blur());
+  await mobileReturnPage.keyboard.press('w');
+  await mobileReturnPage.locator('.workbench-menu-sessions > summary').click();
   await mobileReturnPage.locator('.project-temporary .codex-session-row').nth(1).click();
   await mobileReturnPage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
   const mobileSplitChatUrl = mobileReturnPage.url();

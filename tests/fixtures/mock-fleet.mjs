@@ -21,6 +21,8 @@ export function fixtureTask(id, status, extra = {}) {
   };
 }
 export async function createMockFleet() {
+  const v1 = structuredClone(JSON.parse(readFileSync(new URL("./fleetd-v1.json", import.meta.url), "utf8")));
+  const reviewEvents = {};
   const decision = {
     id: "decision-1",
     question: "Which rollout should the agent prepare?",
@@ -114,7 +116,7 @@ export async function createMockFleet() {
       response.writeHead(status, { "Content-Type": "application/json" });
       response.end(JSON.stringify(data));
     };
-    if (request.headers.authorization !== "Bearer mock-fleet-token")
+    if (!["Bearer mock-fleet-token", "Bearer mock-review-token"].includes(request.headers.authorization))
       return send(401, { detail: "Unauthorized" });
     let raw = "";
     for await (const chunk of request) raw += chunk;
@@ -125,11 +127,22 @@ export async function createMockFleet() {
       body,
       ifMatch: request.headers["if-match"],
     });
+    const reviewMatch = url.pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/(approve|request_changes|note)$/);
+    if (request.method === "POST" && reviewMatch) {
+      const [, id, action] = reviewMatch;
+      const task = v1.tasks.tasks.find(t => t.id === id);
+      if (!task) return send(404, {});
+      if (action !== "note" && request.headers.authorization !== "Bearer mock-review-token") return send(403, {});
+      if (task.status !== "review") return send(409, {});
+      if (action === "note") (reviewEvents[id] ||= []).push({type: "task.note", payload: body.text});
+      else task.status = action === "approve" ? "done" : "running";
+      return send(200, {ok: true});
+    }
     if (request.method === "GET" && url.pathname.startsWith("/api/v1/")) {
       const resource = url.pathname.slice("/api/v1/".length);
       if (resource.startsWith("tasks/")) {
         const task = v1.tasks.tasks.find(t => t.id === resource.slice(6));
-        return task ? send(200, {...v1.task, task}) : send(404, {detail: "Not found"});
+        return task ? send(200, {...v1.task, task, events: reviewEvents[task.id] || []}) : send(404, {detail: "Not found"});
       }
       return send(200, v1[resource] || {});
     }
@@ -203,6 +216,7 @@ export async function createMockFleet() {
   return {
     origin: `http://127.0.0.1:${server.address().port}`,
     calls,
+    reviewTask: () => v1.tasks.tasks.find(t => t.id === "T-review"),
     get tasks() {
       return rows;
     },

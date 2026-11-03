@@ -38,6 +38,11 @@ async function headerTitle(page) {
 
 /** Open the rename dialog from the sidebar card menu. */
 async function openFromCard(page, name) {
+  if (page.viewportSize().width > 800 && !await page.locator('.workbench-actions-dialog[open]').count()) {
+    await page.locator(HEADER).first().click();
+    await page.keyboard.press('w');
+    await page.locator('.workbench-menu-sessions > summary').click();
+  }
   const row = page.locator('.codex-session-row-wrap').filter({ hasText: name }).first();
   await row.hover();
   await row.locator('.codex-session-row-menu-toggle').first().click();

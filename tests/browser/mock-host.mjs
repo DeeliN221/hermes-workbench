@@ -372,7 +372,7 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
     if (fleetProxyOrigin && /^\/api\/plugins\/workbench\/fleetd?\//.test(url.pathname)) {
       try {
         const body = ['GET', 'HEAD'].includes(request.method) ? undefined : JSON.stringify(await readRequestBody(request));
-        const upstream = await fetch(fleetProxyOrigin + url.pathname + url.search, { method: request.method, headers: { 'Content-Type': 'application/json', ...(request.headers['if-match'] ? { 'If-Match': request.headers['if-match'] } : {}), 'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' }, body });
+        const upstream = await fetch(fleetProxyOrigin + url.pathname + url.search, { method: request.method, headers: { 'Content-Type': 'application/json', 'x-forwarded-host': request.headers.host, 'x-forwarded-proto': 'http', ...(request.headers.origin ? {origin: request.headers.origin} : {}), ...(request.headers['sec-fetch-site'] ? {'sec-fetch-site': request.headers['sec-fetch-site']} : {}), ...(request.headers['if-match'] ? { 'If-Match': request.headers['if-match'] } : {}), 'x-hermes-proxy-secret': 'local-proxy-secret', 'remote-user': 'preview' }, body });
         response.writeHead(upstream.status, Object.fromEntries([...upstream.headers].filter(([key]) => !['transfer-encoding', 'content-length', 'connection'].includes(key))));
         response.end(Buffer.from(await upstream.arrayBuffer()));
       } catch { response.writeHead(502, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ detail: 'Local Fleet proxy unavailable' })); }
