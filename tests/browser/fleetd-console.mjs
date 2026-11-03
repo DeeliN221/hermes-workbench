@@ -86,7 +86,21 @@ try {
     assert.ok(errorBox.y >= titleBox.y + titleBox.height, 'Drawer errors do not obscure the title');
     await page.screenshot({path:path.join(shotDir,`review-${width}-${theme}.png`)});
     await page.unroute('**/fleetd/tasks/T-review/request_changes');
-    await page.keyboard.press('Escape');
+    await page.route('**/fleetd/tasks/T-review/approve', route => route.fulfill({status:503,json:{detail:'Approval temporarily unavailable'}}));
+    await page.getByRole('button',{name:'Approve',exact:true}).click();
+    await page.locator('.tower-drawer [role="alert"]').filter({hasText:'Fleet token missing or server configuration unavailable'}).waitFor();
+    assert.equal(await input.inputValue(),'Improve contrast.\nKeep keyboard coverage.');
+    assert.ok(await page.locator('.tower-drawer').isVisible());
+    await page.screenshot({path:path.join(shotDir,`approve-failure-${width}-${theme}.png`)});
+    await page.unroute('**/fleetd/tasks/T-review/approve');
+    await page.getByRole('button',{name:'Approve',exact:true}).click();
+    await page.locator('.tower-drawer').waitFor({state:'detached'});
+    await page.locator(`${layout} [data-column="done"] [data-task-id="T-review"]`).waitFor();
+    await page.screenshot({path:path.join(shotDir,`approve-success-${width}-${theme}.png`)});
+    await page.reload();
+    await page.locator(`${layout} [data-column="done"] [data-task-id="T-review"]`).waitFor();
+    fleet.reviewTask().status='review'; await refresh();
+    await page.locator(`${layout} [data-column="pending"] [data-task-id="T-review"]`).waitFor();
     assert.equal(new URL(page.url()).pathname,'/kanban');
   }
   await page.setViewportSize({width:1536,height:960});
@@ -96,13 +110,13 @@ try {
   await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
   await page.locator('.tower-drawer [role="status"]').filter({hasText:'Feedback saved'}).waitFor();
   await page.locator('.column-active [data-task-id="T-review"]').waitFor();
-  assert.deepEqual(fleet.calls.filter(c=>c.method==='POST' && c.path.includes('/T-review/')).map(c=>c.path.split('/').at(-1)),['note','request_changes']);
+  assert.deepEqual(fleet.calls.filter(c=>c.method==='POST' && c.path.includes('/T-review/') && !c.path.endsWith('/approve')).map(c=>c.path.split('/').at(-1)),['note','request_changes']);
   await page.getByRole('button',{name:'Close details'}).click();
   fleet.reviewTask().status='review'; await refresh();
   await page.locator('.column-pending [data-task-id="T-review"] .tower-card-title').click();
   await page.getByRole('button',{name:'Approve',exact:true}).click();
   await page.locator('.column-done [data-task-id="T-review"]').waitFor();
-  await page.getByRole('button',{name:'Close details'}).click();
+  await page.locator('.tower-drawer').waitFor({state:'detached'});
   await page.locator('.tower-board [data-task-id="T-decision"] .tower-card-title').click();
   await page.getByRole('button',{name:/Retry safely/}).click();
   await page.locator('.column-queued [data-task-id="T-decision"]').waitFor();
