@@ -1,3 +1,4 @@
+import { renderMarkdownSource } from './markdown-source';
 import { uiText as sourceText } from './ui-locale';
 import { currentProfile } from './profile-scope';
 import { loadCodexModelCatalog, type ChatModelChoice } from './codex-api';
@@ -558,8 +559,19 @@ export async function renderWorkbenchVersions(panel: HTMLElement, reload = () =>
       const summary = document.createElement('summary');
       summary.textContent = sourceText("更新日志", "Release notes");
       const notes = document.createElement('div');
-      // GitHub release text is untrusted; never inject it as HTML.
-      notes.textContent = item.notes || sourceText("此版本暂无更新日志。", "No release notes for this version.");
+      // The parser escapes raw HTML; release links only allow explicit HTTP(S) URLs.
+      notes.innerHTML = renderMarkdownSource(item.notes || sourceText("此版本暂无更新日志。", "No release notes for this version."));
+      for (const link of notes.querySelectorAll('a')) {
+        const href = link.getAttribute('href') || '';
+        if (!/^https?:\/\//i.test(href)) {
+          link.replaceWith(...link.childNodes);
+          continue;
+        }
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+      }
+      // Release notes do not need remote images or their tracking requests.
+      for (const image of notes.querySelectorAll('img')) image.replaceWith(image.alt);
       details.append(summary, notes);
       card.append(row, details);
       return card;
