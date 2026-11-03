@@ -1,4 +1,6 @@
 import { rememberKanbanReturn } from './kanban-navigation';
+import { useFolderUpload } from './attachment-preferences';
+import { GenerationSpeed, generationSpeedPlacements } from './generation-speed';
 import { createSessionSearch } from './session-search';
 import { createWorkbenchTerminal } from './terminal-runtime';
 import { renderMarkdownSource as S2 } from './markdown-source';
@@ -9553,9 +9555,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     );
   }
   function P5(i, e, Process = Q5, Message = T5, detail = "standard") {
-    return processBlocks(e).map(block => block.kind === "message"
-      ? W(i, Message, { key: block.message.id, React: i, message: block.message, detail })
-      : W(i, Process, { key: block.key, React: i, messages: block.messages, hasFollowingBody: block.hasFollowingBody, timing: block.timing, detail }));
+    const blocks = processBlocks(e), speeds = generationSpeedPlacements(blocks);
+    return blocks.flatMap((block, index) => {
+      const message = block.kind === "message" ? block.message : block.messages[0];
+      const content = block.kind === "message"
+        ? W(i, Message, { key: message.id, React: i, message, detail })
+        : W(i, Process, { key: block.key, React: i, messages: block.messages, hasFollowingBody: block.hasFollowingBody, timing: block.timing, detail });
+      const speed = speeds.get(index);
+      return speed ? [content, W(i, GenerationSpeed, { key: `speed:${speed.turnId}`, React: i, metrics: speed.metrics })] : [content];
+    });
   }
 
   function w0(i) {
@@ -9924,6 +9932,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         // pane before its first render and takes the whole dashboard down.
         fallbackProfile = s(currentProfile()),
         M = profile || fallbackProfile.current,
+        folderUploadEnabled = useFolderUpload(i, M),
         H = R.get("hermesSession") || "",
         F = R.get("session") || "",
         // An explicit empty string means a brand-new pane. Falling back to the
@@ -11584,7 +11593,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         modelLabel = tc?.label || Bt || runtimeText("正在读取模型…", "Loading models…"),
         defaultModelLabel = ai.find((L) => L.isDefault)?.label,
-        mv = [modelLabel, Kd[Fi] || Fi, _n ? "Fast" : runtimeText("标准", "Standard")].join(" · "),
+        mv = [modelLabel + (pv && _n ? " fast" : ""), Kd[Fi] || Fi].filter(Boolean).join(" · "),
         Ov = k
           ? Jt ||
             (ei?.workspacePath
@@ -12586,7 +12595,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               },
               "aria-label": runtimeText("添加附件", "Add attachment"),
             }),
-            W(e, "input", {
+            folderUploadEnabled && W(e, "input", {
               ref: H1,
               className: "codex-attachment-input",
               name: "attachment-folder",
@@ -12639,7 +12648,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   },
                   st(e, "paperclip"),
                 ),
-                W(
+                folderUploadEnabled && W(
                   e,
                   "button",
                   {

@@ -1607,6 +1607,36 @@ def migrate_model_display(request: Request, body: ModelDisplayBody, profile: str
     return _model_display(_model_display_owner(request), profile, body, migrate=True)
 
 
+class AttachmentPreferencesBody(BaseModel):
+    folderUploadEnabled: bool = False
+
+
+def _attachment_preferences(owner: str, profile: str, body: AttachmentPreferencesBody | None = None):
+    profile = _clean_identifier(profile, label='Profile', maximum=_MAX_PROFILE_LENGTH)
+    connection = _open_organization_db()
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        connection.execute('CREATE TABLE IF NOT EXISTS attachment_preferences (owner TEXT NOT NULL, profile TEXT NOT NULL, folder_enabled INTEGER NOT NULL, PRIMARY KEY(owner, profile))')
+        if body is not None:
+            connection.execute('INSERT INTO attachment_preferences VALUES (?,?,?) ON CONFLICT(owner,profile) DO UPDATE SET folder_enabled=excluded.folder_enabled', (owner, profile, int(body.folderUploadEnabled)))
+        row = connection.execute('SELECT folder_enabled FROM attachment_preferences WHERE owner=? AND profile=?', (owner, profile)).fetchone()
+        connection.commit()
+        return {'folderUploadEnabled': bool(row['folder_enabled']) if row else False}
+    finally:
+        connection.close()
+
+
+@router.get('/attachment-preferences')
+def get_attachment_preferences(request: Request, profile: str = 'default'):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(_attachment_preferences(_model_display_owner(request), profile), headers={'Cache-Control': 'no-store'})
+
+
+@router.put('/attachment-preferences')
+def put_attachment_preferences(request: Request, body: AttachmentPreferencesBody, profile: str = 'default'):
+    return _attachment_preferences(_model_display_owner(request), profile, body)
+
+
 class ProfileDisplayBody(BaseModel):
     display_name: str = Field(max_length=64)
 

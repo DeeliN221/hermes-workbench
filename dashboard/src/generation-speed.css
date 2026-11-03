@@ -1,0 +1,5 @@
+.codex-generation-speed { position: relative; width: fit-content; max-width: 100%; margin: 4px 0 8px auto; font-size: 11px; color: var(--text-secondary, inherit); }
+.codex-generation-speed > summary { list-style: none; cursor: pointer; border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; opacity: .75; font-variant-numeric: tabular-nums; }
+.codex-generation-speed > summary::-webkit-details-marker { display: none; }
+.codex-generation-tooltip { display: block; width: min(320px, 65vw); padding: 8px; line-height: 1.5; overflow-wrap: anywhere; }
+@media (max-width: 600px) { .codex-generation-speed { display: none; } }

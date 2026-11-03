@@ -1,4 +1,6 @@
 import { renderHomeSettings } from './home-settings';
+import { renderFolderUploadSetting } from './attachment-preferences';
+import type { FetchJSON } from './workbench-api';
 import {
   CHAT_DETAIL_MODES,
   readChatDetailMode,
@@ -84,7 +86,7 @@ function addSettingsLink(): void {
 }
 
 /** Render the three work-detail choices inside an existing settings panel. */
-export function renderChatDisplayPanel(panel: HTMLElement): void {
+export function renderChatDisplayPanel(panel: HTMLElement, read?: FetchJSON): void {
   panel.replaceChildren();
   panel.setAttribute(PANEL_ATTR, 'true');
   const current = readChatDetailMode();
@@ -140,6 +142,7 @@ export function renderChatDisplayPanel(panel: HTMLElement): void {
 
   panel.append(header, group, status);
   renderUserMessageBallSetting(panel);
+  if (read) renderFolderUploadSetting(panel, read);
 }
 
 export function createChatDisplaySettings(sdk: any) {
@@ -150,12 +153,12 @@ export function createChatDisplaySettings(sdk: any) {
     useEffect(() => {
       const node = ref.current;
       if (!node) return;
-      const render = () => { renderChatDisplayPanel(node); void renderHomeSettings(node, sdk.fetchJSON); };
+      const render = () => { renderChatDisplayPanel(node, sdk.fetchJSON); void renderHomeSettings(node, sdk.fetchJSON); };
       render();
       const observer = new MutationObserver(render);
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
       return () => observer.disconnect();
-    }, []);
+    }, [currentProfile()]);
     return h('section', {
       ref,
       className: 'workbench-settings-subpage',

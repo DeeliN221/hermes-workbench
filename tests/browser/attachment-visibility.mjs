@@ -49,6 +49,7 @@ try {
   const image = { name: 'diagram.png', mimeType: 'image/png', buffer: png };
   const file = { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('File content') };
   const url = host.origin + '/chat?session=codex-preview&profile=default';
+  await page.request.put(host.origin + '/api/plugins/workbench/attachment-preferences?profile=default', { data: { folderUploadEnabled: true } });
   await page.goto(url, { waitUntil: 'domcontentloaded' });
   assert.match(await page.title(), /Workbench local preview|default/);
   assert.match(page.url(), /localhost/);
