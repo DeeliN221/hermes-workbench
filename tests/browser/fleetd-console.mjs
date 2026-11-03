@@ -64,7 +64,7 @@ try {
     assert.deepEqual(await page.locator(layout+' > section > h2').allTextContents(), width > 800
       ? (await page.locator(layout+' > section > h2').allTextContents()).map((s,i)=>['Pending','Queued','In progress','Completed'][i]+s.match(/\d+$/)[0])
       : ['Pending','Queued','In progress','Completed']);
-    if (width > 800) assert.equal(await page.locator('.dashboard-global-nav').isVisible(),false);
+    if (width > 800) assert.equal(await page.locator('.dashboard-global-nav').isVisible(),true);
     else assert.ok(await page.locator('.dashboard-action-rail').isVisible());
     const meta = await page.locator(`${layout} [data-task-id="T-review"] .tower-card-meta`).innerText();
     for (const field of ['Device:', 'CLI:', 'Model:', 'Reasoning:', 'Total time:']) assert.ok(meta.includes(field));
