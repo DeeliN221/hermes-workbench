@@ -45,6 +45,7 @@ it('migrates once, then ignores stale or absent browser storage across clients',
 it('chat reads server preferences, independently for each profile', async () => {
   const read = (async (url: string) => {
     if (url.includes('/model-display')) return { preferences: { ...migrationPreferences('default'), aliases: { 'gpt-6-astra': url.includes('writer') ? 'writer' : 'astra' } } };
+    if (url.includes('/opencode/models')) return { data: [] };
     if (url.includes('/models')) return { data: [{ model: 'gpt-6-astra' }, { model: 'gpt-hidden' }] };
     return {};
   }) as FetchJSON;

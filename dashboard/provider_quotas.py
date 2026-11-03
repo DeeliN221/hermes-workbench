@@ -33,6 +33,8 @@ def model_provider(model: str | None) -> str | None:
         return "google"
     if value.startswith("deepseek/") or value == "deepseek":
         return "api"
+    if value.startswith("opencode-go/") or value == "opencode-go":
+        return "api"
     if value.startswith("openai/") or _OPENAI_MODEL.match(value):
         return "openai"
     return None

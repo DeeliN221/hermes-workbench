@@ -47,6 +47,7 @@ def test_model_provider_distinguishes_subscriptions_from_direct_api():
     assert provider_quotas.model_provider('google-antigravity/gemini-4-argon') == 'google'
     assert provider_quotas.model_provider('gpt-6-astra') == 'openai'
     assert provider_quotas.model_provider('deepseek/deepseek-flash') == 'api'
+    assert provider_quotas.model_provider('opencode-go/deepseek-v4.1-flash') == 'api'
     assert provider_quotas.model_provider('unknown-model') is None
 
 

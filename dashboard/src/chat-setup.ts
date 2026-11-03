@@ -4,6 +4,30 @@ type Models = { data?: unknown[]; models?: unknown[] };
 type Entry = { expires: number; models?: Promise<Models>; config?: Promise<unknown> };
 // Scope to both the authenticated client and profile. Never persist config or credentials.
 const clients = new WeakMap<FetchJSON, Map<string, Entry>>();
+
+function catalogRows(catalog: Models): unknown[] {
+  return Array.isArray(catalog) ? catalog : catalog.data ?? catalog.models ?? [];
+}
+
+function modelId(row: unknown): string {
+  if (!row || typeof row !== 'object') return '';
+  const value = (row as { model?: unknown; id?: unknown }).model ?? (row as { id?: unknown }).id;
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+async function mergeCatalog(catalog: Models, extra: Models): Promise<Models> {
+  const data = [...catalogRows(catalog)];
+  const seen = new Set(data.map(modelId).filter(Boolean));
+  for (const row of catalogRows(extra)) {
+    const id = modelId(row);
+    if (!id || !seen.has(id)) {
+      if (id) seen.add(id);
+      data.push(row);
+    }
+  }
+  return { data };
+}
+
 export async function loadChatSetup(read: FetchJSON, profile: string): Promise<[Models, unknown]> {
   let profiles = clients.get(read);
   if (!profiles) clients.set(read, profiles = new Map());
@@ -12,9 +36,13 @@ export async function loadChatSetup(read: FetchJSON, profile: string): Promise<[
   const key = encodeURIComponent(profile);
   if (!entry.models || entry.expires <= Date.now()) {
     entry.expires = Date.now() + 30000;
-    const request = read<Models>(`/api/plugins/workbench/codex/models?profile=${key}`);
-    entry.models = request;
-    void request.catch(() => { if (entry!.models === request) entry!.models = undefined; });
+    const codex = read<Models>(`/api/plugins/workbench/codex/models?profile=${key}`);
+    const opencode = read<Models>(`/api/plugins/workbench/opencode/models?profile=${key}`, {
+      signal: AbortSignal.timeout(2000),
+    }).catch(() => ({ data: [] }));
+    const merged: Promise<Models> = Promise.all([codex, opencode]).then(([c, o]) => mergeCatalog(c, o));
+    entry.models = merged;
+    void merged.catch(() => { if (entry!.models === merged) entry!.models = undefined; });
   }
   // Defaults are always fresh on navigation; only simultaneous reads share a request.
   if (!entry.config) {
