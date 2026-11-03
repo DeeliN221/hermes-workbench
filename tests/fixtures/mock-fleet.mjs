@@ -82,6 +82,11 @@ export async function createMockFleet() {
         { label: "Keyboard navigation works", checked: true },
       ],
     }),
+    fixtureTask("zombie-running", "running", {
+      title: "Stale execution must stay frozen", machine: "nas", capability: "codex",
+      assignee: "", model_used: "a-very-long-model-name-that-must-never-squeeze-the-title-or-hide-the-duration",
+      reasoning_effort: "high", attempts: [{ started_at: "2026-01-01T00:00:00Z", ended_at: "2026-01-01T00:02:00Z" }],
+    }),
     fixtureTask("decision-task", "blocked", {
       title: "Choose the rollout approach",
       risk: "R2",
@@ -109,7 +114,7 @@ export async function createMockFleet() {
       conversation_profile: "default",
       conversation_kind: "codex",
       conversation_local: true,
-      spec_json: { prompt: "# Delivery brief\n\n- Keep the card compact\n- **Never** show placeholders\n\n```ts\nconst title = 'safe';\n```\n\n[Long link](https://example.com/a/very/long/path?with=query&that=must+not+overflow)" },
+      spec_json: { prompt: "# Delivery brief\n\n- Keep the card compact\n- **Never** show placeholders\n\n```ts\nconst title = 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx';\n```\n\n[https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa](https://example.com/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa)\n\n> Quoted **requirement**\n\n<script>window.towerXss = true</script>\n\n[unsafe](javascript:alert(1))" },
       attempts: [{ id: "attempt-review", status: "ok", worker_id: "W-nas",
         started_at: new Date(Date.now() - 20 * 60000).toISOString(), ended_at: new Date(Date.now() - 8 * 60000).toISOString(),
         model_used: "gpt-5.2", evidence_json: JSON.stringify({ runner: "codex", final_model: "gpt-5.2", duration_ms: 720000 }) }],

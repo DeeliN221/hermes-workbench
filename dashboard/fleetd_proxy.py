@@ -3,7 +3,6 @@ import json
 import os
 import sqlite3
 from datetime import datetime
-from functools import lru_cache
 from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, Query
 from urllib.parse import urlencode
@@ -53,7 +52,7 @@ def _attempt_duration_ms(attempt):
 
 def _attempt_model(attempt):
     evidence = _json_object(attempt.get("evidence_json"))
-    for value in (attempt.get("model_used"), evidence.get("final_model"), attempt.get("final_model")):
+    for value in (attempt.get("final_model"), evidence.get("final_model"), attempt.get("model_used")):
         if isinstance(value, str) and value.strip():
             return value.strip()
     return ""
@@ -62,7 +61,7 @@ def _attempt_model(attempt):
 def _attempt_metadata(attempt):
     evidence = _json_object(attempt.get("evidence_json"))
     result = {key: attempt[key] for key in ("id", "status", "worker_id", "started_at", "ended_at",
-                                             "conversation_id", "error", "reason", "model_used")
+                                             "conversation_id", "error", "reason", "model_used", "machine", "capability")
               if key in attempt}
     for target, source in (("final_model", "final_model"), ("runner", "runner"),
                            ("reasoning_effort", "reasoning_effort")):
@@ -75,7 +74,6 @@ def _attempt_metadata(attempt):
     return result
 
 
-@lru_cache(maxsize=512)
 def _local_thread_metadata(conversation_id):
     """Read only model/effort hints from local Codex state databases."""
     if not isinstance(conversation_id, str) or not conversation_id or len(conversation_id) > 200:
@@ -141,7 +139,8 @@ def task(row):
     result = {k: row[k] for k in ("id", "title", "risk", "machine", "assignee", "repo",
               "created_at", "updated_at", "source_session_id", "source_profile", "source_session_kind",
               "conversation_id", "conversation_profile", "conversation_kind", "blocked_reason", "error",
-              "capability", "model_used", "reasoning_effort", "duration_seconds", "completed_at") if k in row}
+              "capability", "model_used", "reasoning_effort", "duration_seconds", "completed_at",
+              "source_local", "conversation_local") if k in row}
     result.update(status=status, fleet_status=raw, revision=0,
                   priority="P" + str(row.get("priority", "")),
                   attempt_count=row.get("attempts", 0), server_lifecycle=True, read_only=True,
@@ -241,10 +240,6 @@ def detail(task_id: str):
     else:
         text = summary if isinstance(summary, str) else ""
         row["spec_json"] = {"summary": "", "prompt": text, "raw": text}
-    if isinstance(spec, dict):
-        for target, source in (("model_used", "model"), ("reasoning_effort", "reasoning_effort")):
-            if isinstance(spec.get(source), str):
-                row[target] = spec[source]
     acceptance = data["task"].get("acceptance", "")
     if isinstance(acceptance, str):
         row["acceptance"] = [{"label": s, "checked": row["status"] == "done"} for s in acceptance.splitlines() if s.strip()]
@@ -259,12 +254,11 @@ def detail(task_id: str):
     latest = ordered[0] if ordered else {}
     latest_evidence = _json_object(latest.get("evidence_json"))
     if isinstance(latest_evidence.get("runner"), str) and latest_evidence["runner"].strip():
-        row["capability"] = row.get("capability") or latest_evidence["runner"].strip()
-    if not isinstance(row.get("reasoning_effort"), str) or not row["reasoning_effort"].strip():
-        for value in (latest.get("reasoning_effort"), latest_evidence.get("reasoning_effort")):
-            if isinstance(value, str) and value.strip():
-                row["reasoning_effort"] = value.strip()
-                break
+        row["capability"] = latest_evidence["runner"].strip()
+    for value in (latest.get("reasoning_effort"), latest_evidence.get("reasoning_effort"), row.get("reasoning_effort")):
+        if isinstance(value, str) and value.strip():
+            row["reasoning_effort"] = value.strip()
+            break
     # Missing/truncated attempt history is not a trustworthy total.
     if attempts and len(attempts) < 50:
         durations = [_attempt_duration_ms(a) for a in attempts]
@@ -273,18 +267,24 @@ def detail(task_id: str):
     # v1's list attempts counter counts retries, so detail records are authoritative.
     row["attempt_count"] = len(attempts)
     if not row.get("conversation_id"):
-        row["conversation_id"] = next((a["conversation_id"] for a in attempts if a.get("conversation_id")), None)
+        row["conversation_id"] = next((a["conversation_id"] for a in ordered if a.get("conversation_id")), None)
     thread = _local_thread_metadata(row.get("conversation_id"))
     if thread:
         row["conversation_local"] = True
+        row["conversation_kind"] = "codex"
         if thread.get("model") and not row.get("model_used"):
             row["model_used"] = thread["model"]
         if thread.get("reasoning_effort") and not row.get("reasoning_effort"):
             row["reasoning_effort"] = thread["reasoning_effort"]
     elif row.get("conversation_id"):
         row["conversation_local"] = False
-    if row.get("source_session_id"):
-        row["source_local"] = True
+    if not row.get("reasoning_effort") and isinstance(spec, dict):
+        effort = spec.get("reasoning_effort") or spec.get("model_reasoning_effort")
+        if isinstance(effort, str) and effort.strip():
+            row["reasoning_effort"] = effort.strip()
+    # Expose stale execution explicitly without writing to the live Fleet service.
+    row["stale"] = row["status"] == "running" and not (
+        row.get("assignee") and _timestamp(latest.get("started_at")) is not None and not latest.get("ended_at"))
     if row["status"] in ("blocked", "triage") and not row.get("blocked_reason"):
         row["blocked_reason"] = next((a.get("error") or a.get("reason") for a in attempts if a.get("error") or a.get("reason")), None)
 
@@ -306,6 +306,15 @@ def detail(task_id: str):
                if d.get("status") == "open" and d.get("task_id") == task_id]
     row["decision"] = choices[0] if choices else None
     normalized_attempts = [_attempt_metadata(a) for a in ordered]
+    if normalized_attempts and not normalized_attempts[0].get("machine") and latest.get("worker_id"):
+        try:
+            workers = client.collection("workers")
+        except HTTPException:
+            workers = []
+        worker = next((w for w in workers if w.get("id") == latest["worker_id"]), {})
+        if worker.get("machine"):
+            normalized_attempts[0]["machine"] = worker["machine"]
+
     row["attempts"] = normalized_attempts
     return reply({"task": row, "open_decision": row["decision"], "artifacts": [],
                   "review_notes": [{"text": e["payload"], "at": e.get("at", "")} for e in data.get("events", [])

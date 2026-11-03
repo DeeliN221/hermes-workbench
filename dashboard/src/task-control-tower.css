@@ -214,7 +214,7 @@
 .tower-card-meta {
   display: flex;
   flex-wrap: nowrap;
-  gap: 4px 10px;
+  gap: 0;
   min-width: 0;
   font-size: 10px;
   color: var(--mc-muted, #70776b);
@@ -771,3 +771,10 @@
   .tower-searchbar { position: sticky; top: 0; z-index: 4; background: var(--mc-surface, #f3f0e7); }
   .tower-markdown pre { overflow-x: auto; }
 }
+
+.tower-runtime-duration { flex: 0 0 auto; white-space: pre; }
+.tower-workspace { display: flex; flex-direction: column; }
+.tower-board { flex: 1; min-height: 0; }
+.tower-search-results { overflow-y: auto; min-height: 0; }
+.tower-card.is-row .tower-card-meta { grid-column: 1 / -1; }
+.tower-markdown img { max-width: 100%; }

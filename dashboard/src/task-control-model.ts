@@ -48,6 +48,7 @@ export type Task = {
   reasoning_effort?: string;
   duration_seconds?: number;
   fleet_status?: string;
+  stale?: boolean;
   source_session_id?: string;
   source_profile?: string;
   source_session_kind?: string;
@@ -199,20 +200,19 @@ export function orderedAttempts(task: Task): Attempt[] {
 export function hasStarted(task: Task): boolean {
   return taskAttempts(task).length > 0
     || Number(task.attempt_count || 0) > 0
-    || !!task.conversation_id
-    || task.status === "done";
+    || !!task.conversation_id;
 }
 
 /** A task only ticks while its latest attempt is open and still assigned. */
 export function activeAttempt(task: Task): Attempt | null {
   if (["done", "archived"].includes(task.status) || !task.assignee) return null;
   const latest = orderedAttempts(task)[0];
-  if (!latest || !attemptTime(latest, "started_at") || attemptTime(latest, "ended_at")) return null;
+  if (!latest || attemptTime(latest, "started_at") === null || !!latest.ended_at) return null;
   return latest;
 }
 
 export function isZombieRunning(task: Task): boolean {
-  return task.status === "running" && Array.isArray(task.attempts) && !activeAttempt(task);
+  return task.stale === true || (task.status === "running" && (!task.assignee || Array.isArray(task.attempts)) && !activeAttempt(task));
 }
 
 function latestAttempt(task: Task): Attempt | null {
@@ -232,8 +232,8 @@ export function plannedModel(task: Task): string {
 
 function attemptDurationMs(attempt: Attempt): number | null {
   const evidence = attemptEvidence(attempt);
-  const direct = Number(attempt.duration_ms ?? evidence.duration_ms);
-  if (Number.isFinite(direct) && direct >= 0) return direct;
+  const direct = attempt.duration_ms ?? evidence.duration_ms;
+  if (typeof direct === "number" && Number.isFinite(direct) && direct >= 0) return direct;
   const started = attemptTime(attempt, "started_at");
   const ended = attemptTime(attempt, "ended_at");
   if (started !== null && ended !== null) return Math.max(0, ended - started);
@@ -270,7 +270,7 @@ export function elapsedMs(task: Task, now = Date.now()): number | null {
 export function durationMinutes(task: Task, now = Date.now()): string {
   const elapsed = elapsedMs(task, now);
   if (elapsed === null) return "";
-  return `${Math.max(1, Math.round(elapsed / 60000))}m`;
+  return `${Math.max(0, Math.round(elapsed / 60000))}m`;
 }
 
 /** Plain values in the fixed card order; missing fields disappear entirely. */
@@ -280,10 +280,10 @@ export function runtimeParts(task: Task, now = Date.now()): string[] {
   }
   const latest = latestAttempt(task);
   const evidence = latest ? attemptEvidence(latest) : {};
-  const device = firstText(task.machine, latest?.machine);
-  const cli = firstText(task.capability, latest?.capability, latest?.runner, evidence.runner);
-  const model = firstText(latest?.model_used, evidence.final_model, latest?.final_model, task.model_used, task.spec_json?.model);
-  const effort = firstText(task.reasoning_effort, latest?.reasoning_effort, evidence.reasoning_effort, task.spec_json?.reasoning_effort);
+  const device = firstText(latest?.machine, evidence.machine, task.machine === "auto" ? "" : task.machine);
+  const cli = firstText(latest?.runner, evidence.runner, latest?.capability, task.capability);
+  const model = firstText(latest?.final_model, evidence.final_model, latest?.model_used, task.model_used);
+  const effort = firstText(latest?.reasoning_effort, evidence.reasoning_effort, task.reasoning_effort, task.spec_json?.reasoning_effort);
   return [device, cli, model, effort, durationMinutes(task, now)].filter(Boolean);
 }
 
@@ -324,14 +324,14 @@ export function sessionEntries(task: Task): {
   canOpen: boolean;
 }[] {
   const validKind = (kind: string | undefined): kind is "hermes" | "codex" => kind === "hermes" || kind === "codex";
-  const finished = task.status === "done" || latestAttemptEnded(task);
+  const finished = task.status === "done" || task.status === "archived";
   return [
     { label: "source" as const, id: task.source_session_id || "", profile: task.source_profile || "", kind: validKind(task.source_session_kind) ? task.source_session_kind : "" as const },
     { label: "conversation" as const, id: task.conversation_id || "", profile: task.conversation_profile || "", kind: validKind(task.conversation_kind) ? task.conversation_kind : "" as const },
   ].filter((row) => !!row.id).map((row) => ({
     ...row,
-    canOpen: !!row.profile && !!row.kind && (
-      row.label === "source" || task.source_local === true || task.conversation_local === true || finished
+    canOpen: !!row.kind && (
+      (row.label === "source" ? task.source_local !== false : task.conversation_local === true) || finished
     ),
   }));
 }

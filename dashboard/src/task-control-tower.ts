@@ -13,6 +13,8 @@ import {
   columns,
   decisionOptions,
   delivered,
+  durationMinutes,
+  hasStarted,
   expired,
   isZombieRunning,
   runtimeLine,
@@ -99,6 +101,11 @@ export function createTaskControlTower(
     const searchVersion = useRef(0);
     const searchAbort = useRef(null as AbortController | null);
     const searchPage = async (more = false, signal?: AbortSignal) => {
+      if (!signal) {
+        searchAbort.current?.abort();
+        searchAbort.current = new AbortController();
+        signal = searchAbort.current.signal;
+      }
       const version = ++searchVersion.current;
       setSearchBusy(true); setSearchError("");
       try {
@@ -114,7 +121,7 @@ export function createTaskControlTower(
     };
     useEffect(() => {
       searchAbort.current?.abort();
-      ++searchVersion.current; setSearchRows([]); setCursor(""); setSearchError("");
+      ++searchVersion.current; setSearchRows([]); setCursor(""); setSearchError(""); setSearchBusy(false);
       if (!searchOpen || !query.trim()) return;
       const controller = new AbortController();
       searchAbort.current = controller;
@@ -142,22 +149,24 @@ export function createTaskControlTower(
       const focusSearch = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement | null;
         if (event.metaKey || event.ctrlKey || event.altKey || document.querySelector(".tower-drawer")) return;
+        if (event.key === "Escape" && searchOpen) {
+          event.preventDefault(); event.stopImmediatePropagation();
+          setSearchOpen(false); setQuery(""); return;
+        }
         if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
         if (event.key === "/" || event.key === "f" || event.key === "F") {
           event.preventDefault();
           setSearchOpen(true);
           requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus());
-        } else if (event.key === "Escape" && searchOpen) {
-          setSearchOpen(false); setQuery("");
         }
       };
-      document.addEventListener("keydown", focusSearch);
-      return () => document.removeEventListener("keydown", focusSearch);
+      document.addEventListener("keydown", focusSearch, true);
+      return () => document.removeEventListener("keydown", focusSearch, true);
     }, [searchOpen]);
     const refreshLock = useRef(false);
     useEffect(() => {
       let cancelled = false;
-      const queue = tasks.filter(t => t.read_only || !Array.isArray(t.attempts)).map(t => t.id);
+      const queue = [...new Set([...tasks, ...searchRows, ...archivedTasks].filter(t => t.read_only || !Array.isArray(t.attempts)).map(t => t.id))];
       const worker = async () => {
         while (queue.length && !cancelled) {
           const id = queue.shift()!;
@@ -166,21 +175,18 @@ export function createTaskControlTower(
             const task = detail.task;
             if (!task || task.id !== id) continue;
             const attempts = (Array.isArray(task.attempts) && task.attempts.length ? task.attempts : detail.attempts) as Task["attempts"];
-            if (!cancelled) setTasks(previous => previous.map(t => t.id === id ? { ...t,
-              machine: task.machine || t.machine, capability: task.capability || t.capability,
-              model_used: task.model_used, reasoning_effort: task.reasoning_effort, duration_seconds: task.duration_seconds,
-              attempts, attempt_count: task.attempt_count, assignee: task.assignee,
-              conversation_id: task.conversation_id, conversation_profile: task.conversation_profile,
-              conversation_kind: task.conversation_kind, conversation_local: task.conversation_local,
-              source_session_id: task.source_session_id, source_profile: task.source_profile,
-              source_session_kind: task.source_session_kind, source_local: task.source_local,
-              spec_json: task.spec_json || t.spec_json, blocked_reason: task.blocked_reason || t.blocked_reason } : t));
+            if (!cancelled) {
+              const merge = (previous: Task[]) => previous.map(t => t.id === id ? {
+                ...t, ...task, attempts,
+              } : t);
+              setTasks(merge); setSearchRows(merge); setArchivedTasks(merge);
+            }
           } catch { /* Missing metadata stays explicitly unrecorded; board remains usable. */ }
         }
       };
       void Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
       return () => { cancelled = true; };
-    }, [lastSuccess]);
+    }, [lastSuccess, searchRows.map(t => t.id).join(","), archivedTasks.map(t => t.id).join(",")]);
     const [detail, setDetail] = useState(null as Detail | null),
       [selected, setSelected] = useState("");
     const [error, setError] = useState(""),
@@ -294,7 +300,7 @@ export function createTaskControlTower(
       const wasInert = nav?.inert;
       if (nav) nav.inert = true;
       const key = (event: KeyboardEvent) => {
-        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
+        if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); close(); }
         if (event.key === "Tab") {
           const nodes = Array.from(
             dialog.current?.querySelectorAll<HTMLElement>(
@@ -312,10 +318,10 @@ export function createTaskControlTower(
           }
         }
       };
-      document.addEventListener("keydown", key);
+      document.addEventListener("keydown", key, true);
       dialog.current?.focus();
       return () => {
-        document.removeEventListener("keydown", key);
+        document.removeEventListener("keydown", key, true);
         if (nav) nav.inert = !!wasInert;
       };
     }, [selected]);
@@ -469,6 +475,8 @@ export function createTaskControlTower(
     };
     const card = (t: Task, compact = false, archived = false) => {
       const runtime = runtimeLine(t, now);
+      const duration = hasStarted(t) ? durationMinutes(t, now) : "";
+      const values = duration ? runtime.slice(0, -duration.length).trim() : runtime;
       const stale = isZombieRunning(t);
       return (
       h(
@@ -496,7 +504,8 @@ export function createTaskControlTower(
         h(
           "div",
           { className: "tower-card-meta", title: runtime || undefined },
-          runtime ? h("span", { className: "tower-runtime-values" }, runtime) : null,
+          values ? h("span", { className: "tower-runtime-values" }, values) : null,
+          duration ? h("span", { className: "tower-runtime-duration" }, `${values ? " " : ""}${duration}`) : null,
         ),
         t.status === "done" && !archived ? h("label", { className: "tower-select" }, h("input", {
           type: "checkbox", checked: checked.includes(t.id), disabled: busy,
@@ -550,6 +559,7 @@ export function createTaskControlTower(
     const nextAction = (task: Task) => {
       if (task.decision)
         return tr("选择一个方案继续", "Choose an option to continue");
+      if (isZombieRunning(task)) return tr("等待重新调度", "Waiting for rescheduling");
       return {
         triage: tr("补全规格后派遣", "Complete the brief, then dispatch"),
         ready: tr("等待智能体认领", "Ready for an agent to claim"),
@@ -616,6 +626,8 @@ export function createTaskControlTower(
               () => { setSearchOpen(true); requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus()); },
               { className: "tower-search-toggle", "aria-expanded": searchOpen, "aria-label": tr("搜索任务", "Search tasks"), title: tr("搜索任务（/ 或 f）", "Search tasks (/ or f)") })),
           searching ? h("section", { className: "tower-search-results", "aria-label": tr("搜索结果", "Search results") },
+            btn(showArchived ? tr("隐藏已归档", "Hide archived") : tr("显示已归档", "Show archived"),
+              () => setShowArchived(value => !value), { "aria-pressed": showArchived }),
             searchError ? h("p", { role: "alert" }, searchError, btn(tr("重试", "Retry"), () => void searchPage())) : null,
             searchBusy && !visibleSearchRows.length ? h("p", { role: "status" }, tr("搜索中…", "Searching…")) : null,
             !searchBusy && !searchError && !visibleSearchRows.length ? h("p", { className: "tower-muted" }, tr("没有匹配任务", "No matching tasks")) : null,
@@ -877,7 +889,7 @@ export function createTaskControlTower(
                               onChange: (e: any) =>
                                 setDraft({
                                   ...draft,
-                                  spec_json: { summary: e.target.value },
+                                  spec_json: { ...draft.spec_json, summary: e.target.value },
                                 }),
                             }),
                           ),

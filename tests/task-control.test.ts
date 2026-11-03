@@ -298,3 +298,23 @@ describe("card runtime metadata", () => {
     expect(specMarkdown({ ...base, spec_json: { raw: "## Raw" } })).toBe("## Raw");
   });
 });
+
+it("uses actual execution values over preferences, preserves zero minutes and ignores null durations", () => {
+  const task = { ...base, status: "blocked" as const, machine: "auto", capability: "codex",
+    reasoning_effort: "high", model_used: "planned", attempts: [{ machine: "nas", runner: "opencode",
+      final_model: "final", model_used: "initial", reasoning_effort: "low", duration_ms: 0 }] };
+  expect(runtimeLine(task)).toBe("nas opencode final low 0m");
+  expect(runtimeLine({ ...task, attempts: [{ machine: "nas", evidence_json: '{"duration_ms":null}' }] })).toBe("nas codex planned high");
+  const unstarted = { ...task, attempts: [], duration_seconds: 123, spec_json: { model: "preferred" } };
+  expect(runtimeLine(unstarted)).toBe("auto preferred");
+});
+
+it("keeps ended and unassigned attempts frozen independently of running status", () => {
+  const task = { ...base, status: "running" as const, assignee: "W-one", attempts: [
+    { started_at: "2026-01-01T00:00:00Z", ended_at: "2026-01-01T00:02:00Z" },
+  ] };
+  expect(activeAttempt(task)).toBeNull();
+  expect(isZombieRunning(task)).toBe(true);
+  expect(runtimeLine(task, Date.parse("2026-02-01"))).toBe(runtimeLine(task, Date.parse("2026-03-01")));
+  expect(activeAttempt({ ...task, assignee: undefined, attempts: [{ started_at: "2026-01-01T00:00:00Z" }] })).toBeNull();
+});
