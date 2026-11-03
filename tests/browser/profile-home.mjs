@@ -13,10 +13,10 @@ try {
   page.on('pageerror', error => errors.push(String(error)));
   page.on('console', message => {
     // Failure fixtures intentionally return HTTP 503; healthy routes must stay clean.
-    if (message.type() === 'error' && !['failed', 'all-failed'].includes(mode)) errors.push(message.text());
+    if (message.type() === 'error' && !(injectedFailure && message.text().includes('503'))) errors.push(message.text());
   });
   page.on('request', request => { requests.push(request.url()); if (request.method() !== 'GET') writes.push(request.url()); });
-  let mode = 'ready', savedOrder = [];
+  let mode = 'ready', savedOrder = [], injectedFailure = false;
   await page.route('**/api/plugins/workbench/profile-order', async route => {
     if (route.request().method() === 'PUT') savedOrder = route.request().postDataJSON().order;
     await route.fulfill({ json: { order: savedOrder } });
@@ -70,8 +70,10 @@ try {
     assert.equal(new URL(page.url()).hostname, 'localhost');
   };
   await assertLimited();
-  assert.match(await columns.nth(3).textContent(), /No projects or sessions yet/);
-  assert.match(await columns.first().textContent(), /Upcoming project.*No sessions yet/s);
+  assert.match(await columns.nth(3).textContent(), /No sessions yet/);
+  assert.equal(await page.locator('.profile-empty-project').count(), 0);
+  assert.equal(await page.locator('.profile-session time, .profile-session-meta').count(), 0);
+  assert.equal(await page.locator('.profile-new-session').count(), 5);
   assert.deepEqual(writes.filter(url => /session|read-state/.test(url)), [], 'Overview does not mutate sessions or read cursors');
   assert.equal(requests.filter(url => url.includes('/profile-overview')).length, 1);
   assert.equal(requests.filter(url => url.includes('/api/profiles/sessions?profile=all')).length, 1);
@@ -85,6 +87,26 @@ try {
     assert.match(gradient, /linear-gradient/);
     assert.equal(await page.locator('.profile-session[data-freshness="0"]').first().evaluate(node => getComputedStyle(node).backgroundImage), 'none');
   }
+  for (const [width, expected] of [[1440, 3], [1024, 2], [800, 1], [390, 1]]) {
+    await page.setViewportSize({ width, height: 900 });
+    assert.equal(await page.locator('.profile-overview-columns').evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length), expected);
+    assert.ok(await page.locator('.profile-overview-columns').evaluate(node => node.scrollWidth <= node.clientWidth));
+  }
+  await page.setViewportSize({ width: 1440, height: 900 });
+  const filter = page.getByRole('combobox', { name: 'Filter by project' });
+  const sorter = page.getByRole('combobox', { name: 'Sort sessions' });
+  await filter.selectOption('Planning');
+  assert.deepEqual(await columns.first().locator('.profile-session strong').allTextContents(), ['Plan the next iteration']);
+  assert.equal(await columns.nth(1).getByText('No matching sessions').count(), 1);
+  await sorter.selectOption('updated');
+  await page.reload(); await columns.nth(3).waitFor();
+  assert.equal(await filter.inputValue(), 'Planning');
+  assert.equal(await sorter.inputValue(), 'updated');
+  await filter.selectOption(''); await sorter.selectOption('project');
+  assert.equal(await columns.first().locator('.profile-session-project').first().textContent(), 'Planning');
+  assert.equal(await columns.first().locator('.profile-session').first().getAttribute('data-freshness'), '3');
+  await sorter.selectOption('recent');
+  await assertLimited();
   const visibleCount = await page.locator('.profile-session').evaluateAll(nodes => nodes.filter(node => { const r = node.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }).length);
   assert.ok(visibleCount === 7, `Compact desktop shows all seven retained sessions: ${visibleCount}`);
   console.log(`Desktop fully visible sessions: ${visibleCount}`);
@@ -106,14 +128,17 @@ try {
   await fresh.close();
   await page.getByRole('button', { name: 'Restore default order' }).click();
   await page.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'default');
-  const tabs = page.locator('.overview-tabs');
-  await tabs.getByRole('link', { name: 'Kanban', exact: true }).click();
+  assert.equal(await page.locator('.overview-tabs').count(), 0);
+  await page.locator('h1').click();
+  await page.bringToFront();
+  await page.keyboard.press('w');
+  await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Kanban', exact: true }).click();
   await page.waitForURL(url => url.pathname === '/kanban');
   await page.locator('.task-tower').waitFor();
   assert.equal(await page.locator('.profile-overview').count(), 0);
   assert.equal(await page.locator('.tower-session').count(), 0);
   assert.equal(await page.locator('#dashboard-workbench-sessions').isVisible(), false);
-  assert.equal(await tabs.locator('[aria-current="page"]').textContent(), 'Kanban');
+  assert.equal(await page.locator('.overview-tabs').count(), 0);
   await page.screenshot({ path: `${shotDir}/after-kanban-desktop-dark.png` });
   await page.reload(); await page.locator('.task-tower').waitFor();
   await page.goBack(); await page.locator('.profile-overview').waitFor();
@@ -133,7 +158,7 @@ try {
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; localStorage.setItem('hermes-dashboard-theme', theme); }, theme);
     await assertLimited();
     assert.ok(await page.locator('.dashboard-action-rail').isVisible());
-    assert.ok(await tabs.isVisible());
+    assert.equal(await page.locator('.overview-tabs').count(), 0);
     assert.ok(await columns.first().locator('h2').isVisible());
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));
     assert.equal(await page.locator('.profile-overview-columns').evaluate(node => getComputedStyle(node).scrollSnapType), 'none');
@@ -146,7 +171,7 @@ try {
   }
   await columns.nth(1).scrollIntoViewIfNeeded();
   assert.ok(await columns.nth(1).locator('h2').isVisible());
-  assert.ok(await tabs.isVisible());
+  assert.equal(await page.locator('.overview-tabs').count(), 0);
   const visibleSession = profiles[0].sessions.find(row => row.id === 'codex-preview');
   const originalTitle = visibleSession.title;
   visibleSession.title = 'LongUnbrokenSessionTitle'.repeat(15);
@@ -162,13 +187,28 @@ try {
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'writer');
   await page.locator('.codex-pane-slot').first().waitFor();
   await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
+  for (const width of [1440, 390]) {
+    await page.setViewportSize({ width, height: 900 });
+    for (const profile of ['default', 'writer']) {
+      await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
+      const add = page.locator(`[data-profile="${profile}"] .profile-new-session`);
+      await add.focus();
+      assert.notEqual(await add.evaluate(node => getComputedStyle(node).outlineStyle), 'none');
+      await page.keyboard.press('Enter');
+      await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === profile && url.searchParams.get('new') === '1');
+      await page.locator('.codex-pane-slot').first().waitFor();
+      assert.equal(new URL(page.url()).searchParams.has('session'), false);
+    }
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
   mode = 'partial'; await page.reload();
   await columns.nth(1).getByRole('alert').waitFor();
   assert.equal(await columns.first().getByRole('alert').count(), 0);
   assert.equal(await columns.first().locator('.profile-session').count(), 3);
   await columns.nth(1).scrollIntoViewIfNeeded();
   await page.screenshot({ path: `${shotDir}/partial-mobile.png` });
-  mode = 'failed'; await page.reload(); await page.getByRole('alert').filter({ hasText: 'Session overview unavailable' }).waitFor();
+  injectedFailure = true; mode = 'failed'; await page.reload(); await page.getByRole('alert').filter({ hasText: 'Session overview unavailable' }).waitFor();
   mode = 'ready'; await page.getByRole('button', { name: 'Retry', exact: true }).click(); await columns.nth(3).waitFor();
   mode = 'all-failed'; await page.reload(); await page.getByRole('alert').filter({ hasText: 'Session overview unavailable' }).waitFor();
   assert.equal(await columns.count(), 5);
@@ -178,5 +218,5 @@ try {
   await page.goto(host.origin + '/config?workbench=allowances');
   await page.locator('.dashboard-settings-nav a[href*="allowances"]').waitFor();
   assert.deepEqual(errors, []);
-  console.log('PASS: profile grouping, empty profiles/projects, freshness, partial/all failures, retry/loading, tabs/reload/history/legacy routes, scoped session open, desktop/mobile light/dark, allowances');
+  console.log('PASS: profile grouping, empty profiles/projects, freshness, partial/all failures, retry/loading, W menu/reload/history/legacy routes, 3/2/1 columns, project filter/sort persistence, keyboard new sessions, scoped session open, desktop/mobile light/dark, allowances');
 } finally { await browser.close(); await host.close(); }

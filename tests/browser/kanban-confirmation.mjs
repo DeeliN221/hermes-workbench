@@ -182,7 +182,7 @@ try {
     if (panel) {
       assert.equal(await page.locator('.dashboard-accessory-close').count(), 0, 'Legacy panel links use the standalone Kanban tab');
       await page.getByRole('button', { name: '关闭', exact: true }).click();
-      await page.locator('.overview-tabs').getByRole('link', { name: 'Project sessions' }).click();
+      await page.goto(host.origin + '/');
       await page.locator('.profile-overview').waitFor();
       assert.equal(await page.locator('.dashboard-global-nav').evaluate(node => node.inert), false);
       const unrelatedLayer = await page.evaluate(() => {
