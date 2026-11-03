@@ -33,9 +33,9 @@ def client(monkeypatch):
 # Independent contract: additions cannot silently disappear with the mapping.
 V1_STATUSES = [
     ("ready", "ready"), ("queued", "ready"), ("running", "running"),
-    ("claimed", "running"), ("retrying", "running"), ("blocked", "review"),
-    ("review", "review"), ("done", "done"), ("failed", "archived"),
-    ("cancelled", "archived"), ("archived", "archived"), ("scheduled", "ready"),
+    ("claimed", "running"), ("retrying", "running"), ("blocked", "blocked"),
+    ("review", "review"), ("done", "done"), ("failed", "triage"),
+    ("cancelled", "triage"), ("archived", "archived"), ("scheduled", "scheduled"),
 ]
 
 
@@ -65,7 +65,7 @@ def test_gate_projection_decisions_workers_detail(client, monkeypatch):
     assert detail["task"]["attempt_count"] == 1
     assert len(detail["open_decision"]["options"]) == 3
     assert detail["open_decision"]["options"][0]["label"] == "A Retry"
-    assert client.post(BASE + "/tasks/T-example/decide", headers=HEADERS, json={}).status_code == 404
+    assert client.post(BASE + "/tasks/T-example/decide", headers=HEADERS, json={}).status_code == 403
 
 
 def test_empty_and_partial_failure(client, monkeypatch):
@@ -115,7 +115,7 @@ def test_pagination(client, monkeypatch):
 
 
 @pytest.mark.parametrize("status,expected", V1_STATUSES + [
-    ("future-status", "review"), (None, "review"), ([], "review"), ("", "review"),
+    ("future-status", "triage"), (None, "triage"), ([], "triage"), ("", "triage"),
 ])
 def test_status_isolation_across_routes(client, monkeypatch, status, expected):
     row = {**FIXTURE["task"]["task"], "status": status}
@@ -234,3 +234,69 @@ def test_forwarded_origin_and_note_projection(client, monkeypatch):
     assert detail['review_notes'] == [{'text': 'First line\nSecond line', 'at': '2026-01-01'}]
     for status, _ in V1_STATUSES:
         assert proxy.task({'status': status})['review_actions'] == (status == 'review')
+
+
+def test_conversation_links_and_blocker_from_attempt(client, monkeypatch):
+    data = {"task": {**FIXTURE["task"]["task"], "status": "blocked", "source_session_id": "source-1", "source_profile": "writer"},
+            "attempts": [{"id": "attempt-1", "conversation_id": "execution-1", "error": "Build needs a compiler"}]}
+    monkeypatch.setattr(transport.FleetClient, "get", lambda self, path: data if path.startswith("tasks/") else {"decisions": []})
+    result = client.get(BASE + "/tasks/T-example", headers=HEADERS).json()["task"]
+    assert result["source_session_id"] == "source-1"
+    assert result["source_profile"] == "writer"
+    assert result["conversation_id"] == "execution-1"
+    assert result["blocked_reason"] == "Build needs a compiler"
+    assert result["status"] == "blocked"
+
+
+def test_search_contract_pagination_and_old_server(client, monkeypatch):
+    from urllib.parse import urlsplit, parse_qs
+    seen = []
+    def get(self, path):
+        seen.append(parse_qs(urlsplit(path).query))
+        return {"tasks": [{"id": "T-old", "title": "历史 %_", "status": "archived"}],
+                "has_more": True, "next_cursor": "page:a+/="}
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    response = client.get(BASE + "/tasks/search", params={"q": "历史 %_", "cursor": "page:a+/=", "archived": "true"}, headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["tasks"][0]["status"] == "archived"
+    assert seen == [{"q": ["历史 %_"], "cursor": ["page:a+/="], "status": ["archived"], "include_archived": ["1"], "limit": ["100"]}]
+    monkeypatch.setattr(transport.FleetClient, "get", lambda *_: {"tasks": []})
+    assert client.get(BASE + "/tasks/search", headers=HEADERS).status_code == 501
+    assert client.get(BASE + "/tasks/search", params={"q": "x" * 257}, headers=HEADERS).status_code == 422
+
+
+@pytest.mark.parametrize("action,status,payload,expected", [
+    ("archive", "done", {}, {}), ("retry", "blocked", {}, {}),
+    ("decide", "blocked", {"decision_id": "D-one", "option_id": "0"}, {"choice": "Retry", "note": ""}),
+])
+def test_lifecycle_contract(client, monkeypatch, action, status, payload, expected):
+    writes = []
+    def get(self, path):
+        if path.startswith("tasks/"):
+            return {"task": {"status": status}}
+        return {"decisions": [{"id": "D-one", "task_id": "T-example", "status": "open", "options": ["Retry", "Stop"]}] if action == "decide" else []}
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    monkeypatch.setattr(transport.FleetClient, "post", lambda self, path, body: writes.append((path, body)))
+    headers = {**HEADERS, "origin": "http://testserver"}
+    response = client.post(BASE + "/tasks/T-example/" + action, headers=headers, json=payload)
+    assert response.status_code == 200, response.text
+    assert writes == [("tasks/T-example/" + action, expected)]
+    assert client.post(BASE + "/tasks/T-example/" + action, headers={**headers, "origin": "https://evil.example"}, json=payload).status_code == 403
+
+
+def test_runtime_and_session_metadata_are_not_invented(client, monkeypatch):
+    row = {"id": "T-meta", "status": "blocked", "spec_json": '{"prompt":"Do the work","model":"requested-model","reasoning_effort":"high"}'}
+    data = {"task": row, "decision": None, "attempts": [
+        {"status": "failed", "started_at": "2026-01-01T00:00:00Z", "ended_at": "2026-01-01T00:02:00Z", "model_used": "actual-model"},
+        {"status": "ok", "started_at": "2026-01-01T00:03:00Z", "ended_at": "2026-01-01T00:04:00Z"}],
+        "events": [{"type": "task.blocked", "payload": '{"detail":"No matching worker"}'}]}
+    monkeypatch.setattr(transport.FleetClient, "get", lambda *_: data)
+    mapped = client.get(BASE + "/tasks/T-meta", headers=HEADERS).json()["task"]
+    assert mapped["duration_seconds"] == 180
+    assert mapped["model_used"] == "actual-model"
+    assert mapped["reasoning_effort"] == "high"
+    assert mapped["spec_json"] == {"summary": "Do the work"}
+    assert mapped["blocked_reason"] == "No matching worker"
+    assert not mapped.get("source_session_id") and not mapped.get("conversation_id")
+    data["attempts"] *= 25
+    assert "duration_seconds" not in client.get(BASE + "/tasks/T-meta", headers=HEADERS).json()["task"]

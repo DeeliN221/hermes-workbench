@@ -22,6 +22,13 @@ export function fixtureTask(id, status, extra = {}) {
 }
 export async function createMockFleet() {
   const v1 = structuredClone(JSON.parse(readFileSync(new URL("./fleetd-v1.json", import.meta.url), "utf8")));
+  v1.tasks.tasks.push({...v1.tasks.tasks.find(t => t.id === 'T-blocked'), id:'T-decision', title:'Choose an execution approach'});
+  v1.decisions.decisions.push({id:'D-choice', task_id:'T-decision', status:'open', question:'Choose the next step', options:['Retry safely','Stop here']});
+  Object.assign(v1.tasks.tasks.find(t => t.id === 'T-review'), {
+    source_session_id:'codex-preview', source_profile:'default', source_session_kind:'codex',
+    conversation_id:'codex-preview', conversation_profile:'writer', conversation_kind:'codex',
+    model_used:'sample-model', reasoning_effort:'high', duration_seconds:632,
+  });
   const reviewEvents = {};
   const decision = {
     id: "decision-1",
@@ -127,6 +134,15 @@ export async function createMockFleet() {
       body,
       ifMatch: request.headers["if-match"],
     });
+    const lifecycle = url.pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/(archive|retry|decide)$/);
+    if (request.method === "POST" && lifecycle) {
+      const [, id, action] = lifecycle;
+      const task = v1.tasks.tasks.find(t => t.id === id);
+      if (!task || task.status !== (action === "archive" ? "done" : "blocked")) return send(409, {});
+      task.status = action === "archive" ? "archived" : "ready";
+      v1.decisions.decisions = v1.decisions.decisions.filter(d => d.task_id !== id);
+      return send(200, {task});
+    }
     const reviewMatch = url.pathname.match(/^\/api\/v1\/tasks\/([^/]+)\/(approve|request_changes|note)$/);
     if (request.method === "POST" && reviewMatch) {
       const [, id, action] = reviewMatch;
@@ -140,6 +156,15 @@ export async function createMockFleet() {
     }
     if (request.method === "GET" && url.pathname.startsWith("/api/v1/")) {
       const resource = url.pathname.slice("/api/v1/".length);
+      if (resource === "tasks") {
+        const q = (url.searchParams.get("q") || "").toLowerCase();
+        const rows = v1.tasks.tasks.filter(t => (url.searchParams.get("include_archived") === "1" || t.status !== "archived")
+          && (!url.searchParams.has("status") || t.status === url.searchParams.get("status"))
+          && [t.title, t.id, t.repo].some(v => String(v || "").toLowerCase().includes(q)));
+        const start = Number(url.searchParams.get("cursor") || 0), limit = url.searchParams.has("q") ? 2 : 100;
+        const has_more = rows.length > start + limit;
+        return send(200, {tasks: rows.slice(start, start + limit), has_more, next_cursor: has_more ? String(start + limit) : ""});
+      }
       if (resource.startsWith("tasks/")) {
         const task = v1.tasks.tasks.find(t => t.id === resource.slice(6));
         return task ? send(200, {...v1.task, task, events: reviewEvents[task.id] || []}) : send(404, {detail: "Not found"});

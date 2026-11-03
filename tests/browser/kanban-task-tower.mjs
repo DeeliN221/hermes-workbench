@@ -54,16 +54,16 @@ try {
         const openNav = async () => { if (!mobile) { await page.locator('.dashboard-nav-collapse').focus(); await page.keyboard.press('w'); await page.locator('.workbench-actions-dialog[open]').waitFor(); } };
         await openNav();
         const link = nav.getByRole('link', { name: 'Kanban', exact: true });
-        assert.equal(await link.getAttribute('href'), '/kanban?profile=writer');
+        assert.equal(await link.getAttribute('href'), '/kanban');
         await link.click();
         const check = async () => {
           await page.locator('.task-tower').waitFor();
           await page.locator('.tower-card:visible').first().waitFor();
           assert.equal(new URL(page.url()).pathname, '/kanban');
-          assert.equal(new URL(page.url()).searchParams.get('profile'), 'writer');
+          assert.equal(new URL(page.url()).searchParams.get('profile'), null);
           assert.ok((await page.title()).length);
-          assert.equal(await page.locator('[data-column]').count(), 4);
-          assert.equal(await page.getByText('Demo mode', { exact: true }).count(), mode === 'demo' ? 1 : 0);
+          assert.equal(await page.locator('.tower-board [data-column]').count(), 4);
+          assert.equal(await page.getByText('Demo mode', { exact: true }).count(), 0);
           assert.equal(await page.locator('vite-error-overlay, .hermes-kanban-columns:visible, .dashboard-accessory-backdrop:visible').count(), 0);
           await openNav();
           assert.equal(await nav.getByRole('link', { name: 'Kanban', exact: true }).getAttribute('aria-current'), 'page');

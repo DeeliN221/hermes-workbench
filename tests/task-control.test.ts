@@ -28,9 +28,9 @@ const base: Task = {
 describe("task control tower", () => {
   it("maps exactly four columns and reserves review for human verification", () => {
     expect(columns.map((c) => c.statuses)).toEqual([
-      ["triage", "ready"],
-      ["running", "blocked"],
-      ["review"],
+      ["review", "blocked", "triage"],
+      ["ready", "scheduled"],
+      ["running"],
       ["done"],
     ]);
     expect(canMove(base, "review")).toBeTruthy();

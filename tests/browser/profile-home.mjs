@@ -98,26 +98,7 @@ try {
     assert.equal(await page.locator(`[data-profile="${name}"] .profile-project-actions`).count(), 0);
     assert.equal(await page.locator(`[data-profile="${name}"] .profile-session-project`).count(), 0);
   }
-  await columns.first().getByRole('button', { name: 'Edit project appearance: Workbench', exact: true }).click();
-  const editor = page.getByRole('dialog');
-
-  await editor.getByLabel('Color', { exact: true }).selectOption('purple');
-  await editor.getByLabel('Icon', { exact: true }).selectOption('book');
-  injectedFailure = true; failStyle = true;
-  await editor.getByRole('button', { name: 'Save', exact: true }).click();
-  await editor.getByRole('alert').waitFor();
-  failStyle = false;
-  await editor.getByRole('button', { name: 'Save', exact: true }).click();
-  await editor.waitFor({ state: 'detached' });
-  await page.reload(); await columns.nth(3).waitFor();
-  assert.equal(await columns.first().getByRole('button', { name: 'Edit project appearance: Workbench', exact: true }).locator('.project-appearance-mark').textContent(), '▤');
-  await columns.first().locator('.profile-new-session').click({ button: 'right' });
-  await page.getByRole('dialog', { name: 'New project', exact: true }).waitFor();
-  await page.keyboard.press('Escape');
-  await columns.first().locator('.profile-new-session').focus();
-  await page.keyboard.press('Shift+F10');
-  await page.getByRole('dialog', { name: 'New project', exact: true }).waitFor();
-  await page.keyboard.press('Escape');
+  assert.equal(await page.locator('.profile-project-actions, .profile-order-toolbar, .profile-order-controls').count(), 0);
   const geometry = await page.locator('.profile-overview-columns').evaluate(node => ({ scroll: node.scrollWidth, width: node.clientWidth }));
   assert.ok(geometry.scroll <= geometry.width, 'Profile groups never overflow horizontally');
   assert.ok(await columns.first().locator('.profile-column-scroll').evaluate(node => node.scrollHeight <= node.clientHeight), 'Groups use the page scroll, not nested scrolling');
@@ -134,19 +115,7 @@ try {
     assert.ok(await page.locator('.profile-overview-columns').evaluate(node => node.scrollWidth <= node.clientWidth));
   }
   await page.setViewportSize({ width: 1440, height: 900 });
-  const filter = page.getByRole('combobox', { name: 'Filter by project' });
-  const sorter = page.getByRole('combobox', { name: 'Sort sessions' });
-  await filter.selectOption('Planning');
-  assert.deepEqual(await columns.first().locator('.profile-session strong').allTextContents(), ['Plan the next iteration']);
-  assert.equal(await columns.nth(1).getByText('No matching sessions').count(), 1);
-  await sorter.selectOption('updated');
-  await page.reload(); await columns.nth(3).waitFor();
-  assert.equal(await filter.inputValue(), 'Planning');
-  assert.equal(await sorter.inputValue(), 'updated');
-  await filter.selectOption(''); await sorter.selectOption('project');
-  assert.match(await columns.first().locator('.profile-session-project').first().textContent(), /Planning$/);
-  assert.equal(await columns.first().locator('.profile-session').first().getAttribute('data-freshness'), '3');
-  await sorter.selectOption('recent');
+  assert.equal(await page.getByRole('combobox').count(), 0);
   await assertLimited();
   const visibleCount = await page.locator('.profile-session').evaluateAll(nodes => nodes.filter(node => { const r = node.getBoundingClientRect(); return r.top >= 0 && r.bottom <= innerHeight; }).length);
   assert.ok(visibleCount === 7, `Compact desktop shows all seven retained sessions: ${visibleCount}`);
@@ -154,23 +123,8 @@ try {
   assert.equal(await page.locator('.dashboard-global-nav').isVisible(), false);
   assert.equal(await page.locator('.dashboard-action-rail').isVisible(), false);
   assert.equal((await page.locator('.dashboard-owned-page').boundingBox()).x, 0);
-  const move = page.locator('[data-profile=writer]').getByRole('button', { name: /Move up/ });
-  await move.focus(); await page.keyboard.press('Enter');
-  await page.getByRole('status').filter({ hasText: 'Group order saved' }).waitFor();
-  assert.equal(await columns.first().getAttribute('data-profile'), 'writer');
-  await page.reload(); await columns.nth(3).waitFor();
-  await page.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'writer');
-  const fresh = await browser.newPage();
-  await fresh.route('**/api/plugins/workbench/profile-order', route => route.fulfill({ json: { order: savedOrder } }));
-  await fresh.route('**/api/plugins/workbench/profile-overview', route => route.fulfill({ json: { profiles } }));
-  await fresh.route('**/api/profiles/sessions?*', route => route.fulfill({ json: { sessions: [], total: 0 } }));
-  await fresh.goto(host.origin + '/');
-  await fresh.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'writer');
-  await fresh.close();
-  await page.getByRole('button', { name: 'Restore default order' }).click();
-  await page.waitForFunction(() => document.querySelector('.profile-overview-column')?.getAttribute('data-profile') === 'default');
   assert.equal(await page.locator('.overview-tabs').count(), 0);
-  await page.locator('h1').click();
+  await columns.first().locator('h2').click();
   await page.bringToFront();
   await page.keyboard.press('w');
   await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Kanban', exact: true }).click();
@@ -243,24 +197,6 @@ try {
   }
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto(host.origin + '/'); await columns.nth(3).waitFor();
-  for (const width of [1440, 390]) {
-    await page.setViewportSize({ width, height: 900 });
-    for (const theme of ['light', 'dark']) {
-      await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; }, theme);
-      await columns.first().getByRole('button', { name: 'Edit project appearance: Workbench', exact: true }).click();
-      await page.getByRole('dialog', { name: 'Project appearance' }).waitFor();
-      await page.screenshot({ path: `${shotDir}/editor-${width}-${theme}.png` });
-      assert.ok(await page.getByRole('dialog', { name: 'Project appearance' }).evaluate(n => n.getBoundingClientRect().right <= innerWidth));
-      await page.keyboard.press('Escape');
-    }
-  }
-  await page.setViewportSize({ width: 390, height: 844 });
-  await page.locator('[data-profile="empty"]').getByRole('button', { name: /New project/ }).click();
-  await page.getByRole('dialog', { name: 'New project', exact: true }).getByLabel('Project name', { exact: true }).fill('New folder');
-  await page.getByRole('dialog').getByRole('button', { name: 'Save', exact: true }).click();
-  await page.getByRole('status').filter({ hasText: 'Project saved' }).waitFor();
-  await page.reload(); await columns.nth(3).waitFor();
-  await page.locator('[data-profile="empty"]').getByRole('button', { name: 'Edit project appearance: New folder', exact: true }).waitFor();
   mode = 'partial'; await page.reload();
   await columns.nth(1).getByRole('alert').waitFor();
   assert.equal(await columns.first().getByRole('alert').count(), 0);
@@ -277,5 +213,5 @@ try {
   await page.goto(host.origin + '/config?workbench=allowances');
   await page.locator('.dashboard-settings-nav a[href*="allowances"]').waitFor();
   assert.deepEqual(errors, []);
-  console.log('PASS: profile grouping, empty profiles/projects, freshness, partial/all failures, retry/loading, W menu/reload/history/legacy routes, 3/2/1 columns, project filter/sort persistence, keyboard new sessions, scoped session open, desktop/mobile light/dark, allowances');
+  console.log('PASS: profile grouping, empty profiles/projects, freshness, partial/all failures, retry/loading, W menu/reload/history/legacy routes, 3/2/1 columns, removed home controls, keyboard new sessions, scoped session open, desktop/mobile light/dark, allowances');
 } finally { await browser.close(); await host.close(); }

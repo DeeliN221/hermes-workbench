@@ -1,3 +1,4 @@
+import { rememberKanbanReturn } from './kanban-navigation';
 import { useFolderUpload } from './attachment-preferences';
 import { GenerationSpeed, generationSpeedPlacements } from './generation-speed';
 import { createSessionSearch } from './session-search';
@@ -2425,7 +2426,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   function Gp(i) {
     const e = new URL(overviewRoute(i), "http://localhost");
     return (
-      !e.searchParams.get("profile") && e.searchParams.set("profile", currentProfile()),
+      e.pathname === "/kanban" ? (e.searchParams.delete("profile"), e.searchParams.delete("panel")) : !e.searchParams.get("profile") && e.searchParams.set("profile", currentProfile()),
       `${e.pathname}${e.search}${e.hash}`
     );
   }
@@ -2439,7 +2440,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const t = new URL(overviewRoute(i), "http://localhost"),
       r = t.searchParams.get("profile") || e.trim() || currentProfile();
     return (
-      r ? t.searchParams.set("profile", r) : t.searchParams.delete("profile"),
+      t.pathname === "/kanban" ? (t.searchParams.delete("profile"), t.searchParams.delete("panel")) : r ? t.searchParams.set("profile", r) : t.searchParams.delete("profile"),
       `${t.pathname}${t.search}${t.hash}`
     );
   }
@@ -2451,7 +2452,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         detail: { path: i, profile: t },
       });
     window.dispatchEvent(r) &&
-      (rememberChat(), window.history.pushState(null, "", Cn(i, e)),
+      (rememberChat(), rememberKanbanReturn(i), window.history.pushState(null, "", Cn(i, e)),
       window.dispatchEvent(new PopStateEvent("popstate")));
   }
   function yx(i, e) {
@@ -2874,12 +2875,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             ae !== null && (z.preventDefault(), X(ae, !0)));
         };
       r(() => {
-        if (!accessory) return undefined;
+        if (!accessory && !isTaskBoard) return undefined;
         const previous = document.activeElement;
         const chatRoot = document.querySelector(".dashboard-persistent-workbench");
         const chatWasInert = Boolean(chatRoot?.inert);
         if (chatRoot) chatRoot.inert = true;
-        const navRoot = document.querySelector(".dashboard-global-nav");
+        const navRoot = isTaskBoard ? null : document.querySelector(".dashboard-global-nav");
         const navWasInert = Boolean(navRoot?.inert);
         const navAriaHidden = navRoot?.getAttribute("aria-hidden");
         if (navRoot) {
@@ -2909,7 +2910,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           }
           if (previous instanceof HTMLElement) previous.focus?.({ preventScroll: true });
         };
-      }, [accessory]);
+      }, [accessory, isTaskBoard]);
       const renderActions = (mobile) => l("div", { className: mobile ? "dashboard-rail-actions" : "dashboard-crafting-grid", "aria-label": runtimeText("工作台操作", "Workbench actions"),
             onClickCapture: (event) => { const action = event.target.closest("a, button"); if (!mobile && action && !action.closest(".workbench-theme-action, .workbench-profile-action")) setActionsOpen(false); } },
             l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
@@ -15791,11 +15792,12 @@ ${_e.description}`
         [h, d] = s(u),
         [profile, setProfile] = s(() => currentProfile());
       const tabTitle = profileTabName(profile);
-      n(() => { document.title = tabTitle; }, [tabTitle]);
+      n(() => { document.title = window.location.pathname === "/kanban" ? runtimeText("看板", "Kanban") : tabTitle; }, [tabTitle, h]);
       return (
         n(() => {
           const f = () => {
             d(u());
+            document.title = window.location.pathname === "/kanban" ? runtimeText("看板", "Kanban") : profileTabName(currentProfile());
             const selected = currentProfile();
             rememberProfile(selected); rememberChat();
             setProfile(selected);

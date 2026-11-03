@@ -24,7 +24,7 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
     body?: unknown,
     revision?: number,
   ) => {
-    if (method !== "GET" && base !== FLEET_PROXY && !(method === "POST" && /^\/tasks\/[A-Za-z0-9_-]+\/(approve|request_changes|note)$/.test(path)))
+    if (method !== "GET" && base !== FLEET_PROXY && !(method === "POST" && /^\/tasks\/[A-Za-z0-9_-]+\/(approve|request_changes|note|archive|retry|decide)$/.test(path)))
       throw new Error(uiText("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes"));
     try {
       const url = base + path + (explicitDemo ? (path.includes("?") ? "&" : "?") + "demo=1" : "");
@@ -58,6 +58,7 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
           ),
         );
       for (const [code, zh, en] of [
+        [501, "Fleet 搜索接口尚未部署，无法查询全量任务", "Fleet search API is unavailable. Full task search requires the server update."],
         [401, "Fleet 身份验证失败 (401)，请检查服务端 token 后重试", "Fleet authentication failed (401). Check the server token and retry."],
         [503, "Fleet token 缺失或服务端配置不可用，请检查后重试", "Fleet token missing or server configuration unavailable. Check and retry."],
         [504, "Fleet 请求超时，请重试", "Fleet request timed out. Retry."],
@@ -115,6 +116,9 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
       const data = await request<{ tasks: Task[] } | Task[]>("/tasks");
       return Array.isArray(data) ? data : data.tasks;
     },
+    search: (q: string, archived = false, cursor = "") => request<{ tasks: Task[]; next_cursor: string; has_more: boolean }>(
+      `/tasks/search?${new URLSearchParams({ q, archived: String(archived), cursor })}`),
+    lifecycle: (id: string, action: "archive" | "retry") => request(`/tasks/${encodeURIComponent(id)}/${action}`, "POST", {}),
     review: (id: string, action: "approve" | "request_changes", text?: string) =>
       request(`/tasks/${encodeURIComponent(id)}/${action}`, "POST", action === "approve" ? {} : { text }),
     detail: (id: string) => request<Detail>(`/tasks/${encodeURIComponent(id)}`),
@@ -130,7 +134,7 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
       request(
         `/tasks/${encodeURIComponent(t.id)}/decide`,
         "POST",
-        { decision_id: decisionId, option_id: optionId, revision: t.revision },
+        { decision_id: decisionId, option_id: optionId, ...(base === FLEET_PROXY ? { revision: t.revision } : {}) },
         t.revision,
       ),
     move: (t: Task, to: Status, extended: boolean) => {

@@ -19,7 +19,7 @@ afterEach(async () => {
   document.body.innerHTML = "";
   localStorage.clear();
 });
-it("renders quiet empty state, four columns and a mobile navigation without attention actions", async () => {
+it("renders four responsive groups without toolbar, creation or duplicate attention panels", async () => {
   const fetchJSON: FetchJSON = async <T>(url: string) => {
     if (url.endsWith("/fleetd/config"))
       return { mode: "live", extended_workflow: false } as T;
@@ -41,11 +41,11 @@ it("renders quiet empty state, four columns and a mobile navigation without atte
     root.render(React.createElement(Component, { profile: "default" }));
     await new Promise((resolve) => setTimeout(resolve, 20));
   });
-  expect(host.textContent).toContain("Nothing needs you now");
-  expect(host.querySelectorAll("[data-column]")).toHaveLength(4);
+  expect(host.querySelector(".tower-header, .tower-sidebar, .tower-create")).toBeNull();
+  expect(host.querySelectorAll(".tower-board [data-column]")).toHaveLength(4);
   expect(host.querySelectorAll(".tower-action")).toHaveLength(0);
-  expect(host.querySelectorAll(".tower-bottom-nav button")).toHaveLength(2);
-  expect(host.querySelector(".tower-list")?.textContent).toContain("Needs you");
+  expect(host.querySelectorAll(".tower-bottom-nav button")).toHaveLength(0);
+  expect(host.querySelector(".tower-list")?.textContent).toContain("Pending");
 });
 
 
@@ -64,12 +64,12 @@ it("retains the last complete snapshot on a failed refresh and recovers on retry
   await act(async () => { root.render(React.createElement(Component, { profile: "default" })); await new Promise(r => setTimeout(r, 20)); });
   expect(host.textContent).toContain("Previous successful task");
   title = "New response task"; fail = true;
-  await act(async () => { (host.querySelector(".tower-connection button") as HTMLButtonElement).click(); await new Promise(r => setTimeout(r, 20)); });
-  expect(host.textContent).toContain("Data stale");
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(r => setTimeout(r, 20)); });
+  expect(host.textContent).toContain("timed out");
   expect(host.textContent).toContain("Previous successful task");
   expect(host.textContent).not.toContain("New response task");
   fail = false;
-  await act(async () => { (host.querySelector(".tower-connection button") as HTMLButtonElement).click(); await new Promise(r => setTimeout(r, 20)); });
+  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(r => setTimeout(r, 20)); });
   expect(host.textContent).toContain("New response task");
-  expect(host.textContent).not.toContain("Data stale");
+  expect(host.textContent).not.toContain("timed out");
 });

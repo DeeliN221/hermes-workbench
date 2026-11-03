@@ -40,5 +40,23 @@ with tempfile.TemporaryDirectory(prefix='fleet-review-isolated-') as tmp:
             assert r.status_code==200,(r.status_code,r.text)
             detail=api('GET','tasks/'+task['id']);assert detail['task']['status']==expected
             if body:assert any(e['type']=='task.note' and e['payload']==body['text'] for e in detail['events'])
+        api('POST','workers',{'id':'isolated-worker','machine':'no-worker-test','caps':['agy','codex'],'status':'online'})
+        for action, initial, expected in [('archive','done','archived'),('retry','blocked','ready')]:
+            task=api('POST','tasks',{'title':'Isolated lifecycle test','kind':'research','machine':'no-worker-test','prompt':'Fixture only','acceptance':'test'})['task']
+            with sqlite3.connect(tmp+'/fleet.db') as db:db.execute("UPDATE tasks SET status=? WHERE id=?",(initial,task['id']))
+            r=c.post('/api/plugins/workbench/fleetd/tasks/'+task['id']+'/'+action,headers=headers,json={})
+            assert r.status_code==200,(r.status_code,r.text)
+            assert api('GET','tasks/'+task['id'])['task']['status']==expected
+        task=api('POST','tasks',{'title':'Isolated decision test','kind':'research','risk':'R3','machine':'no-worker-test','prompt':'Fixture only','acceptance':'test'})['task']
+        api('POST','tasks/'+task['id']+'/decision',{'question':'Proceed?','options':['Retry','Stop']})
+        detail=c.get('/api/plugins/workbench/fleetd/tasks/'+task['id'],headers=headers).json()
+        d=detail['open_decision']
+        r=c.post('/api/plugins/workbench/fleetd/tasks/'+task['id']+'/decide',headers=headers,json={'decision_id':d['id'],'option_id':d['options'][0]['id']})
+        assert r.status_code==200,(r.status_code,r.text)
+        assert api('GET','tasks/'+task['id'])['task']['status']=='ready'
+        r=c.get('/api/plugins/workbench/fleetd/tasks/search',headers=headers,params={'q':'Isolated lifecycle','archived':'true'})
+        assert r.status_code==200,(r.status_code,r.text)
+        assert len(r.json()['tasks'])==1 and r.json()['tasks'][0]['status']=='archived'
+        print('PASS real fleetd binary: archive, retry, decision, indexed archived search')
         print('PASS real fleetd binary: authenticated proxy approve -> done; note event -> request_changes -> running')
     finally:p.terminate();p.wait(timeout=5);log.close()
