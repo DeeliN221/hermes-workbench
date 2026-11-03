@@ -25,9 +25,9 @@ try {
   await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
   await openSessionNavigation(page);
   await page.locator('.project-temporary').waitFor();
-  assert.equal(await page.locator('.project-navigation').count(), 0);
+  assert.equal(await page.locator('.project-navigation').count(), 1);
   assert.equal(await page.locator('.project-navigation-resizer').count(), 0);
-  await page.locator('.project-temporary').getByRole('button', { name: 'New temporary session', exact: true }).click({ button: 'right' });
+  await page.locator('.project-heading-label').click({ button: 'right' });
   const name = page.locator('input[name="project-name"]');
   await name.fill('Custom project');
   await name.press('Enter');
@@ -43,8 +43,8 @@ try {
   await page.locator(".codex-pane-slot").first().waitFor();
   await openSessionNavigation(page);
   await page.locator('.project-folder').waitFor();
-  assert.equal(await page.locator('.project-folder-heading .project-appearance-mark').textContent(), '☆');
-  assert.equal(await page.locator('.project-folder-heading .project-appearance-mark').evaluate(n => getComputedStyle(n).color), 'rgb(51, 155, 114)');
+  assert.equal(await page.locator('.project-icon-edit .project-appearance-mark').textContent(), '☆');
+  assert.equal(await page.locator('.project-icon-edit .project-appearance-mark').evaluate(n => getComputedStyle(n).color), 'rgb(51, 155, 114)');
   assert.deepEqual(errors, []);
   console.log('PASS: empty sidebar, right-click project creation, appearance editing, persisted list/title after reload');
 } finally { await browser.close(); await host.close(); }

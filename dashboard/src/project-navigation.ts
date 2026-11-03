@@ -130,18 +130,97 @@ export function createProjectNavigation(sdk: Record<string, any>) {
   h('path', { d: path }));
   const bubblePath = 'M4 3h16a1 1 0 0 1 1 1v12a1 1 0 0 1-1 1H9l-5 4V4a1 1 0 0 1 1-1z';
   const ProjectEditor = createProjectEditor(sdk);
+  function ProjectActions({ project, onRename, onDelete }: any) {
+    const menu = useRef(null as HTMLDivElement | null);
+    const trigger = useRef(null as HTMLButtonElement | null);
+    const [open, setOpen] = useState(false);
+    const id = sdk.React.useId();
+    useEffect(() => {
+      const node = menu.current!;
+      const sync = () => setOpen(node.matches(':popover-open'));
+      node.addEventListener('toggle', sync);
+      return () => node.removeEventListener('toggle', sync);
+    }, []);
+    const close = () => menu.current?.hidePopover();
+    const focusItem = (index: number) => (menu.current?.querySelectorAll('button')[index] as HTMLButtonElement | undefined)?.focus();
+    return h('span', { className: 'project-actions' },
+      h('button', { type: 'button', ref: trigger, 'aria-label': sourceText('更多项目操作', 'More project actions') + ': ' + project.name,
+        'aria-haspopup': 'menu', 'aria-expanded': open, 'aria-controls': id,
+        onClick: () => {
+          const rect = trigger.current!.getBoundingClientRect();
+          Object.assign(menu.current!.style, { left: `${Math.max(8, Math.min(rect.right - 180, window.innerWidth - 188))}px`, top: `${Math.min(rect.bottom + 4, window.innerHeight - 112)}px` });
+          menu.current?.togglePopover(); focusItem(0);
+        } }, icon('M5 12h.01M12 12h.01M19 12h.01')),
+      h('div', { ref: menu, id, popover: 'auto', role: 'menu', className: 'project-action-menu',
+        'aria-label': project.name,
+        onKeyDown: (event: KeyboardEvent) => {
+          const items = Array.from(menu.current!.querySelectorAll('button'));
+          const index = items.indexOf(document.activeElement as HTMLButtonElement);
+          if (['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+            event.preventDefault(); focusItem(event.key === 'Home' ? 0 : event.key === 'End' ? items.length - 1 : (index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length);
+          }
+          if (event.key === 'Escape') { event.preventDefault(); close(); trigger.current?.focus(); }
+          if (event.key === 'Tab') close();
+        } },
+        h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); onRename(project, trigger.current); } }, sourceText('重命名项目', 'Rename project')),
+        h('button', { type: 'button', role: 'menuitem', onClick: () => { close(); trigger.current?.focus(); onDelete(project); } }, sourceText('删除项目', 'Delete project'))));
+  }
   return function ProjectNavigation(props: ProjectNavigationProps) {
     const { profile, sessions, renderSession, onMove } = props;
     const [styles, setStyles] = useState({} as Record<string, Pick<SessionProject, 'color' | 'icon'>>);
     const [editing, setEditing] = useState(null as SessionProject | null);
     const projects = props.projects.map(project => ({ ...project, ...styles[profile + ':' + project.id] }));
     const editor = editing ? h(ProjectEditor, { key: profile + editing.id, profile, project: editing, onClose: () => setEditing(null), onSaved: (saved: SessionProject) => { setStyles((current: any) => ({ ...current, [profile + ':' + saved.id]: { color: saved.color, icon: saved.icon } })); setNotice(sourceText('项目外观已保存', 'Project appearance saved')); } }) : null;
-    const createProject = (event: MouseEvent | KeyboardEvent) => { event.preventDefault(); props.onCreate(event.currentTarget as HTMLElement); };
-    const newSessionActions = {
+    const press = useRef(null as { timer: ReturnType<typeof setTimeout>; x: number; y: number; pointerId: number } | null);
+    const cancelPress = () => { if (press.current) clearTimeout(press.current.timer); press.current = null; };
+    const endPress = (event: PointerEvent) => { if (press.current?.pointerId === event.pointerId) cancelPress(); };
+    const suppressClick = useRef(false);
+    useEffect(() => {
+      // Opening a dialog during a hold retargets its release click to the backdrop.
+      const reset = () => { suppressClick.current = false; };
+      const click = (event: MouseEvent) => {
+        if (!suppressClick.current || event.detail === 0) return;
+        if (event.type === 'click') reset();
+        event.preventDefault(); event.stopPropagation();
+      };
+      document.addEventListener('pointerdown', reset, true);
+      document.addEventListener('mousedown', click, true);
+      document.addEventListener('click', click, true);
+      return () => {
+        cancelPress();
+        document.removeEventListener('pointerdown', reset, true);
+        document.removeEventListener('mousedown', click, true);
+        document.removeEventListener('click', click, true);
+      };
+    }, [profile]);
+    const createProject = (event: MouseEvent | KeyboardEvent) => {
+      event.preventDefault();
+      // Touch contextmenu timing varies by browser; only the guarded timer creates.
+      if (((event as any).nativeEvent || event).pointerType === 'touch') return;
+      cancelPress();
+      props.onCreate(event.currentTarget as HTMLElement);
+    };
+    const headingActions = {
       onContextMenu: createProject,
       onKeyDown: (event: KeyboardEvent) => { if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) createProject(event); },
+      onPointerDown: (event: PointerEvent) => {
+        if (event.button !== 0 || !event.isPrimary) return;
+        cancelPress();
+        const target = event.currentTarget as HTMLElement;
+        press.current = { x: event.clientX, y: event.clientY, pointerId: event.pointerId, timer: setTimeout(() => {
+          press.current = null; suppressClick.current = true; props.onCreate(target);
+        }, 600) };
+      },
+      onPointerMove: (event: PointerEvent) => {
+        const start = press.current;
+        if (start?.pointerId === event.pointerId && Math.hypot(event.clientX - start.x, event.clientY - start.y) > 10) cancelPress();
+      },
+      onPointerUp: endPress, onPointerCancel: endPress, onPointerLeave: endPress,
     };
-    const createProjectButton = () => h('button', { type: 'button', className: 'project-create', title: sourceText('新建项目', 'New project'), 'aria-label': sourceText('新建项目', 'New project'), onClick: createProject }, '▰+');
+    const createHint = sourceText('长按或右键标题新建项目 · 也可使用 ⋯ 菜单', 'Hold or right-click the heading to create a project · or use ⋯');
+    const projectHeading = () => h('button', { type: 'button', className: 'project-heading-label',
+      title: createHint,
+      ...headingActions }, sourceText('项目', 'Projects'));
 
     const [dropTarget, setDropTarget] = useState(undefined);
     const [notice, setNotice] = useState('');
@@ -286,6 +365,7 @@ export function createProjectNavigation(sdk: Record<string, any>) {
     if (collapsed) {
       return h(sdk.React.Fragment, null,
         h('section', { className: 'project-rail', 'aria-label': sourceText("项目与临时会话", "Projects and temporary sessions") },
+          projectHeading(),
           groups.length ? h('div', { className: 'project-rail-section' }, ...groups.map(({ project, sessions: members }) =>
             h('button', {
               key: project.id, type: 'button', className: `project-rail-folder${activeProjectId === project.id ? ' is-active' : ''}`, 'data-project-rail-folder': project.id,
@@ -301,14 +381,14 @@ export function createProjectNavigation(sdk: Record<string, any>) {
             }, projectMark(h, project), members.length ? h('span', { className: 'project-rail-count' }, members.length) : null))) : null,
           h('div', { className: 'project-rail-section project-rail-temporary' },
             h('button', { type: 'button', className: 'project-rail-session-new', title: sourceText("新建临时会话", "New temporary session"),
-              'aria-label': sourceText("新建临时会话", "New temporary session"), ...newSessionActions, onClick: props.onNewSession },
-              icon(`${bubblePath} M12 8v5 M9.5 10.5h5`)), createProjectButton(),
+              'aria-label': sourceText("新建临时会话", "New temporary session"), onClick: props.onNewSession },
+              icon(`${bubblePath} M12 8v5 M9.5 10.5h5`)),
             ...temporary.map(session => h('div', { key: session.id, className: 'project-rail-session' },
               h('span', { className: 'project-rail-session-icon', 'aria-hidden': true }, icon(bubblePath)),
               renderSession(session, false))))),
         railProject ? h('div', { ref: railFlyout, className: 'project-rail-flyout', style: { top: `${railTop}px` },
           role: 'dialog', 'aria-label': railProject.project.name },
-          h('header', null, h('strong', null, projectMark(h, railProject.project), railProject.project.name), h('button', { type: 'button', 'aria-label': sourceText('编辑项目外观', 'Edit project appearance'), onClick: () => setEditing(railProject.project) }, '◐'), h('button', { type: 'button',
+          h('header', null, h('strong', null, h('button', { type: 'button', 'aria-label': sourceText('编辑项目外观', 'Edit project appearance'), onClick: () => setEditing(railProject.project) }, projectMark(h, railProject.project)), railProject.project.name), h('button', { type: 'button',
             'aria-label': sourceText("关闭项目列表", "Close project list"),
             onClick: () => setRailProjectId(undefined) }, '×')),
           h('div', { className: 'project-rail-flyout-list', onClickCapture: (event: MouseEvent) => {
@@ -319,20 +399,20 @@ export function createProjectNavigation(sdk: Record<string, any>) {
     }
     return h(sdk.React.Fragment, null,
       h('div', { className: `project-navigation-split${resizingSplit ? ' is-resizing' : ''}`, ref: splitLayout },
-      groups.length ? h('section', { className: 'project-navigation', 'aria-label': sourceText("项目", "Projects"),
-        style: { flexBasis: `calc((100% - ${PROJECT_SPLIT_RESIZER_HEIGHT}px) * ${projectSplit})` } },
-        h('div', { className: 'project-section-heading' }, h('span', null, sourceText("项目", "Projects")),
+      h('section', { className: 'project-navigation', 'aria-label': sourceText("项目", "Projects"),
+        style: { flexBasis: groups.length ? `calc((100% - ${PROJECT_SPLIT_RESIZER_HEIGHT}px) * ${projectSplit})` : 'auto' } },
+        h('div', { className: 'project-section-heading' }, projectHeading(),
           h('div', { className: 'project-heading-actions' },
           h('button', { type: 'button', className: 'project-history-toggle', ref: historyTrigger,
             title: sourceText("历史与归档", "History and archive"), 'aria-label': sourceText("历史与归档", "History and archive"), 'aria-expanded': historyOpen,
             'aria-controls': historyId, onClick: () => setHistoryOpen((open: boolean) => !open) },
             icon('M5 12h.01M12 12h.01M19 12h.01')),
-          h('button', { type: 'button', className: 'project-create', title: sourceText("新建项目", "New project"), 'aria-label': sourceText("新建项目", "New project"),
-            onClick: (event: MouseEvent) => props.onCreate(event.currentTarget as HTMLElement) }, icon('M12 5v14M5 12h14')))),
+          )),
         h('div', { id: historyId, className: 'project-history-panel', hidden: !historyOpen,
           onKeyDown: (event: KeyboardEvent) => {
             if (event.key === 'Escape') { event.stopPropagation(); setHistoryOpen(false); historyTrigger.current?.focus(); }
-          } }, props.history),
+          } }, h('button', { type: 'button', className: 'project-menu-create', onClick: (event: MouseEvent) => { setHistoryOpen(false); props.onCreate(historyTrigger.current || event.currentTarget as HTMLElement); } }, sourceText('新建项目', 'New project')), props.history),
+        h('p', { className: 'project-create-hint' }, createHint),
         h('div', { className: 'project-list' }, ...groups.map(({ project, sessions: members }) => h('div', {
           key: project.id, className: 'project-folder-row',
         }, h('details', { className: `project-folder${dropTarget === project.id ? ' is-drop-target' : ''}`,
@@ -346,17 +426,14 @@ export function createProjectNavigation(sdk: Record<string, any>) {
             event.dataTransfer.effectAllowed = 'copy';
             startPaneDrag(event, members.map(session => session.id));
           }, onDragEnd: endDrag },
-          projectMark(h, project),
-          h('span', { className: 'project-name', title: project.name }, project.name),
-          h('span', { className: 'project-count' }, members.length)),
+          h('span', { className: 'project-name', title: project.name }, project.name)),
           members.length ? members.map(row) : h('p', { className: 'project-empty' }, sourceText("拖拽会话到此项目", "Drag sessions into this project"))),
-          // Keep independent actions beside the disclosure, outside its summary.
-          h('span', { className: 'project-actions' }, h('button', { type: 'button', 'aria-label': sourceText('编辑项目外观', 'Edit project appearance') + ': ' + project.name, title: sourceText('编辑项目外观', 'Edit project appearance'), onClick: () => setEditing(project) }, '◐'),
-            h('button', { type: 'button', title: sourceText("重命名项目", "Rename project"), 'aria-label': sourceText(`重命名项目：${project.name}`, `Rename project: ${project.name}`),
-              onClick: (event: MouseEvent) => { event.preventDefault(); props.onRename(project, event.currentTarget as HTMLElement); } }, icon('m16 3 5 5-12 12H4v-5z')),
-            h('button', { type: 'button', title: sourceText("删除项目", "Delete project"), 'aria-label': sourceText(`删除项目：${project.name}`, `Delete project: ${project.name}`),
-              onClick: (event: MouseEvent) => { event.preventDefault(); props.onDelete(project); } }, icon('M4 7h16M9 7V4h6v3M6 7l1 14h10l1-14'))))),
-        groups.length ? null : h('p', { className: 'project-empty' }, sourceText("新建项目后，将会话拖入整理", "Create a project, then drag in sessions to organize them")))) : null,
+          // Sibling controls avoid nesting interactive elements inside summary.
+          h('button', { type: 'button', className: 'project-icon-edit',
+            'aria-label': sourceText('编辑项目外观', 'Edit project appearance') + ': ' + project.name,
+            title: sourceText('图标与颜色', 'Icon and color'), onClick: () => setEditing(project) }, projectMark(h, project)),
+          h(ProjectActions, { project, onRename: props.onRename, onDelete: props.onDelete }))),
+        groups.length ? null : h('p', { className: 'project-empty' }, sourceText("新建项目后，将会话拖入整理", "Create a project, then drag in sessions to organize them")))),
       groups.length ? h('div', { className: 'project-navigation-resizer', role: 'separator', 'aria-orientation': 'horizontal',
         'aria-label': sourceText("调整项目与临时会话的高度", "Resize projects and temporary sessions"),
         'aria-valuemin': Math.round(PROJECT_SPLIT_MIN * 100), 'aria-valuemax': Math.round(PROJECT_SPLIT_MAX * 100),
@@ -369,7 +446,7 @@ export function createProjectNavigation(sdk: Record<string, any>) {
         'aria-label': sourceText("临时会话", "Temporary sessions"), ...dropProps(null) },
         h('div', { className: 'project-section-heading' }, h('span', null, sourceText("临时会话", "Temporary sessions")),
           h('button', { type: 'button', className: 'project-create', title: sourceText("新建临时会话", "New temporary session"), 'aria-label': sourceText("新建临时会话", "New temporary session"),
-            ...newSessionActions, onClick: props.onNewSession }, icon('M12 5v14M5 12h14')), createProjectButton()),
+            onClick: props.onNewSession }, icon('M12 5v14M5 12h14'))),
         ...temporary.map(row),
         temporary.length ? null : h('p', { className: 'project-empty' }, sourceText("未加入项目的会话显示在这里", "Sessions outside projects appear here")))),
       editor, notice ? h('p', { className: 'project-empty', role: 'status' }, notice) : null);
