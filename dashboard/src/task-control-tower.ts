@@ -60,12 +60,7 @@ export function createTaskControlTower(
     const [error, setError] = useState(""),
       [busy, setBusy] = useState(false),
       [loading, setLoading] = useState(true);
-    const [view, setView] = useState("board"),
-      [archive, setArchive] = useState(false),
-      [mobileTab, setMobileTab] = useState("tasks");
-    const [draft, setDraft] = useState(null as Task | null),
-      [newTitle, setNewTitle] = useState(""),
-      [creating, setCreating] = useState(false);
+    const [draft, setDraft] = useState(null as Task | null);
     const [feedbackOpen, setFeedbackOpen] = useState(false),
       [feedback, setFeedback] = useState({} as Record<string, string>),
       [reviewStatus, setReviewStatus] = useState("");
@@ -173,7 +168,7 @@ export function createTaskControlTower(
       const wasInert = nav?.inert;
       if (nav) nav.inert = true;
       const key = (event: KeyboardEvent) => {
-        if (event.key === "Escape") close();
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
         if (event.key === "Tab") {
           const nodes = Array.from(
             dialog.current?.querySelectorAll<HTMLElement>(
@@ -352,6 +347,7 @@ export function createTaskControlTower(
           key: t.id,
           className: `tower-card ${compact ? "is-row" : ""}`,
           "data-task-id": t.id,
+          onClick: (e: MouseEvent) => { if (!(e.target as Element).closest("button, a")) void open(t.id); },
           draggable: !busy && !t.read_only && t.status !== "done",
           onDragStart: (e: DragEvent) => {
             e.dataTransfer?.setData("text/workbench-task", t.id);
@@ -443,109 +439,15 @@ export function createTaskControlTower(
         scheduled: tr("等待重试", "Waiting for retry"),
       }[task.status];
     };
-    const listGroups = [
-      { id: "attention", label: tr("待你处理", "Needs you"), rows: pending },
-      ...columns.map((c) => ({
-        id: c.id,
-        label: c.label(),
-        rows:
-          c.id === "done"
-            ? done
-            : tasks.filter(
-                (t) =>
-                  c.statuses.includes(t.status) &&
-                  (t.status !== "review" || verifyMode(t) === "human"),
-              ),
-      })),
-      ...(config?.mode === "live" ? [{ id: "archived", label: tr("已归档", "Archived"), rows: tasks.filter(t => t.status === "archived") }] : []),
-    ];
     return h(
       "main",
       {
-        className: `task-tower mobile-${mobileTab}`,
-        "aria-label": tr("任务控制台", "Task control tower"),
+        className: "task-tower",
+        "aria-label": tr("看板", "Kanban"),
         "aria-busy": busy || loading,
       },
-      h(
-        "header",
-        { className: "tower-header" },
-        h(
-          "div",
-          null,
-          h("p", { className: "tower-eyebrow" }, "WORKBENCH / CONTROL"),
-          h("h1", null, tr("任务控制台", "Task control tower")),
-        ),
-        h(
-          "div",
-          { className: "tower-toolbar" },
-          config?.mode === "mock"
-            ? h(
-                "span",
-                { className: "tower-mode" },
-                tr("演示模式", "Demo mode"),
-              )
-            : null,
-          btn(tr("看板", "Board"), () => setView("board"), {
-            "aria-pressed": view === "board",
-          }),
-          btn(tr("列表", "List"), () => setView("list"), {
-            "aria-pressed": view === "list",
-          }),
-          btn(tr("新建草稿", "New draft"), () => setCreating(true), {
-            className: "tower-primary",
-            disabled: config?.mode !== "mock" || busy,
-            title: config?.mode !== "mock"
-              ? tr(
-                  "等待 Fleet 新建任务接口",
-                  "Waiting for Fleet task creation API",
-                )
-              : undefined,
-          }),
-        ),
-      ),
-      h("div", { className: "tower-connection", role: "status" },
-        h("span", null, connectionError
-          ? tr("连接错误 · 数据已过期", "Connection error · Data stale")
-          : refreshing ? tr("正在连接…", "Connecting…") : lastSuccess ? config?.mode === "mock" ? tr("演示数据", "Demo data") : tr("已连接 Fleet", "Connected to Fleet") : tr("尚未连接", "Not connected")),
-        h("span", null, tr("最后成功：", "Last success: ") + (lastSuccess ? new Date(lastSuccess).toLocaleString() : tr("尚无", "Never"))),
-        btn(connectionError ? tr("重试", "Retry") : tr("刷新", "Refresh"), () => void load(), { disabled: refreshing }),
-        connectionError ? h("span", { role: "alert" }, connectionError) : null,
-        truncated ? h("span", null, tr("当前为最近 100 项；计数仅覆盖已加载任务", "Latest 100 tasks; counts cover loaded tasks only")) : null,
-      ),
-      h(
-        "div",
-        { className: `tower-attention ${pending.length ? "" : "is-quiet"}` },
-        h(
-          "div",
-          null,
-          h(
-            "strong",
-            null,
-            !lastSuccess
-              ? loading ? tr("正在读取任务…", "Loading tasks…") : tr("任务数据不可用", "Task data unavailable")
-              : pending.length
-              ? tr(
-                  `现在需要你 ${pending.length} 件`,
-                  `${pending.length} need you now`,
-                )
-              : tr("现在没有需要你的事", "Nothing needs you now"),
-          ),
-          pending.length
-            ? h(
-                "span",
-                null,
-                tr(
-                  `决策 ${decisions} · 审核 ${reviews}`,
-                  `Decisions ${decisions} · Reviews ${reviews}`,
-                ),
-              )
-            : null,
-        ),
-        h("span", null, tr(
-          `${running.length} 在跑 · ${blocked.length} 阻塞 · ${today} 今日交付`,
-          `${running.length} running · ${blocked.length} blocked · ${today} delivered today`,
-        )),
-      ),
+      connectionError ? h("div", { role: "alert", className: "tower-error" }, connectionError,
+        btn(tr("重试", "Retry"), () => void load()), btn(tr("关闭", "Dismiss"), () => setConnectionError(""))) : null,
       error
         ? h(
             "div",
@@ -567,204 +469,16 @@ export function createTaskControlTower(
             ),
           )
         : null,
-      creating
-        ? h(
-            "form",
-            {
-              className: "tower-create",
-              onSubmit: (e: Event) => {
-                e.preventDefault();
-                void run(async () => {
-                  const data = await api.create(newTitle);
-                  setCreating(false);
-                  setNewTitle("");
-                  await open(data.task.id);
-                });
-              },
-            },
-            h(
-              "label",
-              null,
-              tr("任务标题", "Task title"),
-              h("input", {
-                required: true,
-                maxLength: 200,
-                value: newTitle,
-                onChange: (e: any) => setNewTitle(e.target.value),
-              }),
-            ),
-            h(
-              "button",
-              { type: "submit", disabled: busy },
-              tr("创建草稿", "Create draft"),
-            ),
-            btn(tr("取消", "Cancel"), () => setCreating(false)),
-          )
-        : null,
-      h(
-        "div",
-        { className: "tower-layout" },
-        h(
-          "div",
-          { className: "tower-workspace" },
-          h(
-            "div",
-            { className: `tower-board ${view === "list" ? "is-hidden" : ""}` },
-            columns.map((c) =>
-              h(
-                "section",
-                {
-                  key: c.id,
-                  className: `tower-column column-${c.id}`,
-                  "data-column": c.id,
-                },
-                h(
-                  "h2",
-                  null,
-                  c.label(),
-                  h(
-                    "span",
-                    null,
-                    tasks.filter(
-                      (t) =>
-                        c.statuses.includes(t.status) &&
-                        !expired(t) &&
-                        (t.status !== "review" || verifyMode(t) === "human"),
-                    ).length,
-                  ),
-                ),
-                c.statuses.filter(s => config?.mode === "mock" || !["triage", "blocked"].includes(s)).map(group),
-                c.id === "done"
-                  ? btn(
-                      tr(
-                        `已归档 ${tasks.filter((t) => t.status === "archived").length}`,
-                        `${tasks.filter((t) => t.status === "archived").length} archived`,
-                      ),
-                      () => setArchive(!archive),
-                      { className: "tower-archive" },
-                    )
-                  : null,
-              ),
-            ),
-          ),
-          h(
-            "div",
-            { className: `tower-list ${view === "list" ? "is-selected" : ""}` },
-            listGroups.map((g) =>
-              h(
-                "section",
-                { key: g.id },
-                h("h2", null, g.label, h("span", null, g.rows.length)),
-                g.rows.length
-                  ? g.rows.map((t) => card(t, true))
-                  : h(
-                      "p",
-                      { className: "tower-muted" },
-                      tr("暂无任务", "No tasks"),
-                    ),
-              ),
-            ),
-          ),
-          tasks.some((t) => t.status === "scheduled")
-            ? h(
-                "details",
-                null,
-                h("summary", null, tr("等待重试", "Retry scheduled")),
-                tasks
-                  .filter((t) => t.status === "scheduled")
-                  .map((t) => card(t, true)),
-              )
-            : null,
-          archive
-            ? h(
-                "section",
-                { className: "tower-archive-list" },
-                h("h2", null, tr("归档", "Archive")),
-                tasks
-                  .filter((t) => t.status === "archived")
-                  .map((t) => card(t, true)),
-              )
-            : null,
-        ),
-        h(
-          "aside",
-          { className: "tower-sidebar" },
-          h(
-            "section",
-            null,
-            h("h2", null, tr("待你处理", "Needs you")),
-            pending.length
-              ? pending.map((t) =>
-                  h(
-                    "div",
-                    { key: t.id, className: "tower-action" },
-                    h("strong", null, t.title),
-                    t.decision ? h("div", { className: "tower-decision-summary" },
-                      h("p", null, t.decision.question),
-                      ...decisionOptions(t.decision, t.read_only).map((o, i) => h("p", { key: o.id }, `${/^[A-Z][ .·]/.test(o.label) ? "" : String.fromCharCode(65 + i) + " · "}${o.label}`)),
-                      t.read_only ? h("small", null, tr("只读：请在 Fleet 中提交决策", "Read-only: submit decisions in Fleet")) : null,
-                    ) : null,
-                    btn(
-                      t.decision
-                        ? tr("做决策 →", "Decide →")
-                        : t.status === "review"
-                          ? tr("验收 →", "Review →")
-                          : tr("解除阻塞 →", "Unblock →"),
-                      () => void open(t.id),
-                    ),
-                  ),
-                )
-              : h(
-                  "p",
-                  { className: "tower-muted" },
-                  tr("一切就绪，无需操作", "All clear. No action needed."),
-                ),
-          ),
-          h(
-            "section",
-            null,
-            h("h2", null, tr("在跑", "Running")),
-            h("p", { className: "tower-muted" }, tr(`执行器 ${workers.length}`, `${workers.length} workers`)),
-            running.slice(0, 4).map((t) =>
-              h(
-                "div",
-                { key: t.id, className: "tower-running" },
-                btn(t.title, () => void open(t.id)),
-                h("time", null, age(t)),
-              ),
-            ),
-          ),
-          h(
-            "details",
-            { className: "tower-pulse" },
-            h(
-              "summary",
-              null,
-              tr(
-                `交付脉搏 · 今日 ${today} 件`,
-                `Delivery pulse · ${today} today`,
-              ),
-            ),
-            done
-              .slice(0, 3)
-              .map((t) => btn(t.title, () => void open(t.id), { key: t.id })),
-          ),
-        ),
-      ),
-      h(
-        "nav",
-        {
-          className: "tower-bottom-nav",
-          "aria-label": tr("控制台导航", "Tower navigation"),
-        },
-        btn(tr("任务", "Tasks"), () => setMobileTab("tasks"), {
-          "aria-pressed": mobileTab === "tasks",
-        }),
-        btn(tr("待你处理", "Needs you"), () => setMobileTab("attention"), {
-          "aria-pressed": mobileTab === "attention",
-        }),
-
-      ),
+      h("div", { className: "tower-layout" },
+        h("div", { className: "tower-workspace" },
+          h("div", { className: "tower-board" }, columns.map(c =>
+            h("section", { key: c.id, className: `tower-column column-${c.id}`, "data-column": c.id },
+              h("h2", null, c.label(), h("span", null, tasks.filter(t => c.statuses.includes(t.status)).length)),
+              h("div", { className: "tower-column-scroll" }, tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t)))))),
+          h("div", { className: "tower-list" }, columns.map(c =>
+            h("section", { key: c.id, "data-column": c.id },
+              h("h2", null, c.label()), tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t, true))))),
+      )),
       selected
         ? h(
             "div",
@@ -872,6 +586,17 @@ export function createTaskControlTower(
                           ),
                       ),
                     ),
+                    h("section", { className: "tower-sessions" },
+                      ...([
+                        [tr("来源会话", "Source conversation"), t.source_session_id, t.source_profile, t.source_session_kind],
+                        [tr("执行会话", "Execution conversation"), t.conversation_id, t.conversation_profile, t.conversation_kind],
+                      ] as const).map(([label, id, scope, kind]) => h("div", { key: label },
+                        h("h3", null, label), id
+                          ? btn(id, () => navigate(`/chat?${kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(id)}`, scope || profile))
+                          : h("p", { className: "tower-muted" }, tr("历史任务未记录此会话", "This historical task did not record a conversation"))))) ,
+                    t.status === "blocked" || t.status === "triage" ? h("section", { className: "tower-blocker" },
+                      h("h3", null, tr("需要处理", "Needs attention")),
+                      h("p", { style: { whiteSpace: "pre-wrap" } }, t.blocked_reason || t.error || decision?.question || tr("任务未提供原因，请查看执行会话或联系执行者补充。", "No reason was recorded. Inspect the execution conversation or ask the worker for details."))) : null,
                     h(
                       "section",
                       { className: "tower-checklist" },

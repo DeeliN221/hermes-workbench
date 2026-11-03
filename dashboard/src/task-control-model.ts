@@ -27,6 +27,14 @@ export type Task = {
   read_only?: boolean;
   review_actions?: boolean;
   fleet_status?: string;
+  source_session_id?: string;
+  source_profile?: string;
+  source_session_kind?: string;
+  conversation_id?: string;
+  conversation_profile?: string;
+  conversation_kind?: string;
+  blocked_reason?: string;
+  error?: string;
   assignee?: string;
   attempt_count?: number;
   created_at: string;
@@ -75,32 +83,24 @@ export const columns: {
   {
     id: "pending",
     label: () => uiText("待处理", "Pending"),
-    statuses: ["triage", "ready"],
+    statuses: ["review", "blocked", "triage"],
   },
-  {
-    id: "active",
-    label: () => uiText("进行中", "In progress"),
-    statuses: ["running", "blocked"],
-  },
-  {
-    id: "review",
-    label: () => uiText("待你验收", "Your review"),
-    statuses: ["review"],
-  },
+  { id: "queued", label: () => uiText("排队中", "Queued"), statuses: ["ready", "scheduled"] },
+  { id: "active", label: () => uiText("进行中", "In progress"), statuses: ["running"] },
   {
     id: "done",
-    label: () => uiText("已交付", "Delivered"),
+    label: () => uiText("已完成", "Completed"),
     statuses: ["done"],
   },
 ];
 export function statusLabel(s: Status): string {
   const labels: Record<Status, [string, string]> = {
-    triage: ["草稿", "Draft"],
+    triage: ["待处理", "Needs attention"],
     ready: ["就绪", "Ready"],
     running: ["运行", "Running"],
     blocked: ["阻塞", "Blocked"],
     review: ["人工验收", "Human review"],
-    done: ["已交付", "Delivered"],
+    done: ["已完成", "Completed"],
     archived: ["已归档", "Archived"],
     scheduled: ["等待重试", "Retry scheduled"],
   };

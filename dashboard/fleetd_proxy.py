@@ -9,9 +9,9 @@ from fleet_proxy import _id
 
 router = APIRouter(prefix="/fleetd")
 STATUS = {"ready": "ready", "queued": "ready", "running": "running",
-          "claimed": "running", "retrying": "running", "blocked": "review",
-          "review": "review", "done": "done", "failed": "archived",
-          "cancelled": "archived", "archived": "archived", "scheduled": "ready"}
+          "claimed": "running", "retrying": "running", "blocked": "blocked",
+          "review": "review", "done": "done", "failed": "triage",
+          "cancelled": "triage", "archived": "archived", "scheduled": "scheduled"}
 
 
 def reply(value):
@@ -39,9 +39,10 @@ def task(row):
     raw = row.get("status", "")
     # Future or malformed statuses remain visible for human inspection instead
     # of breaking the entire feed. Preserve the original value in Fleet details.
-    status = STATUS.get(raw, "review") if isinstance(raw, str) else "review"
+    status = STATUS.get(raw, "triage") if isinstance(raw, str) else "triage"
     result = {k: row[k] for k in ("id", "title", "risk", "machine", "assignee", "repo",
-              "created_at", "updated_at") if k in row}
+              "created_at", "updated_at", "source_session_id", "source_profile", "source_session_kind",
+              "conversation_id", "conversation_profile", "conversation_kind", "blocked_reason", "error") if k in row}
     result.update(status=status, fleet_status=raw, revision=0,
                   priority="P" + str(row.get("priority", "")),
                   attempt_count=row.get("attempts", 0), server_lifecycle=True, read_only=True,
@@ -94,13 +95,18 @@ def detail(task_id: str):
     attempts = data.get("attempts") or []
     # v1's list attempts counter counts retries, so detail records are authoritative.
     row["attempt_count"] = len(attempts)
+    if not row.get("conversation_id"):
+        row["conversation_id"] = next((a["conversation_id"] for a in attempts if a.get("conversation_id")), None)
+    if row["status"] in ("blocked", "triage") and not row.get("blocked_reason"):
+        row["blocked_reason"] = next((a.get("error") or a.get("reason") for a in attempts if a.get("error") or a.get("reason")), None)
+
     choices = [decision(d) for d in client.collection("decisions", status="open")
                if d.get("status") == "open" and d.get("task_id") == task_id]
     row["decision"] = choices[0] if choices else None
     return reply({"task": row, "open_decision": row["decision"], "artifacts": [],
                   "review_notes": [{"text": e["payload"], "at": e.get("at", "")} for e in data.get("events", [])
                                    if e.get("type") == "task.note" and isinstance(e.get("payload"), str)],
-                  "attempts": [{k: a[k] for k in ("id", "status", "worker_id", "started_at", "ended_at") if k in a} for a in attempts]})
+                  "attempts": [{k: a[k] for k in ("id", "status", "worker_id", "started_at", "ended_at", "conversation_id", "error", "reason") if k in a} for a in attempts]})
 
 
 async def write_body(request: Request):

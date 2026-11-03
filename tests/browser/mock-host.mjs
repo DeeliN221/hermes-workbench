@@ -210,6 +210,16 @@ let createdCounter = 0;
 
 /** Return deterministic plugin API data for the fixture routes. */
 function apiPayload(url, method, body = null, preferences = new Map()) {
+  if (url.pathname.endsWith('/home-preferences')) {
+    const labels = preferences.get('home-labels') || {};
+    if (method === 'PUT') { labels[url.searchParams.get('profile') || 'default'] = body.show_project_labels; preferences.set('home-labels', labels); }
+    return {labels};
+  }
+  if (url.pathname.endsWith('/profile-order')) {
+    if (method === 'PUT') preferences.set('profile-order', body.order);
+    return {order: preferences.get('profile-order') || []};
+  }
+
   if (['/api/plugins/workbench/fleet/config', '/api/plugins/workbench/fleetd/config'].includes(url.pathname)) return { mode: 'unconfigured', extended_workflow: false };
   if (url.pathname.startsWith('/api/plugins/workbench/model-display')) {
     const profile = url.searchParams.get('profile') || 'default';

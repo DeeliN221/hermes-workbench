@@ -1,3 +1,4 @@
+import { renderHomeSettings } from './home-settings';
 import {
   CHAT_DETAIL_MODES,
   readChatDetailMode,
@@ -149,7 +150,7 @@ export function createChatDisplaySettings(sdk: any) {
     useEffect(() => {
       const node = ref.current;
       if (!node) return;
-      const render = () => renderChatDisplayPanel(node);
+      const render = () => { renderChatDisplayPanel(node); void renderHomeSettings(node, sdk.fetchJSON); };
       render();
       const observer = new MutationObserver(render);
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });

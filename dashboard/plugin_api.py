@@ -1689,3 +1689,37 @@ def get_profile_order(request: Request):
 def put_profile_order(request: Request, body: ProfileOrderBody):
     from codex_bridge import _user
     return _profile_order(_user(request), body)
+
+
+class HomePreferencesBody(BaseModel):
+    show_project_labels: bool
+
+
+def _home_preferences(user: str, profile: str | None = None, body: HomePreferencesBody | None = None):
+    if profile is not None:
+        _clean_identifier(profile, label="Profile", maximum=_MAX_PROFILE_LENGTH)
+        if "/" in profile or "\\" in profile or profile in (".", ".."):
+            raise HTTPException(422, "Invalid profile")
+    connection = _open_organization_db()
+    try:
+        with connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS home_preferences (owner TEXT, profile TEXT, show_labels INTEGER NOT NULL, PRIMARY KEY(owner, profile))")
+            if body is not None:
+                connection.execute("INSERT INTO home_preferences VALUES (?, ?, ?) ON CONFLICT(owner, profile) DO UPDATE SET show_labels=excluded.show_labels", (user, profile, int(body.show_project_labels)))
+            rows = connection.execute("SELECT profile, show_labels FROM home_preferences WHERE owner=?", (user,)).fetchall()
+        return {"labels": {row["profile"]: bool(row["show_labels"]) for row in rows}}
+    finally:
+        connection.close()
+
+
+@router.get('/home-preferences')
+def get_home_preferences(request: Request):
+    from codex_bridge import _user
+    from fastapi.responses import JSONResponse
+    return JSONResponse(_home_preferences(_user(request)), headers={"Cache-Control": "no-store"})
+
+
+@router.put('/home-preferences')
+def put_home_preferences(request: Request, body: HomePreferencesBody, profile: str = 'default'):
+    from codex_bridge import _user
+    return _home_preferences(_user(request), profile, body)

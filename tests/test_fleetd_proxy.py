@@ -33,9 +33,9 @@ def client(monkeypatch):
 # Independent contract: additions cannot silently disappear with the mapping.
 V1_STATUSES = [
     ("ready", "ready"), ("queued", "ready"), ("running", "running"),
-    ("claimed", "running"), ("retrying", "running"), ("blocked", "review"),
-    ("review", "review"), ("done", "done"), ("failed", "archived"),
-    ("cancelled", "archived"), ("archived", "archived"), ("scheduled", "ready"),
+    ("claimed", "running"), ("retrying", "running"), ("blocked", "blocked"),
+    ("review", "review"), ("done", "done"), ("failed", "triage"),
+    ("cancelled", "triage"), ("archived", "archived"), ("scheduled", "scheduled"),
 ]
 
 
@@ -115,7 +115,7 @@ def test_pagination(client, monkeypatch):
 
 
 @pytest.mark.parametrize("status,expected", V1_STATUSES + [
-    ("future-status", "review"), (None, "review"), ([], "review"), ("", "review"),
+    ("future-status", "triage"), (None, "triage"), ([], "triage"), ("", "triage"),
 ])
 def test_status_isolation_across_routes(client, monkeypatch, status, expected):
     row = {**FIXTURE["task"]["task"], "status": status}
@@ -234,3 +234,15 @@ def test_forwarded_origin_and_note_projection(client, monkeypatch):
     assert detail['review_notes'] == [{'text': 'First line\nSecond line', 'at': '2026-01-01'}]
     for status, _ in V1_STATUSES:
         assert proxy.task({'status': status})['review_actions'] == (status == 'review')
+
+
+def test_conversation_links_and_blocker_from_attempt(client, monkeypatch):
+    data = {"task": {**FIXTURE["task"]["task"], "status": "blocked", "source_session_id": "source-1", "source_profile": "writer"},
+            "attempts": [{"id": "attempt-1", "conversation_id": "execution-1", "error": "Build needs a compiler"}]}
+    monkeypatch.setattr(transport.FleetClient, "get", lambda self, path: data if path.startswith("tasks/") else {"decisions": []})
+    result = client.get(BASE + "/tasks/T-example", headers=HEADERS).json()["task"]
+    assert result["source_session_id"] == "source-1"
+    assert result["source_profile"] == "writer"
+    assert result["conversation_id"] == "execution-1"
+    assert result["blocked_reason"] == "Build needs a compiler"
+    assert result["status"] == "blocked"
