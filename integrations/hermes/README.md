@@ -18,6 +18,19 @@ The patch includes source changes and regression tests. Hermes's Kanban plugin
 maintains its browser entrypoint directly under `dashboard/dist`; that small
 entrypoint change is included. Workbench's own generated bundle is not included.
 
+## Managed-files root follow-up
+
+`managed-files-listing.patch` is a focused follow-up for Hermes revisions whose
+`/api/files` handler rejects an entire directory when one child symlink points
+outside the managed root (for example `/opt/data/.gemini`). It skips only that
+child while building the listing; direct reads and traversal attempts keep the
+original 403 response. The patch is based on upstream commit
+`5aec00f7a908b948a547c88675176dd5c02cc195` and can be checked with
+`git apply --check integrations/hermes/managed-files-listing.patch` in a clean
+Hermes checkout at that revision. Workbench also recovers a failed root listing
+through its own safe backend, so older hosts keep working before this patch is
+applied.
+
 ## Apply to a separate Hermes checkout
 
 The supported base is the public upstream commit

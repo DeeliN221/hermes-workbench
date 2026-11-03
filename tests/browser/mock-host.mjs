@@ -360,7 +360,7 @@ async function readRequestBody(request) {
 }
 
 /** Start a same-origin preview host or an ephemeral server for browser tests. */
-export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '', codexProxyOrigin = '' } = {}) {
+export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '', codexProxyOrigin = '', filesRootError = false } = {}) {
   const preferences = new Map();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
@@ -394,7 +394,16 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
       return;
     }
     if (url.pathname.startsWith('/api/')) {
-      const payload = apiPayload(url, request.method || 'GET', await readRequestBody(request), preferences);
+      const path = url.searchParams.get('path');
+      const payload = filesRootError && url.pathname === '/api/files' && (!path || path === '/opt/shared-auth')
+        ? { __status: 403, detail: 'Path outside managed files root' }
+        : filesRootError && url.pathname === '/api/plugins/workbench/managed-files'
+          ? {
+              root: '/home/preview', locked_root: '/home/preview', can_change_path: false,
+              path: '/home/preview', parent: null,
+              entries: [{ name: 'hermes-workbench', path: '/home/preview/hermes-workbench', is_directory: true, size: null, mtime: 1, mime_type: null }],
+            }
+          : apiPayload(url, request.method || 'GET', await readRequestBody(request), preferences);
       const status = Number(payload?.__status) || 200;
       if (payload && typeof payload === 'object' && '__status' in payload) delete payload.__status;
       const body = JSON.stringify(payload);

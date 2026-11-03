@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Recover the Files root listing when a managed directory contains an external symlink, while still rejecting genuine out-of-root paths and ending the loading label after an error.
 - Answer /healthz with {"ok":true} so liveness probes pass while the release assets that /health requires are still missing.
 - Fold completed chat work to one summary line and open it as a bounded scroll window whose height follows the detail level, so long reasoning and tool output no longer stretch the transcript.
 - Answer the Codex runtime status check from cached metadata and move release lookups into the background, so a slow GitHub request no longer times out the health monitor or blocks the version page.
