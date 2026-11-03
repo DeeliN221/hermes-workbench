@@ -1,0 +1,27 @@
+--- a/hermes_cli/web_server.py	2026-11-03 12:00:43.922566462 +0000
++++ b/hermes_cli/web_server.py	2026-11-03 12:00:43.959566707 +0000
+@@ -1413,12 +1413,23 @@
+         raise HTTPException(status_code=400, detail="Path is not a directory")
+ 
+     try:
+-        entries = [_managed_file_entry(policy, child) for child in target.iterdir()]
++        children = list(target.iterdir())
+     except PermissionError:
+         raise HTTPException(status_code=403, detail="Directory is not readable")
+     except OSError as exc:
+         raise HTTPException(status_code=500, detail=f"Could not read directory: {exc}")
+ 
++    entries = []
++    for child in children:
++        try:
++            entries.append(_managed_file_entry(policy, child))
++        except HTTPException as exc:
++            # One stale or out-of-root symlink must not hide every safe sibling.
++            # Direct reads of the same child still fail in _resolve_managed_path.
++            if exc.status_code == 403 and exc.detail == "Path outside managed files root":
++                continue
++            raise
++
+     entries.sort(key=lambda item: (not item["is_directory"], str(item["name"]).lower()))
+     locked_root = policy.locked_root
+     parent = None
