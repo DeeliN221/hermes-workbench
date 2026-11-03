@@ -1,3 +1,4 @@
+import { openSessionNavigation } from './navigation-helpers.mjs';
 /**
  * Verify session renaming from the sidebar card menu and the pane header.
  * Covers instant two-way sync, persistence across reload, the first-message
@@ -36,13 +37,11 @@ async function headerTitle(page) {
   return ((await page.locator(HEADER).first().textContent()) || '').trim();
 }
 
+let restoreCardNavigation;
+
 /** Open the rename dialog from the sidebar card menu. */
 async function openFromCard(page, name) {
-  if (page.viewportSize().width > 800 && !await page.locator('.workbench-actions-dialog[open]').count()) {
-    await page.locator(HEADER).first().click();
-    await page.keyboard.press('w');
-    await page.locator('.workbench-menu-sessions > summary').click();
-  }
+  restoreCardNavigation = await openSessionNavigation(page);
   const row = page.locator('.codex-session-row-wrap').filter({ hasText: name }).first();
   await row.hover();
   await row.locator('.codex-session-row-menu-toggle').first().click();
@@ -61,6 +60,11 @@ async function saveTitle(page, value) {
   const input = dialogOpen(page).locator('input[name="session-title"]');
   await input.fill(value);
   await dialogOpen(page).locator('.codex-navigation-dialog-actions button.is-primary').click();
+  if (restoreCardNavigation) {
+    await dialogOpen(page).waitFor({ state: 'detached' });
+    await restoreCardNavigation();
+    restoreCardNavigation = null;
+  }
 }
 
 const host = await createMockHost();
@@ -77,7 +81,7 @@ try {
 
   // Rename from the card menu updates the card and the pane header at once.
   await openFromCard(page, firstTitle);
-  if (SHOT_DIR) await page.screenshot({ path: `${SHOT_DIR}/rename-dialog-desktop-light.png` });
+  if (SHOT_DIR) await page.screenshot({ path: `${SHOT_DIR}/rename-card-light.png` });
   await saveTitle(page, '  发布前   检查 Sprint  ');
   await dialogOpen(page).waitFor({ state: 'detached', timeout: 4000 });
   await waitForTitle(page, '发布前 检查 Sprint');

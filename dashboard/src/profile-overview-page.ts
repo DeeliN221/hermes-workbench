@@ -1,4 +1,3 @@
-import { projectMark } from './project-appearance';
 import type { FetchJSON } from './workbench-api';
 import { loadProfileOverview, freshnessRank, type ProfileColumn } from './profile-overview';
 import { openHomeConversation } from './home-navigation';
@@ -60,7 +59,7 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
                 const href = `/chat?${row.source === 'Codex' ? 'session' : 'hermesSession'}=${encodeURIComponent(row.id)}&profile=${encodeURIComponent(column.name)}`;
                 return h('a', { key: `${row.source}:${row.id}`, href, className: 'profile-session', 'data-freshness': rank,
                   onClick: (event: MouseEvent) => { if (event.button || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return; event.preventDefault(); openHomeConversation(href, column.name, navigate); } },
-                  preferences[column.name] !== false && row.groupId ? h('span', { className: 'profile-session-project', title: projectName(column, row) }, projectMark(h, column.projects.find(item => item.id === row.groupId) || {}), projectName(column, row)) : null,
+                  preferences[column.name] !== false && row.groupId ? h('span', { className: 'profile-session-project', title: projectName(column, row) }, projectName(column, row)) : null,
                   h('strong', null, row.title),
                   row.unread ? h('span', { className: 'profile-session-indicator', role: 'img', 'aria-label': tr('未读', 'Unread'), title: tr('未读', 'Unread') }, '●') : null,
                   ['running', 'active', 'streaming', 'in_progress'].includes(row.status) ? h('span', { className: 'profile-session-indicator', role: 'img', 'aria-label': tr('运行中', 'Running'), title: tr('运行中', 'Running') }, '◉') : null);

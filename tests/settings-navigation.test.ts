@@ -2,6 +2,8 @@
 import { afterEach, expect, it } from 'vitest';
 import {
   readSettingsMoreOpen,
+  readSettingsGeneralOpen,
+  writeSettingsGeneralOpen,
   settingsLinkActive,
   settingsNavSections,
   writeSettingsMoreOpen,
@@ -10,12 +12,14 @@ import {
 afterEach(() => {
   document.documentElement.removeAttribute('lang');
   localStorage.clear();
+  sessionStorage.clear();
 });
 
 it('groups settings into preferences, agent, and one collapsed more section', () => {
   const sections = settingsNavSections();
   expect(sections.map(section => [section.id, section.collapsible === true])).toEqual([
-    ['preferences', false],
+    ['versions', false],
+    ['preferences', true],
     ['agent', false],
     ['more', true],
   ]);
@@ -28,9 +32,9 @@ it('groups settings into preferences, agent, and one collapsed more section', ()
     '/profiles', '/models', '/config?workbench=allowances', '/env', '/config?workbench=versions',
     '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/logs', '/docs',
   ]));
-  expect(sections[0].items.map(([, label]) => label)).toEqual(['General', 'Chat display', 'Model visibility', 'Keyboard shortcuts']);
-  expect(sections[2].items.map(([href]) => href)).toEqual([
-    '/env', '/config?workbench=versions', '/logs', '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/docs',
+  expect(sections[1].items.map(([, label]) => label)).toEqual(['General', 'Chat display', 'Model visibility', 'Keyboard shortcuts']);
+  expect(sections[3].items.map(([href]) => href)).toEqual([
+    '/env', '/logs', '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/docs',
   ]);
 });
 
@@ -52,4 +56,13 @@ it('remembers whether the more section is expanded', () => {
   expect(readSettingsMoreOpen()).toBe(true);
   writeSettingsMoreOpen(false);
   expect(readSettingsMoreOpen()).toBe(false);
+});
+
+it('keeps General collapsed by default and remembers explicit changes for this session', () => {
+  expect(settingsNavSections()[0].items[0][0]).toBe('/config?workbench=versions');
+  expect(readSettingsGeneralOpen()).toBe(false);
+  writeSettingsGeneralOpen(true);
+  expect(readSettingsGeneralOpen()).toBe(true);
+  writeSettingsGeneralOpen(false);
+  expect(readSettingsGeneralOpen()).toBe(false);
 });

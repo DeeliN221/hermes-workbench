@@ -28,11 +28,11 @@ import './codex-user-input.css';
 import { createLanguageControl } from './language-control';
 import { useWorkbenchLocale } from './workbench-locale';
 import { uiText as runtimeText } from './ui-locale';
-import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
+import { createWorkbenchDialog, createWorkbenchLauncher, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
 import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-aliases';
 import { createQuotaSettings } from './quota-dashboard';
-import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
+import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen, readSettingsGeneralOpen, writeSettingsGeneralOpen } from './settings-navigation';
 installModelAliasSync();
 import { createProfileOverview } from './profile-overview-page';
 import { overviewRoute } from './profile-overview';
@@ -2576,6 +2576,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       a = e.skills(i),
       { ProfileAction, ProfilesPage } = createProfileControls(i),
       WorkbenchDialog = createWorkbenchDialog(i),
+      WorkbenchLauncher = createWorkbenchLauncher(i),
       LanguageControl = createLanguageControl(i),
       ShortcutSettings = createShortcutSettings(i),
       ChatDisplaySettings = createChatDisplaySettings(i),
@@ -2595,6 +2596,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           catch { return false; }
         }),
         [settingsMoreOpen, setSettingsMoreOpen] = s(readSettingsMoreOpen),
+        [settingsGeneralOpen, setSettingsGeneralOpen] = s(readSettingsGeneralOpen),
         [p, m] = s(tm),
         [O, g] = s([]),
         [_, w] = s(() => jp()),
@@ -2624,7 +2626,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       r(() => {
         const media = window.matchMedia('(max-width: 800px)');
         const resize = () => { setMobileActions(media.matches); setActionsOpen(false); };
-        const open = () => { if (!media.matches) setActionsOpen(true); };
+        const open = (event) => { event.detail?.trigger?.focus(); setActionsOpen(true); };
         media.addEventListener('change', resize);
         window.addEventListener(OPEN_WORKBENCH, open);
         return () => { media.removeEventListener('change', resize); window.removeEventListener(OPEN_WORKBENCH, open); };
@@ -2832,9 +2834,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               .finally(() => C(!1)));
         },
         B = v === "dark" ? runtimeText("切换到亮色主题", "Switch to light theme") : runtimeText("切换到暗色主题", "Switch to dark theme"),
-        Y = isHome ? l("div", { className: "codex-navigation-create-actions" }, l("button", { type: "button", className: "codex-new-chat", "aria-label": runtimeText("新会话", "New session"), onClick: () => openHomeConversation("/chat?new=1", "default", Kp) }, craftingIcon(t, "compose"), l("span", null, runtimeText("新会话", "New session")))) : _?.toolbar ?? l("div", { className: "codex-navigation-create-actions" },
-          l("button", { type: "button", disabled: true, "aria-label": runtimeText("搜索", "Search"), title: runtimeText("会话列表加载后可搜索", "Search is available after sessions load") },
-            craftingIcon(t, "search"), l("span", null, runtimeText("搜索", "Search")))),
+        Y = _?.toolbar ?? l("div", { className: "codex-navigation-create-actions" },
+          l("button", { type: "button", disabled: true, "aria-label": runtimeText("搜索会话", "Search sessions") },
+            craftingIcon(t, "search"), l("span", null, runtimeText("搜索会话", "Search sessions")))),
         te = Bc(window.innerWidth),
         X = (z, G = !1) => {
           const ae = em(z, window.innerWidth);
@@ -2913,7 +2915,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       }, [accessory, isTaskBoard]);
       const renderActions = (mobile) => l("div", { className: mobile ? "dashboard-rail-actions" : "dashboard-crafting-grid", "aria-label": runtimeText("工作台操作", "Workbench actions"),
             onClickCapture: (event) => { const action = event.target.closest("a, button"); if (!mobile && action && !action.closest(".workbench-theme-action, .workbench-profile-action")) setActionsOpen(false); } },
-            l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
+            l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config?workbench=versions", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
             l("div", { className: "dashboard-nav-pair" },
               k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban"),
               k("/cron", runtimeText("定时", "Scheduled jobs"), "cron", u.path === "/cron", undefined, true),
@@ -2936,7 +2938,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             "aria-expanded": d, title: d ? runtimeText("收起全局导航", "Collapse navigation") : runtimeText("打开全局导航", "Open navigation"),
             onClick: () => f(!d),
           }, zc(t, "menu")),
-          k("/sessions", runtimeText("首页", "Home"), "home", isHome)),
+          k("/sessions", runtimeText("首页", "Home"), "home", isHome), l(WorkbenchLauncher)),
           renderActions(true),
           P ? l("p", { className: "workbench-theme-error", role: "status" }, P) : null) : null,
         d
@@ -2979,14 +2981,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 "aria-expanded": String(!navIsCollapsed),
                 onClick: () => setNavCollapsed((value) => !value),
               }, zc(t, navIsCollapsed ? "chevron-right" : "chevron-left"))),
-            !mobileActions ? l(WorkbenchDialog, { open: actionsOpen, onClose: () => setActionsOpen(false) },
-              l(ProfileAction, { profile: F, className: "workbench-profile-action" }),
-              renderActions(false),
-              j ? l("details", { className: "workbench-menu-sessions" },
-                l("summary", null, runtimeText("项目与会话", "Projects and sessions")),
-                l("div", { onClickCapture: (event) => { if (event.target.closest(".codex-session-row")) setActionsOpen(false); } }, _?.element))
-                : k("/chat", runtimeText("项目与会话", "Projects and sessions"), "home", false),
-              P ? l("p", { className: "workbench-theme-error", role: "status" }, P) : null) : null,
+            l(WorkbenchDialog, { open: actionsOpen, onClose: () => setActionsOpen(false) }, renderActions(false)),
             l(
               "div",
               {
@@ -3008,7 +3003,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                   },
                   hidden: isTaskBoard,
                 },
-                !mobileActions || isTaskBoard ? null : isHome ? l("div", { className: "workbench-home-nav" },
+                isTaskBoard ? null : isHome ? l("div", { className: "workbench-home-nav" },
                   l("p", null, runtimeText("按 Profile 浏览全部项目会话。", "Browse project sessions across all profiles.")),
                   l("a", { href: "/profiles?profile=default", onClick: (event) => { event.preventDefault(); Kp("/profiles", "default"); } }, runtimeText("管理档案与显示名", "Manage profiles and display names"))) : _?.element ?? l("div", { className: "project-section-heading workbench-project-placeholder" }, l("span", null, runtimeText("项目", "Projects"))),
               ),
@@ -3058,21 +3053,24 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     G,
                   ));
                 if (!section.collapsible) {
-                  return l("section", { key: section.id, className: "workbench-settings-group", "data-settings-group": section.id, "aria-labelledby": `workbench-settings-group-${section.id}` },
-                    l("h2", { id: `workbench-settings-group-${section.id}` }, section.title), links);
+                  return l("section", { key: section.id, className: "workbench-settings-group", "data-settings-group": section.id, "aria-label": section.id === "versions" ? section.title : undefined, "aria-labelledby": section.id === "versions" ? undefined : `workbench-settings-group-${section.id}` },
+                    section.id === "versions" ? null : l("h2", { id: `workbench-settings-group-${section.id}` }, section.title), links);
                 }
                 // Keep the active rarely used page visible even when the user collapsed "More".
                 const activeInside = section.items.some(([z]) => settingsLinkActive(z, u));
-                const expanded = settingsMoreOpen || activeInside;
+                const general = section.id === "preferences";
+                const expanded = general ? settingsGeneralOpen : settingsMoreOpen || activeInside;
                 return l("section", { key: section.id, className: "workbench-settings-group is-collapsible", "data-settings-group": section.id },
                   l("button", {
                     type: "button",
                     className: "workbench-settings-more-toggle",
                     "aria-expanded": String(expanded),
                     "aria-controls": `workbench-settings-group-${section.id}-links`,
-                    disabled: activeInside,
-                    onClick: () => setSettingsMoreOpen((value) => { writeSettingsMoreOpen(!value); return !value; }),
-                  }, l("span", null, section.title), l("span", { className: "workbench-settings-more-count" }, String(section.items.length)), zc(t, expanded ? "chevron-down" : "chevron-right")),
+                    disabled: !general && activeInside,
+                    onClick: () => general
+                      ? setSettingsGeneralOpen((value) => { writeSettingsGeneralOpen(!value); return !value; })
+                      : setSettingsMoreOpen((value) => { writeSettingsMoreOpen(!value); return !value; }),
+                  }, l("span", null, section.title), general ? null : l("span", { className: "workbench-settings-more-count" }, String(section.items.length)), zc(t, expanded ? "chevron-down" : "chevron-right")),
                   l("div", { id: `workbench-settings-group-${section.id}-links`, className: "workbench-settings-more-links", hidden: !expanded }, links));
               }),
               O.length
@@ -11998,11 +11996,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               className: "codex-session-search-trigger",
               ref: Fd,
               onClick: kM,
-              "aria-label": runtimeText("搜索", "Search"),
-              title: runtimeText("搜索", "Search"),
+              "aria-label": runtimeText("搜索会话", "Search sessions"),
+              title: runtimeText("搜索会话", "Search sessions"),
             },
             craftingIcon(e, "search"),
-            W(e, "span", null, runtimeText("搜索", "Search")),
+            W(e, "span", null, runtimeText("搜索会话", "Search sessions")),
           ),
         ),
         rc = p

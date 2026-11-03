@@ -1,3 +1,4 @@
+import { openSessionNavigation, openSecondSession } from './navigation-helpers.mjs';
 /**
  * Load the built Workbench bundle in a real browser with the local fixture host.
  * This catches render-time failures that pure-function tests cannot observe.
@@ -91,9 +92,8 @@ try {
   await profilePage.locator('.workbench-actions-dialog').getByRole('link', { name: 'Settings', exact: true }).click();
   await profilePage.locator('.dashboard-settings-nav').getByRole('link', { name: 'Profiles', exact: true }).click();
   await profilePage.waitForURL(url => url.pathname === '/profiles');
-  await profilePage.evaluate(() => document.activeElement?.blur());
-  await profilePage.keyboard.press('w');
-  const profileTrigger = profilePage.locator('.workbench-actions-dialog .workbench-profile-action > button');
+  await openSessionNavigation(profilePage);
+  const profileTrigger = profilePage.locator('.dashboard-nav-profile > button');
   await profileTrigger.click();
   const profileMenu = profilePage.locator('#workbench-profile-menu');
   await profileMenu.waitFor({ state: 'visible', timeout: 5000 });
@@ -172,9 +172,7 @@ try {
     'A single pane must not show session accent bars');
   assert.equal(await panePage.locator('.codex-session-id').count(), 0, 'The session id must not occupy a second header line');
   assert.equal(await panePage.locator('.codex-pane-profile').count(), 0, 'Session id must not show a profile chip');
-  await panePage.evaluate(() => document.activeElement?.blur());
-  await panePage.keyboard.press('w');
-  await panePage.locator('.workbench-menu-sessions > summary').click();
+  const restorePaneNavigation = await openSessionNavigation(panePage);
   const projectList = await panePage.locator('.project-list').evaluate(node => ({
     count: node.querySelectorAll('.project-folder-row').length,
     clientHeight: node.clientHeight,
@@ -185,11 +183,11 @@ try {
   }));
   assert.equal(projectList.count, 6, 'The preview must exercise more than five projects');
   assert.equal(projectList.overflowY, 'visible', 'The project pane, not the inner list, owns scrolling');
-  assert.equal(projectList.clientHeight, 240, 'All six 40px project rows must render inside the project pane');
+  assert.equal(projectList.clientHeight, 288, 'All six 48px mobile project rows must render inside the project pane');
   assert.equal(projectList.scrollHeight, projectList.clientHeight, 'The inner project list must not clip rows');
   assert.ok(projectList.scrollWidth <= projectList.clientWidth, 'The project list must not scroll horizontally');
   assert.equal(await panePage.locator('.project-navigation-resizer').count(), 1, 'Each split has one draggable separator');
-  await panePage.keyboard.press('Escape');
+  await restorePaneNavigation();
   const headerLayout = await panePage.evaluate(() => {
     const picker = document.querySelector('.codex-pane-color-picker')?.getBoundingClientRect();
     const title = document.querySelector('.codex-center-title')?.getBoundingClientRect();
@@ -220,9 +218,7 @@ try {
       value: { writeText: async value => { window.__copiedSessionId = value; } },
     });
   });
-  await panePage.locator('.codex-center-title').first().click();
-  await panePage.evaluate(() => document.activeElement?.blur());
-  await panePage.keyboard.press('w');
+  const restoreSessionNavigation = await openSessionNavigation(panePage);
   const temporaryRow = panePage.locator('.project-temporary .codex-session-row-wrap').first();
   await temporaryRow.hover();
   await temporaryRow.locator('.codex-session-row-menu-toggle').click();
@@ -237,6 +233,7 @@ try {
     bar.closest('.project-session-drag')?.getAttribute('data-session-id') || ''));
   assert.deepEqual([...splitBars].sort(), ['codex-preview', 'codex-regression'],
     'Split view must mark exactly the open session cards');
+  await restoreSessionNavigation();
   const paneProfiles = await panePage.locator('.codex-pane-slot [data-profile]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-profile')));
   assert.deepEqual(paneProfiles, ['default', 'default'], 'Panes must stay within one profile');
   await panePage.locator('.codex-pane-slot').nth(1).locator('.codex-pane-close').click();
@@ -262,9 +259,7 @@ try {
   await compactProjectsPage.goto(host.origin + '/chat?session=codex-preview&profile=writer', { waitUntil: 'domcontentloaded' });
   await compactProjectsPage.locator('.project-list').waitFor({ state: 'attached', timeout: 5000 });
   await compactProjectsPage.waitForFunction(() => document.querySelectorAll('.project-folder-row').length === 2);
-  await compactProjectsPage.evaluate(() => document.activeElement?.blur());
-  await compactProjectsPage.keyboard.press('w');
-  await compactProjectsPage.locator('.workbench-menu-sessions > summary').click();
+  await openSessionNavigation(compactProjectsPage);
   const compactProjectList = await compactProjectsPage.locator('.project-list').evaluate(node => ({
     count: node.querySelectorAll('.project-folder-row').length,
     clientHeight: node.clientHeight,
@@ -280,11 +275,7 @@ try {
   settingsReturnPage.on('pageerror', error => settingsReturnErrors.push(error.stack || error.message));
   await settingsReturnPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await settingsReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
-  await settingsReturnPage.evaluate(() => document.activeElement?.blur());
-  await settingsReturnPage.keyboard.press('w');
-  await settingsReturnPage.locator('.workbench-menu-sessions > summary').click();
-  await settingsReturnPage.locator('.project-temporary .codex-session-row').nth(1).click();
-  await settingsReturnPage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  await openSecondSession(settingsReturnPage);
   const splitChatUrl = settingsReturnPage.url();
   await settingsReturnPage.evaluate(() => document.querySelector('.dashboard-crafting-grid a[aria-label="Settings"]')?.click());
   await settingsReturnPage.waitForFunction(() => location.pathname === '/config' && new URLSearchParams(location.search).get('panel') === '1');
@@ -294,7 +285,7 @@ try {
     ['[data-workbench-model-link]', 'models'],
     ['[data-workbench-version-link]', 'versions'],
   ]) {
-    if (tab === 'versions') await settingsReturnPage.locator('.workbench-settings-more-toggle').click();
+    if (tab === 'display') await settingsReturnPage.locator('[data-settings-group=preferences] button').click();
     await settingsReturnPage.locator(selector).click();
     await settingsReturnPage.waitForFunction(expected => new URLSearchParams(location.search).get('workbench') === expected, tab);
     assert.equal(new URL(settingsReturnPage.url()).searchParams.get('panel'), '1', `${tab} settings must keep the floating panel marker`);
@@ -545,6 +536,7 @@ try {
   await detailPage.locator('[data-detail-mode="standard"]').waitFor({ state: 'visible', timeout: 5000 });
   await detailPage.locator('[data-detail-mode="standard"]').click();
   // Switching between custom settings tabs must keep the host ConfigPage hidden and preserve floating panel state.
+  await detailPage.locator('[data-settings-group=preferences] button').click();
   await detailPage.locator('[data-workbench-model-link]').click();
   await detailPage.locator('[data-testid="model-visibility-settings"] .workbench-model-group').first().waitFor({ state: 'visible', timeout: 5000 });
   const desktopLayerCheck = await detailPage.evaluate(() => {
@@ -656,12 +648,12 @@ try {
       moreLinkCount: more?.querySelectorAll('.workbench-settings-more-links a').length,
     };
   });
-  assert.deepEqual(settingsNav.groups, ['preferences', 'agent', 'more'], 'Settings must group into three sections');
-  assert.deepEqual(settingsNav.headings, ['Preferences', 'Agent', null], 'Groups must be labelled by intent');
+  assert.deepEqual(settingsNav.groups, ['versions', 'preferences', 'agent', 'more'], 'Settings must lead with versions and retain the other groups');
+  assert.deepEqual(settingsNav.headings, [null, null, 'Agent', null], 'Groups must be labelled by intent');
   assert.equal(settingsNav.topLevelLinks, 0, 'Long lists must live inside grouped sections, not as a flat link list');
   assert.equal(settingsNav.moreExpanded, 'false', 'The More section must start collapsed');
   assert.equal(settingsNav.moreLinksHidden, true, 'Collapsed More links must not be reachable visually');
-  assert.equal(settingsNav.moreLinkCount, 10, 'The More section must keep all rarely used settings reachable');
+  assert.equal(settingsNav.moreLinkCount, 9, 'The More section must keep all rarely used settings reachable');
   await aliasPage.evaluate(() => document.getElementById('preview-banner')?.remove());
   await aliasPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').click();
   assert.equal(await aliasPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').getAttribute('aria-expanded'), 'true');
@@ -691,7 +683,7 @@ try {
       navWidth: navRect?.width || 0,
     };
   });
-  assert.deepEqual(floatingNav.groups, ['preferences', 'agent', 'more'], 'Floating panel must keep the grouped settings navigation');
+  assert.deepEqual(floatingNav.groups, ['versions', 'preferences', 'agent', 'more'], 'Floating panel must keep the grouped settings navigation');
   assert.equal(floatingNav.toggleInside, true, 'The More toggle must stay inside the floating settings column');
   assert.ok(floatingNav.toggleWidth > 0 && floatingNav.toggleWidth <= floatingNav.navWidth, 'The More toggle must fit the narrow floating column');
   assert.deepEqual(floatingErrors, [], 'Browser errors in the floating settings panel:\n' + floatingErrors.join('\n'));
@@ -709,6 +701,7 @@ try {
   await mobileSettingsPage.locator('[data-settings-group="more"] a', { hasText: 'Plugins' }).waitFor({ state: 'visible', timeout: 3000 });
   await mobileSettingsPage.locator('[data-settings-group="more"] .workbench-settings-more-toggle').click();
   await mobileSettingsPage.locator('[data-settings-group="more"] a', { hasText: 'Plugins' }).waitFor({ state: 'hidden', timeout: 3000 });
+  await mobileSettingsPage.locator('[data-settings-group=preferences] button').click();
   await mobileSettingsPage.locator('[data-workbench-model-link]').click();
   await mobileSettingsPage.locator('[data-testid="model-visibility-settings"] .workbench-model-group').first().waitFor({ state: 'visible', timeout: 5000 });
   const mobileSettingsCheck = await mobileSettingsPage.evaluate(() => {
@@ -757,11 +750,7 @@ try {
   mobileReturnPage.on('pageerror', error => mobileReturnErrors.push(error.stack || error.message));
   await mobileReturnPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await mobileReturnPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
-  await mobileReturnPage.evaluate(() => document.activeElement?.blur());
-  await mobileReturnPage.keyboard.press('w');
-  await mobileReturnPage.locator('.workbench-menu-sessions > summary').click();
-  await mobileReturnPage.locator('.project-temporary .codex-session-row').nth(1).click();
-  await mobileReturnPage.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2);
+  await openSecondSession(mobileReturnPage);
   const mobileSplitChatUrl = mobileReturnPage.url();
   await mobileReturnPage.setViewportSize({ width: 390, height: 844 });
   await mobileReturnPage.waitForTimeout(300);
@@ -776,6 +765,8 @@ try {
   assert.equal(await mobileReturnPage.locator('.codex-pane-slot').count(), 2, 'Back to chat must preserve both panes');
   await mobileReturnPage.evaluate(() => document.querySelector('.dashboard-rail-actions a[aria-label="Settings"], .dashboard-crafting-grid a[aria-label="Settings"]')?.click());
   await mobileReturnPage.waitForFunction(() => location.pathname === '/config');
+  await mobileReturnPage.locator('.workbench-mobile-settings-back').click();
+  await mobileReturnPage.locator('[data-settings-group=preferences] button').click();
   await mobileReturnPage.locator('[data-workbench-chat-display-link]').click();
   await mobileReturnPage.waitForFunction(() => new URLSearchParams(location.search).get('workbench') === 'display');
   await mobileReturnPage.locator('.workbench-mobile-tab-chat').click();

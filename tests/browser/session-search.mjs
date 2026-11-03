@@ -104,13 +104,8 @@ try {
       if (await toggle.count()) await toggle.first().click();
     }
     await page.locator('.codex-session-row.is-active').filter({ hasText: 'Home rendering regression' }).first().waitFor({ state: 'attached' });
-    if (!mobile) {
-      await page.locator('.codex-center-title').first().click();
-      await page.keyboard.press('w');
-      await page.locator('.workbench-menu-sessions > summary').click();
-    }
     const folder = page.locator('details.project-folder').filter({ hasText: 'Preview Project 1' });
-    await folder.first().waitFor({ state: 'visible' });
+    await folder.first().waitFor({ state: 'attached' });
     assert.equal(await folder.first().getAttribute('open'), '');
     if (shots) await page.screenshot({ path: `${shots}/${mobile ? 'mobile' : 'desktop'}-${theme}-opened.png` });
     if (!await page.locator('.codex-session-search-trigger:visible').count()) {

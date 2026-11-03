@@ -4,18 +4,31 @@ import { uiText } from './ui-locale';
 export type SettingsNavItem = [href: string, label: string, linkAttr?: string];
 export type SettingsNavSection = { id: string; title: string; items: SettingsNavItem[]; collapsible?: boolean };
 
+const GENERAL_OPEN_KEY = 'hermes.workbench.settings-general-open';
+
+export function readSettingsGeneralOpen(): boolean {
+  try { return window.sessionStorage.getItem(GENERAL_OPEN_KEY) === 'true'; } catch { return false; }
+}
+export function writeSettingsGeneralOpen(open: boolean): void {
+  try { window.sessionStorage.setItem(GENERAL_OPEN_KEY, String(open)); } catch { /* Optional UI state. */ }
+}
+
 const MORE_OPEN_KEY = 'hermes.workbench.settings-more-open';
 
 /**
- * Settings are grouped by intent: everyday Workbench preferences first, then
- * agent setup. Maintenance, integrations and diagnostics that are rarely
+ * Version switching leads settings; everyday preferences stay in a compact
+ * collapsible group, followed by agent setup. Maintenance, integrations and diagnostics that are rarely
  * touched stay reachable under a collapsed "More" section.
  */
 export function settingsNavSections(): SettingsNavSection[] {
   return [
+    { id: 'versions', title: uiText('版本切换', 'Version switching'), items: [
+      ['/config?workbench=versions', uiText('版本切换', 'Version switching'), 'data-workbench-version-link'],
+    ] },
     {
       id: 'preferences',
-      title: uiText('偏好', 'Preferences'),
+      title: uiText('常规设置', 'General settings'),
+      collapsible: true,
       items: [
         ['/config', uiText('常规', 'General')],
         ['/config?workbench=display', uiText('聊天显示', 'Chat display'), 'data-workbench-chat-display-link'],
@@ -38,7 +51,6 @@ export function settingsNavSections(): SettingsNavSection[] {
       collapsible: true,
       items: [
         ['/env', uiText('凭据', 'Credentials')],
-        ['/config?workbench=versions', uiText('版本切换', 'Version switching'), 'data-workbench-version-link'],
         ['/logs', uiText('日志', 'Logs')],
         ['/plugins', uiText('插件', 'Plugins')],
         ['/mcp', uiText('外部工具', 'External tools')],
