@@ -615,3 +615,4 @@
 .tower-search input { width: 100%; margin: 16px 0; }
 .tower-search > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; }
 [data-workbench-theme="dark"] .tower-search { background: #202124; color: #eee; }
+.tower-drawer .tower-error { position: static; transform: none; max-width: none; }

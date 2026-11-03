@@ -1,6 +1,6 @@
 # Global kanban rescue validation
 
-Screenshots in this directory are actual localhost browser captures using fictional fixture data, in English. They are not production screenshots.
+Screenshots in this directory are actual localhost browser captures using fictional fixture data, in English. They are not production screenshots. The two `before-*` captures were produced in a separate isolated worktree at main `1451efd`; the remaining captures use the PR build.
 
 - Desktop: 1536 × 960, light and dark; four fixed columns, no toolbar or duplicate attention panel.
 - Mobile: 390 × 960, light and dark; automatic grouped list, compact navigation, bounded drawer.

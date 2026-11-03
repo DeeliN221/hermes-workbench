@@ -81,6 +81,9 @@ try {
     await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
     await page.locator('.tower-drawer [role="alert"]').filter({hasText:'FLEET_REVIEW_TOKEN'}).waitFor();
     assert.equal(await input.inputValue(),'Improve contrast.\nKeep keyboard coverage.');
+    const titleBox = await page.locator('#tower-detail-title').boundingBox();
+    const errorBox = await page.locator('.tower-drawer [role="alert"]').boundingBox();
+    assert.ok(errorBox.y >= titleBox.y + titleBox.height, 'Drawer errors do not obscure the title');
     await page.screenshot({path:path.join(shotDir,`review-${width}-${theme}.png`)});
     await page.unroute('**/fleetd/tasks/T-review/request_changes');
     await page.keyboard.press('Escape');
