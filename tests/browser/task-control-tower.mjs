@@ -106,6 +106,10 @@ try {
   await page.locator('.tower-board [data-task-id="review-task"]').waitFor();
   assert.equal(await page.locator('.tower-board [data-column]').count(), 4);
   assert.equal(await page.locator('.tower-header, .tower-sidebar, .tower-create, .tower-bottom-nav').count(), 0);
+  const reviewCard = page.locator('.tower-board [data-task-id="review-task"]');
+  await page.waitForFunction(() => /^nas codex gpt-5\.2 high \d+m$/.test(document.querySelector('.tower-board [data-task-id="review-task"]')?.getAttribute('data-runtime') || ''));
+  assert.ok(!(await reviewCard.textContent()).includes('未提供'));
+  assert.equal(await page.locator('[data-task-id="archived-a"]').count(), 0);
   for (const width of [1536, 390]) for (const theme of ['light', 'dark']) {
     await page.setViewportSize({width, height: 960});
     await page.evaluate(theme => document.documentElement.dataset.workbenchTheme = theme, theme);
@@ -127,7 +131,7 @@ try {
     fleet.tasks.find((t) => t.id === "decision-task").decision,
     null,
   );
-  await drawer.getByRole("button", { name: "Close details" }).click();
+  await page.locator('.tower-backdrop').click({ position: { x: 20, y: 20 } });
   await card("review-task").getByRole("button").click();
   const downloadEvent = page.waitForEvent("download");
   await drawer.getByRole("button", { name: "Download", exact: true }).click();
@@ -138,15 +142,34 @@ try {
     await readFile(path.join(shotDir, "acceptance-report.txt"), "utf8"),
     /checks pass/,
   );
+  await drawer.getByText("Details", { exact: true }).click();
+  assert.equal(await drawer.locator(".tower-markdown h1").textContent(), "Delivery brief");
+  assert.equal(await drawer.locator(".tower-markdown a").getAttribute("target"), "_blank");
+  assert.ok(await drawer.locator(".tower-markdown pre").evaluate((node) => node.scrollWidth >= node.clientWidth));
+  assert.equal(await drawer.locator(".tower-runtime").count(), 0);
   await page.screenshot({ path: path.join(shotDir, "artifact-drawer.png") });
   await drawer
     .getByRole("button", { name: "Accept delivery", exact: true })
     .click();
-  await drawer.getByRole("button", { name: "Close details" }).click();
+  await page.keyboard.press("Escape");
   await page.locator('.tower-board').getByRole('button', {name:'Select all', exact:true}).click();
   await page.locator('.tower-board').getByRole('button', {name:'Archive selected', exact:true}).click();
   await page.waitForFunction(() => !document.querySelector('.tower-board .column-done .tower-card'));
   assert.ok(fleet.tasks.filter(t => ['review-task','delivered-new','delivered-old'].includes(t.id)).every(t => t.status === 'archived'));
+  const archivedToggle = page.locator('.tower-board .column-done').getByRole('button', { name: /Show archived|显示已归档/ });
+  await archivedToggle.click();
+  await page.locator('.tower-board .column-done [data-task-id="archived-a"]').waitFor();
+  assert.equal(await page.locator('.tower-board .column-done [data-task-id="archived-a"] .tower-archived-tag').textContent(), 'Archived');
+  await page.locator('.tower-search-toggle').click();
+  await page.locator('.tower-searchbar input').fill('Archived delivery');
+  await page.locator('.tower-search-results [data-task-id="archived-a"]').waitFor();
+  await page.keyboard.press('Escape');
+  await page.locator('.tower-board .column-done').getByRole('button', { name: /Hide archived|隐藏已归档/ }).click();
+  assert.equal(await page.locator('[data-task-id="archived-a"]').count(), 0);
+  await page.keyboard.press('/');
+  await page.locator('.tower-searchbar input').fill('Archived delivery');
+  await page.waitForFunction(() => document.querySelectorAll('.tower-search-results [data-task-id="archived-a"]').length === 0);
+  await page.keyboard.press('Escape');
   await page.keyboard.press('w');
   await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Home', exact: true }).click();
   await page.locator('.profile-overview').waitFor();

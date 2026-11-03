@@ -73,3 +73,48 @@ it("retains the last complete snapshot on a failed refresh and recovers on retry
   expect(host.textContent).toContain("New response task");
   expect(host.textContent).not.toContain("timed out");
 });
+
+it("renders compact runtime values, omits empty drawer blocks and hides archived cards by default", async () => {
+  const task = {
+    id: "T-runtime", title: "Runtime task", status: "review", risk: "R2", priority: "P1", revision: 0,
+    created_at: new Date().toISOString(), acceptance: [{ label: "Pass", checked: true }], read_only: true,
+    machine: "nas", capability: "codex", assignee: "W-nas", model_used: "gpt-5.2", reasoning_effort: "high",
+    conversation_id: "c1", conversation_profile: "default", conversation_kind: "codex", conversation_local: true,
+    source_session_id: "s1", source_profile: "default", source_session_kind: "hermes",
+    attempts: [{ id: "a1", status: "ok", started_at: "2026-11-03T10:48:00Z", ended_at: "2026-11-03T11:00:00Z", model_used: "gpt-5.2", evidence_json: JSON.stringify({ duration_ms: 720000 }) }],
+    spec_json: { prompt: "# Plan\n\n- first\n\n```ts\nconst ok = true;\n```\n\n[link](https://example.com)" },
+  };
+  const archived = { ...task, id: "T-archived", title: "Archived task", status: "archived" };
+  const fetchJSON: FetchJSON = async <T>(url: string) => {
+    if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
+    if (url.endsWith("/tasks/archived")) return { tasks: [archived] } as T;
+    if (url.endsWith("/tasks")) return { tasks: [task] } as T;
+    if (url.endsWith("/decisions")) return { decisions: [] } as T;
+    if (url.endsWith("/workers")) return { workers: [] } as T;
+    if (url.endsWith("/tasks/T-runtime")) return { task, artifacts: [], review_notes: [], attempts: task.attempts } as T;
+    return { profiles: [], items: [], sessions: [], groups: [] } as T;
+  };
+  const Component = createTaskControlTower({ React, hooks: React, fetchJSON }, vi.fn());
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  await act(async () => { root.render(React.createElement(Component, { profile: "default" })); await new Promise(r => setTimeout(r, 30)); });
+  const card = host.querySelector('.tower-card[data-task-id="T-runtime"]') as HTMLElement;
+  expect(card.dataset.runtime).toMatch(/^nas codex gpt-5\.2 high \d+m$/);
+  expect(card.textContent).not.toContain("未提供");
+  expect(card.textContent).not.toMatch(/设备:|Device:|Model:/);
+  expect(host.querySelector('[data-task-id="T-archived"]')).toBeNull();
+  const archiveToggle = Array.from(host.querySelectorAll("button")).find(button => /Show archived|显示已归档/.test(button.textContent || "")) as HTMLButtonElement;
+  await act(async () => { archiveToggle.click(); await new Promise(r => setTimeout(r, 20)); });
+  expect(host.querySelector('.tower-card[data-task-id="T-archived"]')).not.toBeNull();
+  await act(async () => { (Array.from(host.querySelectorAll("button")).find(button => /Hide archived|隐藏已归档/.test(button.textContent || "")) as HTMLButtonElement).click(); await new Promise(r => setTimeout(r, 10)); });
+  expect(host.querySelector('[data-task-id="T-archived"]')).toBeNull();
+  await act(async () => { (card.querySelector("button") as HTMLButtonElement).click(); await new Promise(r => setTimeout(r, 20)); });
+  const drawer = host.querySelector(".tower-drawer") as HTMLElement;
+  expect(drawer.querySelector("header")).toBeNull();
+  expect(drawer.textContent).not.toContain("运行信息");
+  expect(drawer.textContent).not.toContain("尚无产物");
+  expect(drawer.textContent).toContain("Runtime task");
+  await act(async () => { (drawer.querySelector("summary") as HTMLElement).click(); await new Promise(r => setTimeout(r, 10)); });
+  expect(drawer.querySelector(".tower-markdown h1")?.textContent).toBe("Plan");
+  expect(drawer.querySelector(".tower-markdown a")?.getAttribute("href")).toBe("https://example.com/");
+});

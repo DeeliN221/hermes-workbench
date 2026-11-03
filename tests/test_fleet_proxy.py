@@ -291,7 +291,8 @@ def test_v2_transport_credentials_errors_and_projection(client, monkeypatch):
             "status": "review",
         }
     )
-    assert task["spec_json"] == {"summary": "Plain brief"}
+    assert task["spec_json"]["summary"] == "Plain brief"
+    assert task["spec_json"]["prompt"] == "Plain brief"
     assert task["acceptance"] == [
         {"label": "One", "checked": True},
         {"label": "Two", "checked": True},

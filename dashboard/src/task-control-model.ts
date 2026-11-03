@@ -19,6 +19,22 @@ export type Decision = {
     recommended?: boolean;
   }[];
 };
+export type Attempt = {
+  id?: string;
+  status?: string;
+  worker_id?: string;
+  machine?: string;
+  capability?: string;
+  runner?: string;
+  model_used?: string;
+  final_model?: string;
+  reasoning_effort?: string;
+  conversation_id?: string;
+  started_at?: string;
+  ended_at?: string;
+  duration_ms?: number;
+  evidence_json?: string;
+};
 export type Task = {
   id: string;
   title: string;
@@ -38,6 +54,8 @@ export type Task = {
   conversation_id?: string;
   conversation_profile?: string;
   conversation_kind?: string;
+  conversation_local?: boolean;
+  source_local?: boolean;
   blocked_reason?: string;
   error?: string;
   assignee?: string;
@@ -53,7 +71,15 @@ export type Task = {
   verify_mode?: "auto" | "human";
   verified_by?: string;
   acceptance: Check[];
-  spec_json?: { summary?: string };
+  spec_json?: {
+    summary?: string;
+    prompt?: string;
+    raw?: string;
+    model?: string;
+    reasoning_effort?: string;
+    [key: string]: unknown;
+  };
+  attempts?: Attempt[];
   needs_human?: boolean;
   server_lifecycle?: boolean;
   decision?: Decision | null;
@@ -136,6 +162,178 @@ export function delivered(tasks: Task[], now = Date.now()): Task[] {
         Date.parse(b.created_at) - Date.parse(a.created_at) ||
         a.id.localeCompare(b.id),
     );
+}
+
+/** Attempt metadata is authoritative; a bare task status is not a run timer. */
+export function taskAttempts(task: Task): Attempt[] {
+  return Array.isArray(task.attempts) ? task.attempts.filter((attempt): attempt is Attempt => !!attempt && typeof attempt === "object") : [];
+}
+
+function timestamp(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = Date.parse(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function attemptEvidence(attempt: Attempt): Record<string, any> {
+  if (!attempt.evidence_json) return {};
+  try {
+    const value = JSON.parse(attempt.evidence_json);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
+  } catch {
+    return {};
+  }
+}
+
+function attemptTime(attempt: Attempt, field: "started_at" | "ended_at"): number | null {
+  return timestamp(attempt[field]);
+}
+
+/** Newest attempt first, independent of the server's list ordering. */
+export function orderedAttempts(task: Task): Attempt[] {
+  return [...taskAttempts(task)].sort((left, right) =>
+    (attemptTime(right, "started_at") || 0) - (attemptTime(left, "started_at") || 0),
+  );
+}
+
+export function hasStarted(task: Task): boolean {
+  return taskAttempts(task).length > 0
+    || Number(task.attempt_count || 0) > 0
+    || !!task.conversation_id
+    || task.status === "done";
+}
+
+/** A task only ticks while its latest attempt is open and still assigned. */
+export function activeAttempt(task: Task): Attempt | null {
+  if (["done", "archived"].includes(task.status) || !task.assignee) return null;
+  const latest = orderedAttempts(task)[0];
+  if (!latest || !attemptTime(latest, "started_at") || attemptTime(latest, "ended_at")) return null;
+  return latest;
+}
+
+export function isZombieRunning(task: Task): boolean {
+  return task.status === "running" && Array.isArray(task.attempts) && !activeAttempt(task);
+}
+
+function latestAttempt(task: Task): Attempt | null {
+  return orderedAttempts(task)[0] || null;
+}
+
+function firstText(...values: unknown[]): string {
+  for (const value of values) {
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return "";
+}
+
+export function plannedModel(task: Task): string {
+  return firstText(task.spec_json?.model, task.model_used);
+}
+
+function attemptDurationMs(attempt: Attempt): number | null {
+  const evidence = attemptEvidence(attempt);
+  const direct = Number(attempt.duration_ms ?? evidence.duration_ms);
+  if (Number.isFinite(direct) && direct >= 0) return direct;
+  const started = attemptTime(attempt, "started_at");
+  const ended = attemptTime(attempt, "ended_at");
+  if (started !== null && ended !== null) return Math.max(0, ended - started);
+  return null;
+}
+
+/** Sum every finished attempt plus the live segment of the active one. */
+export function elapsedMs(task: Task, now = Date.now()): number | null {
+  const attempts = taskAttempts(task);
+  const active = activeAttempt(task);
+  let total = 0;
+  let measured = false;
+  for (const attempt of attempts) {
+    if (active && attempt === active) continue;
+    const duration = attemptDurationMs(attempt);
+    if (duration !== null) {
+      total += duration;
+      measured = true;
+    }
+  }
+  if (active) {
+    const started = attemptTime(active, "started_at");
+    if (started !== null) {
+      total += Math.max(0, now - started);
+      measured = true;
+    }
+  }
+  if (!measured && typeof task.duration_seconds === "number" && Number.isFinite(task.duration_seconds)) {
+    return Math.max(0, task.duration_seconds * 1000);
+  }
+  return measured ? total : null;
+}
+
+export function durationMinutes(task: Task, now = Date.now()): string {
+  const elapsed = elapsedMs(task, now);
+  if (elapsed === null) return "";
+  return `${Math.max(1, Math.round(elapsed / 60000))}m`;
+}
+
+/** Plain values in the fixed card order; missing fields disappear entirely. */
+export function runtimeParts(task: Task, now = Date.now()): string[] {
+  if (!hasStarted(task)) {
+    return [firstText(task.machine), plannedModel(task)].filter(Boolean);
+  }
+  const latest = latestAttempt(task);
+  const evidence = latest ? attemptEvidence(latest) : {};
+  const device = firstText(task.machine, latest?.machine);
+  const cli = firstText(task.capability, latest?.capability, latest?.runner, evidence.runner);
+  const model = firstText(latest?.model_used, evidence.final_model, latest?.final_model, task.model_used, task.spec_json?.model);
+  const effort = firstText(task.reasoning_effort, latest?.reasoning_effort, evidence.reasoning_effort, task.spec_json?.reasoning_effort);
+  return [device, cli, model, effort, durationMinutes(task, now)].filter(Boolean);
+}
+
+export function runtimeLine(task: Task, now = Date.now()): string {
+  return runtimeParts(task, now).join(" ");
+}
+
+/** The prompt/raw markdown is the detail body; never expose JSON wrapper fields. */
+export function specMarkdown(task: Task): string {
+  let spec: unknown = task.spec_json;
+  if (typeof spec === "string") {
+    const text = spec;
+    try {
+      spec = JSON.parse(text);
+    } catch {
+      return text.trim();
+    }
+  }
+  if (!spec || typeof spec !== "object" || Array.isArray(spec)) return "";
+  const row = spec as Record<string, unknown>;
+  for (const key of ["prompt", "raw", "summary"]) {
+    const value = row[key];
+    if (typeof value === "string" && value.trim()) return value;
+  }
+  return "";
+}
+
+export function latestAttemptEnded(task: Task): boolean {
+  const latest = latestAttempt(task);
+  return !!latest && attemptTime(latest, "ended_at") !== null;
+}
+
+export function sessionEntries(task: Task): {
+  label: "source" | "conversation";
+  id: string;
+  profile: string;
+  kind: "hermes" | "codex" | "";
+  canOpen: boolean;
+}[] {
+  const validKind = (kind: string | undefined): kind is "hermes" | "codex" => kind === "hermes" || kind === "codex";
+  const finished = task.status === "done" || latestAttemptEnded(task);
+  return [
+    { label: "source" as const, id: task.source_session_id || "", profile: task.source_profile || "", kind: validKind(task.source_session_kind) ? task.source_session_kind : "" as const },
+    { label: "conversation" as const, id: task.conversation_id || "", profile: task.conversation_profile || "", kind: validKind(task.conversation_kind) ? task.conversation_kind : "" as const },
+  ].filter((row) => !!row.id).map((row) => ({
+    ...row,
+    canOpen: !!row.profile && !!row.kind && (
+      row.label === "source" || task.source_local === true || task.conversation_local === true || finished
+    ),
+  }));
 }
 export function decisionOptions(d: Decision, readOnly = false): Decision["options"] {
   if (readOnly) return d.options.filter(o => !!o.label);

@@ -1,7 +1,10 @@
 """Same-origin, authenticated, task console API for fleetd v1."""
 import json
 import os
-from datetime import datetime, timezone
+import sqlite3
+from datetime import datetime
+from functools import lru_cache
+from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, Query
 from urllib.parse import urlencode
 from starlette.concurrency import run_in_threadpool
@@ -14,6 +17,99 @@ STATUS = {"ready": "ready", "queued": "ready", "running": "running",
           "claimed": "running", "retrying": "running", "blocked": "blocked",
           "review": "review", "done": "done", "failed": "triage",
           "cancelled": "triage", "archived": "archived", "scheduled": "scheduled"}
+
+
+def _json_object(value):
+    if isinstance(value, dict):
+        return value
+    if not isinstance(value, str):
+        return {}
+    try:
+        parsed = json.loads(value)
+    except (ValueError, TypeError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _timestamp(value):
+    if not isinstance(value, str) or not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+
+
+def _attempt_duration_ms(attempt):
+    evidence = _json_object(attempt.get("evidence_json"))
+    for value in (attempt.get("duration_ms"), evidence.get("duration_ms")):
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+            return float(value)
+    started, ended = _timestamp(attempt.get("started_at")), _timestamp(attempt.get("ended_at"))
+    if started is not None and ended is not None:
+        return max(0.0, (ended - started) * 1000)
+    return None
+
+
+def _attempt_model(attempt):
+    evidence = _json_object(attempt.get("evidence_json"))
+    for value in (attempt.get("model_used"), evidence.get("final_model"), attempt.get("final_model")):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _attempt_metadata(attempt):
+    evidence = _json_object(attempt.get("evidence_json"))
+    result = {key: attempt[key] for key in ("id", "status", "worker_id", "started_at", "ended_at",
+                                             "conversation_id", "error", "reason", "model_used")
+              if key in attempt}
+    for target, source in (("final_model", "final_model"), ("runner", "runner"),
+                           ("reasoning_effort", "reasoning_effort")):
+        value = attempt.get(source, evidence.get(source))
+        if isinstance(value, str) and value.strip():
+            result[target] = value.strip()
+    duration = _attempt_duration_ms(attempt)
+    if duration is not None:
+        result["duration_ms"] = duration
+    return result
+
+
+@lru_cache(maxsize=512)
+def _local_thread_metadata(conversation_id):
+    """Read only model/effort hints from local Codex state databases."""
+    if not isinstance(conversation_id, str) or not conversation_id or len(conversation_id) > 200:
+        return None
+    homes = []
+    for raw in (os.getenv("FLEET_CODEX_HOME"), os.getenv("CODEX_HOME")):
+        if raw:
+            homes.append(Path(raw))
+    homes.append(Path.home() / ".codex")
+    homes.append(Path("/opt/data/.fleet-codex"))
+    seen = set()
+    for home in homes:
+        try:
+            resolved = str(home.expanduser().resolve())
+        except (OSError, RuntimeError):
+            continue
+        if resolved in seen:
+            continue
+        seen.add(resolved)
+        for database in sorted(Path(resolved).glob("state_*.sqlite")):
+            try:
+                connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=0.25)
+                try:
+                    row = connection.execute(
+                        "SELECT model, reasoning_effort FROM threads WHERE id=? LIMIT 1",
+                        (conversation_id,),
+                    ).fetchone()
+                finally:
+                    connection.close()
+            except (OSError, sqlite3.Error, ValueError):
+                continue
+            if row:
+                return {"model": str(row[0] or "").strip(), "reasoning_effort": str(row[1] or "").strip()}
+    return None
 
 
 def reply(value):
@@ -89,6 +185,12 @@ def tasks():
     return reply({"tasks": [task(r) for r in rows], "possibly_truncated": len(rows) >= 100})
 
 
+@router.get("/tasks/archived")
+def archived_tasks():
+    rows = FleetClient().collection("tasks", status="archived", include_archived="1", limit=100)
+    return reply({"tasks": [task(r) for r in rows]})
+
+
 @router.get("/decisions")
 def decisions():
     rows = FleetClient().collection("decisions", status="open")
@@ -109,11 +211,36 @@ def detail(task_id: str):
         raise HTTPException(502, "Invalid Fleet task detail; retry")
     row = task(data["task"])
     summary = data["task"].get("spec_json", "")
-    try:
-        spec = json.loads(summary) if isinstance(summary, str) else summary
-    except ValueError:
-        spec = None
-    row["spec_json"] = {"summary": (spec.get("summary") or spec.get("prompt") or "") if isinstance(spec, dict) else summary if isinstance(summary, str) else ""}
+    trailing = ""
+    if isinstance(summary, str):
+        try:
+            spec = json.loads(summary)
+        except ValueError:
+            spec = None
+            try:
+                parsed, end = json.JSONDecoder().raw_decode(summary.lstrip())
+                if isinstance(parsed, dict):
+                    spec = dict(parsed)
+                    extra = summary.lstrip()[end:].strip()
+                    if extra:
+                        trailing = extra
+            except ValueError:
+                pass
+    else:
+        spec = summary
+    if isinstance(spec, dict):
+        row["spec_json"] = dict(spec)
+        if trailing:
+            prompt = row["spec_json"].get("prompt")
+            row["spec_json"]["prompt"] = f"{prompt}\n\n{trailing}" if isinstance(prompt, str) and prompt else trailing
+            row["spec_json"]["raw"] = summary
+        if not isinstance(row["spec_json"].get("summary"), str):
+            row["spec_json"]["summary"] = ""
+        if not isinstance(row["spec_json"].get("prompt"), str):
+            row["spec_json"]["prompt"] = ""
+    else:
+        text = summary if isinstance(summary, str) else ""
+        row["spec_json"] = {"summary": "", "prompt": text, "raw": text}
     if isinstance(spec, dict):
         for target, source in (("model_used", "model"), ("reasoning_effort", "reasoning_effort")):
             if isinstance(spec.get(source), str):
@@ -122,21 +249,42 @@ def detail(task_id: str):
     if isinstance(acceptance, str):
         row["acceptance"] = [{"label": s, "checked": row["status"] == "done"} for s in acceptance.splitlines() if s.strip()]
     attempts = data.get("attempts") or []
-    model = next((a.get("model_used") for a in attempts if a.get("model_used")), None)
+    if not isinstance(attempts, list):
+        attempts = []
+    attempts = [a for a in attempts if isinstance(a, dict)]
+    ordered = sorted(attempts, key=lambda a: _timestamp(a.get("started_at")) or 0, reverse=True)
+    model = next((_attempt_model(a) for a in ordered if _attempt_model(a)), None)
     if model:
         row["model_used"] = model
+    latest = ordered[0] if ordered else {}
+    latest_evidence = _json_object(latest.get("evidence_json"))
+    if isinstance(latest_evidence.get("runner"), str) and latest_evidence["runner"].strip():
+        row["capability"] = row.get("capability") or latest_evidence["runner"].strip()
+    if not isinstance(row.get("reasoning_effort"), str) or not row["reasoning_effort"].strip():
+        for value in (latest.get("reasoning_effort"), latest_evidence.get("reasoning_effort")):
+            if isinstance(value, str) and value.strip():
+                row["reasoning_effort"] = value.strip()
+                break
     # Missing/truncated attempt history is not a trustworthy total.
-    if attempts and len(attempts) < 50 and all(a.get("ended_at") or a.get("status") == "running" for a in attempts):
-        try:
-            total = sum(max(0, ((datetime.fromisoformat(a["ended_at"].replace("Z", "+00:00")) if a.get("ended_at") else datetime.now(timezone.utc))
-                               - datetime.fromisoformat(a["started_at"].replace("Z", "+00:00"))).total_seconds()) for a in attempts)
-            row["duration_seconds"] = total
-        except (ValueError, KeyError, TypeError):
-            pass
+    if attempts and len(attempts) < 50:
+        durations = [_attempt_duration_ms(a) for a in attempts]
+        if all(value is not None for value in durations):
+            row["duration_seconds"] = sum(float(value) for value in durations) / 1000
     # v1's list attempts counter counts retries, so detail records are authoritative.
     row["attempt_count"] = len(attempts)
     if not row.get("conversation_id"):
         row["conversation_id"] = next((a["conversation_id"] for a in attempts if a.get("conversation_id")), None)
+    thread = _local_thread_metadata(row.get("conversation_id"))
+    if thread:
+        row["conversation_local"] = True
+        if thread.get("model") and not row.get("model_used"):
+            row["model_used"] = thread["model"]
+        if thread.get("reasoning_effort") and not row.get("reasoning_effort"):
+            row["reasoning_effort"] = thread["reasoning_effort"]
+    elif row.get("conversation_id"):
+        row["conversation_local"] = False
+    if row.get("source_session_id"):
+        row["source_local"] = True
     if row["status"] in ("blocked", "triage") and not row.get("blocked_reason"):
         row["blocked_reason"] = next((a.get("error") or a.get("reason") for a in attempts if a.get("error") or a.get("reason")), None)
 
@@ -157,10 +305,12 @@ def detail(task_id: str):
     choices = [decision(d) for d in decisions
                if d.get("status") == "open" and d.get("task_id") == task_id]
     row["decision"] = choices[0] if choices else None
+    normalized_attempts = [_attempt_metadata(a) for a in ordered]
+    row["attempts"] = normalized_attempts
     return reply({"task": row, "open_decision": row["decision"], "artifacts": [],
                   "review_notes": [{"text": e["payload"], "at": e.get("at", "")} for e in data.get("events", [])
                                    if e.get("type") == "task.note" and isinstance(e.get("payload"), str)],
-                  "attempts": [{k: a[k] for k in ("id", "status", "worker_id", "started_at", "ended_at", "conversation_id", "error", "reason") if k in a} for a in attempts]})
+                  "attempts": normalized_attempts})
 
 
 async def write_body(request: Request):

@@ -1,12 +1,17 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   attention,
+  activeAttempt,
   canMove,
   columns,
   decisionOptions,
   delivered,
   expired,
+  isZombieRunning,
   reordered,
+  runtimeLine,
+  sessionEntries,
+  specMarkdown,
   verifyMode,
   type Task,
 } from "../dashboard/src/task-control-model";
@@ -233,5 +238,63 @@ describe("real v2 UI boundary", () => {
     await expect(api.detail("one")).rejects.toThrow(
       /administrator|Refresh|Reload/,
     );
+  });
+});
+
+describe("card runtime metadata", () => {
+  const now = Date.parse("2026-11-03T12:00:00Z");
+  const started = {
+    ...base,
+    status: "review" as const,
+    machine: "nas",
+    capability: "codex",
+    assignee: "W-nas",
+    attempts: [{
+      id: "A-1", status: "ok", started_at: "2026-11-03T10:48:00Z", ended_at: "2026-11-03T11:00:00Z",
+      model_used: "gpt-5.2", evidence_json: JSON.stringify({ final_model: "gpt-5.2", runner: "codex", duration_ms: 720000 }),
+    }],
+    spec_json: { reasoning_effort: "high" },
+  };
+  it("renders fixed-order plain values and final minutes for executed review tasks", () => {
+    expect(runtimeLine(started, now)).toBe("nas codex gpt-5.2 high 12m");
+  });
+  it("shows only preference values before any attempt", () => {
+    const queued = { ...base, status: "ready" as const, machine: "home", attempts: [], spec_json: { model: "gpt-5.2" } };
+    expect(runtimeLine(queued, now)).toBe("home gpt-5.2");
+    expect(runtimeLine({ ...queued, status: "blocked" as const, attempts: [], conversation_id: undefined }, now)).toBe("home gpt-5.2");
+  });
+  it("keeps blocked attempts visible instead of treating the status as unstarted", () => {
+    const blocked = { ...started, status: "blocked" as const };
+    expect(runtimeLine(blocked, now)).toBe("nas codex gpt-5.2 high 12m");
+  });
+  it("stops ticking zombie running tasks and freezes completed totals", () => {
+    const zombie = { ...started, status: "running" as const, assignee: undefined,
+      attempts: [{ ...started.attempts[0], model_used: "gpt-5.2" }] };
+    expect(activeAttempt(zombie)).toBeNull();
+    expect(isZombieRunning(zombie)).toBe(true);
+    expect(runtimeLine(zombie, now)).toBe("nas codex gpt-5.2 high 12m");
+    const active = { ...started, status: "running" as const, attempts: [{
+      ...started.attempts[0], ended_at: undefined, evidence_json: undefined, started_at: "2026-11-03T11:50:00Z",
+    }] };
+    expect(activeAttempt(active)).not.toBeNull();
+    expect(runtimeLine(active, now)).toBe("nas codex gpt-5.2 high 10m");
+  });
+  it("omits missing metadata instead of writing placeholders", () => {
+    const sparse = { ...started, machine: undefined, capability: undefined, attempts: [],
+      attempt_count: 1, conversation_id: "c", spec_json: { reasoning_effort: "medium" } };
+    expect(runtimeLine(sparse, now)).toBe("medium");
+    expect(runtimeLine(sparse, now)).not.toMatch(/未提供|Not recorded|未知/);
+  });
+  it("opens local sessions immediately and remote sessions only after the run ends", () => {
+    const local = { ...started, status: "running" as const, source_session_id: "s", source_profile: "default", source_session_kind: "hermes" as const,
+      conversation_id: "c", conversation_profile: "writer", conversation_kind: "codex" as const, conversation_local: true };
+    expect(sessionEntries(local).filter((row) => row.canOpen)).toHaveLength(2);
+    const remote = { ...local, conversation_local: false, attempts: [{ ...started.attempts[0], ended_at: undefined }] };
+    expect(sessionEntries(remote).find((row) => row.label === "conversation")?.canOpen).toBe(false);
+    expect(sessionEntries({ ...remote, status: "done" as const }).find((row) => row.label === "conversation")?.canOpen).toBe(true);
+  });
+  it("renders spec prompt Markdown and never exposes the JSON wrapper", () => {
+    expect(specMarkdown({ ...base, spec_json: { prompt: "# Title\n- one", model: "x" } })).toBe("# Title\n- one");
+    expect(specMarkdown({ ...base, spec_json: { raw: "## Raw" } })).toBe("## Raw");
   });
 });

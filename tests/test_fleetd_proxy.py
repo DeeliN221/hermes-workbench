@@ -114,6 +114,19 @@ def test_pagination(client, monkeypatch):
     assert "cursor=next" in seen[1]
 
 
+def test_archived_collection_is_separate_and_bounded(client, monkeypatch):
+    seen = []
+    def get(self, path):
+        seen.append(path)
+        return {"tasks": [{"id": "T-archived", "title": "Old", "status": "archived"}]}
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    response = client.get(BASE + "/tasks/archived", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["tasks"][0]["status"] == "archived"
+    assert "status=archived" in seen[0]
+    assert "include_archived=1" in seen[0]
+
+
 @pytest.mark.parametrize("status,expected", V1_STATUSES + [
     ("future-status", "triage"), (None, "triage"), ([], "triage"), ("", "triage"),
 ])
@@ -295,7 +308,8 @@ def test_runtime_and_session_metadata_are_not_invented(client, monkeypatch):
     assert mapped["duration_seconds"] == 180
     assert mapped["model_used"] == "actual-model"
     assert mapped["reasoning_effort"] == "high"
-    assert mapped["spec_json"] == {"summary": "Do the work"}
+    assert mapped["spec_json"]["prompt"] == "Do the work"
+    assert mapped["spec_json"]["summary"] == ""
     assert mapped["blocked_reason"] == "No matching worker"
     assert not mapped.get("source_session_id") and not mapped.get("conversation_id")
     data["attempts"] *= 25
