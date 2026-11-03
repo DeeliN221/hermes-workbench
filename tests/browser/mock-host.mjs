@@ -303,6 +303,10 @@ function apiPayload(url, method, body = null, preferences = new Map()) {
     { model: 'deepseek/deepseek-flash', displayName: 'DeepSeek Flash', isDefault: false, supportsFast: true,
       defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] },
   ] };
+  if (pathname === '/api/plugins/workbench/opencode/models') return { data: [] };
+  if (pathname === '/api/plugins/workbench/opencode/model-options') return {
+    slug: 'opencode-go', name: 'OpenCode Go', authenticated: false, models: [],
+  };
   if (pathname === '/api/plugins/workbench/codex-runtime/status') return {
     installed_version: '0.24.0', latest_version: '0.24.0', update_available: false, busy: false,
   };

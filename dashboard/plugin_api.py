@@ -33,6 +33,8 @@ from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSock
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
+from opencode_provider import router as opencode_router
+
 router = APIRouter()
 
 # A request-scoped override lets the Codex router reuse the exact file safety
@@ -1802,3 +1804,6 @@ def get_home_preferences(request: Request):
 def put_home_preferences(request: Request, body: HomePreferencesBody, profile: str = 'default'):
     from codex_bridge import _user
     return _home_preferences(_user(request), profile, body)
+
+
+router.include_router(opencode_router, prefix="/opencode")
