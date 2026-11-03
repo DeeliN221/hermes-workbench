@@ -358,3 +358,6 @@ html[data-workbench-accessory][data-workbench-accessory-settings="true"][data-wo
 
 .workbench-actions-dialog[open] { visibility: visible; }
 .dashboard-rail-top .workbench-launcher { display: grid; place-items: center; width: 40px; height: 40px; padding: 7px; border: 0; background: transparent; color: inherit; cursor: pointer; }
+@media (max-width: 360px) {
+  .dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid :is(a, button) { min-height: 100px; }
+}

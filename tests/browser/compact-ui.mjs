@@ -104,5 +104,16 @@ try {
     assert.deepEqual(errors, []);
     await page.close();
   }
+  if (!before) {
+    const small = await browser.newPage({ viewport: { width: 320, height: 568 } });
+    await small.goto(host.origin + '/');
+    await small.locator('.workbench-launcher').click();
+    const menu = small.locator('.workbench-actions-dialog');
+    await menu.waitFor();
+    const box = await menu.boundingBox();
+    assert.ok(box.x >= 0 && box.x + box.width <= 320 && box.y >= 0 && box.y + box.height <= 568);
+    assert.equal(await menu.locator('a, button').evaluateAll(nodes => nodes.every(node => node.scrollHeight <= node.clientHeight && node.scrollWidth <= node.clientWidth)), true, 'Small-phone labels fit their cells without reducing the font');
+    await small.close();
+  }
   console.log('Compact UI localhost acceptance passed');
 } finally { await browser.close(); await host.close(); }
