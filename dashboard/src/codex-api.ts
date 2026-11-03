@@ -20,7 +20,7 @@ export interface CodexSession {
   /** 'user' = titled by hand, 'auto' = first-message title, null = neither yet. */
   titleSource?: 'user' | 'auto' | null;
 }
-export interface CodexGroup { id: string; name: string; workspaceId: string; workspacePath: string }
+export interface CodexGroup { color?: string; icon?: string; id: string; name: string; workspaceId: string; workspacePath: string }
 const GOAL_STATES = ['active', 'paused', 'blocked', 'usageLimited', 'budgetLimited', 'complete'] as const;
 type GoalStatus = typeof GOAL_STATES[number];
 export interface CodexGoal {
@@ -102,7 +102,7 @@ export async function searchCodexSessions(read: FetchJSON, profile: string, quer
 }
 export function normalizeGroup(value: unknown): CodexGroup | null {
   const row = record(value), id = text(row.id ?? row.groupId ?? row.group_id).trim(), name = text(row.name ?? row.title).trim();
-  return id && name ? { id, name, workspaceId: text(row.workspaceId ?? row.workspace_id).trim(), workspacePath: text(row.workspacePath ?? row.workspace_path ?? row.path).trim() } : null;
+  return id && name ? { id, name, color: text(row.color), icon: text(row.icon), workspaceId: text(row.workspaceId ?? row.workspace_id).trim(), workspacePath: text(row.workspacePath ?? row.workspace_path ?? row.path).trim() } : null;
 }
 export async function listCodexGroups(read: FetchJSON, profile: string) {
   return rows(await read(`${API}/groups?profile=${encode(profile)}`), 'items').flatMap(value => { const group = normalizeGroup(value); return group ? [group] : []; });
@@ -277,4 +277,8 @@ export async function answerCodexApproval(read: FetchJSON, profile: string, sess
     profile, approvalId, ...(typeof answer === 'object' ? { answers: answer } : { decision: answer === 'approve' ? 'accept' : answer === 'reject' ? 'decline' : answer }),
   })));
   if (result.status !== 'accepted') throw Object.assign(new Error(uiText('提交状态未知，请等待会话恢复后检查，勿重复提交。', 'Submission status is unknown. Wait for the session to recover; do not submit again.')), { requestDeliveryUnknown: true });
+}
+
+export function styleCodexGroup(read: FetchJSON, profile: string, id: string, color: string, icon: string) {
+  return writeGroup(read, `${API}/groups/${encode(id)}/appearance?profile=${encode(profile)}`, 'PATCH', { color, icon });
 }

@@ -618,6 +618,10 @@ class BridgeStore:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN session_scope TEXT NOT NULL DEFAULT 'personal'")
             if "execution_node_id" not in session_columns:
                 self.connection.execute("ALTER TABLE codex_sessions ADD COLUMN execution_node_id TEXT NOT NULL DEFAULT ''")
+            group_columns = {str(row[1]) for row in self.connection.execute("PRAGMA table_info(codex_session_groups)").fetchall()}
+            for column in ("color", "icon"):
+                if column not in group_columns:
+                    self.connection.execute(f"ALTER TABLE codex_session_groups ADD COLUMN {column} TEXT NOT NULL DEFAULT ''")
             request_columns = {str(row[1]) for row in self.connection.execute("PRAGMA table_info(codex_requests)").fetchall()}
             if "capacity_retry_count" not in request_columns:
                 self.connection.execute("ALTER TABLE codex_requests ADD COLUMN capacity_retry_count INTEGER NOT NULL DEFAULT 0")
@@ -912,7 +916,7 @@ class BridgeStore:
 
         with self.lock:
             rows = self.connection.execute(
-                "SELECT group_id,name,workspace_id,workspace_path FROM codex_session_groups WHERE user_id=? AND profile=? ORDER BY name,group_id",
+                "SELECT group_id,name,workspace_id,workspace_path,color,icon FROM codex_session_groups WHERE user_id=? AND profile=? ORDER BY name,group_id",
                 (user, profile),
             ).fetchall()
         return [self._group_value(row) for row in rows]
@@ -926,6 +930,8 @@ class BridgeStore:
             "name": value["name"],
             "workspaceId": value["workspace_id"],
             "workspacePath": value["workspace_path"],
+            "color": value.get("color", ""),
+            "icon": value.get("icon", ""),
         }
 
     def create_group(self, user: str, profile: str, workspace_id: str, workspace_path: str, name: str) -> dict[str, Any]:
@@ -949,7 +955,7 @@ class BridgeStore:
                 self.connection.rollback()
                 raise HTTPException(status_code=409, detail="A group with this name already exists") from exc
             row = self.connection.execute(
-                "SELECT group_id,name,workspace_id,workspace_path FROM codex_session_groups WHERE user_id=? AND profile=? AND group_id=?",
+                "SELECT group_id,name,workspace_id,workspace_path,color,icon FROM codex_session_groups WHERE user_id=? AND profile=? AND group_id=?",
                 (user, profile, group_id),
             ).fetchone()
         if row is None:
@@ -961,7 +967,7 @@ class BridgeStore:
 
         with self.lock:
             row = self.connection.execute(
-                "SELECT group_id,name,workspace_id,workspace_path FROM codex_session_groups WHERE user_id=? AND profile=? AND group_id=?",
+                "SELECT group_id,name,workspace_id,workspace_path,color,icon FROM codex_session_groups WHERE user_id=? AND profile=? AND group_id=?",
                 (user, profile, group_id),
             ).fetchone()
         return self._group_value(row) if row is not None else None
@@ -991,12 +997,25 @@ class BridgeStore:
                 self.connection.rollback()
                 raise HTTPException(status_code=409, detail="A group with this name already exists") from exc
             row = self.connection.execute(
-                "SELECT group_id,name,workspace_id,workspace_path FROM codex_session_groups WHERE user_id=? AND profile=? AND group_id=?",
+                "SELECT group_id,name,workspace_id,workspace_path,color,icon FROM codex_session_groups WHERE user_id=? AND profile=? AND group_id=?",
                 (user, profile, group_id),
             ).fetchone()
         if row is None:
             raise RuntimeError("renamed group was not persisted")
         return self._group_value(row)
+
+    def style_group(self, user: str, profile: str, group_id: str, color: str, icon: str) -> dict[str, Any]:
+        if color not in ("", "blue", "green", "amber", "purple", "rose") or icon not in ("", "folder", "code", "book", "star", "flask"):
+            raise HTTPException(status_code=400, detail="Invalid project appearance")
+        with self.lock:
+            if self.group(user, profile, group_id) is None:
+                raise HTTPException(status_code=404, detail="Group not found")
+            self.connection.execute(
+                "UPDATE codex_session_groups SET color=?,icon=?,updated_at=? WHERE user_id=? AND profile=? AND group_id=?",
+                (color, icon, time.time(), user, profile, group_id),
+            )
+            self.connection.commit()
+            return self.group(user, profile, group_id)
 
     def delete_group(self, user: str, profile: str, group_id: str) -> None:
         """Delete a group and move its sessions to the ungrouped state."""
@@ -3293,6 +3312,11 @@ class GroupCreateBody(BaseModel):
     name: str
 
 
+class GroupStyleBody(BaseModel):
+    color: str = ""
+    icon: str = ""
+
+
 class GroupRenameBody(BaseModel):
     """Input for changing a session group's display name."""
 
@@ -3389,6 +3413,10 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
         """Rename one group without crossing user or profile scope."""
 
         return {"group": await asyncio.to_thread(service.rename_group, _user(request), _safe(profile, "profile"), _safe(group_id, "group"), body.name)}
+
+    @router.patch("/groups/{group_id}/appearance")
+    async def style_group(group_id: str, body: GroupStyleBody, request: Request, profile: str = "default") -> dict[str, Any]:
+        return {"group": await asyncio.to_thread(service.store.style_group, _user(request), _safe(profile, "profile"), _safe(group_id, "group"), body.color, body.icon)}
 
     @router.delete("/groups/{group_id}")
     async def delete_group(group_id: str, request: Request, profile: str = "default") -> dict[str, bool]:

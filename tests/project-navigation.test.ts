@@ -129,7 +129,7 @@ it('keeps independent project actions outside disclosure summaries', () => {
   expect(descendants(summary).some(node => ['button', 'input', 'select', 'textarea', 'a'].includes(node.type))).toBe(false);
   const actions = nodes.find(node => node.props.className === 'project-actions');
   expect(nodes.find(node => node.type === 'details').children).not.toContain(actions);
-  const [rename, remove] = actions.children;
+  const [, rename, remove] = actions.children;
   const trigger = {} as HTMLElement;
   rename.props.onClick({ preventDefault: vi.fn(), currentTarget: trigger });
   remove.props.onClick({ preventDefault: vi.fn(), currentTarget: trigger });
@@ -154,7 +154,7 @@ describe('project and temporary session split', () => {
       hooks: { useState: (value: any) => [value, vi.fn()], useRef: (value: any) => ({ current: value }), useEffect: vi.fn() },
     };
     const tree = createProjectNavigation(sdk)({
-      profile: 'default', sessions: [], projects: [], activeSessionId: '',
+      profile: 'default', sessions: [], projects: [{ id: 'p', name: 'Project' }], activeSessionId: '',
       renderSession: vi.fn(), onCreate: vi.fn(), onNewSession: vi.fn(), onRename: vi.fn(), onDelete: vi.fn(), onMove: vi.fn(),
     });
     const split = tree.children[0];
@@ -168,4 +168,29 @@ describe('project and temporary session split', () => {
     expect(separator.props['aria-valuenow']).toBe(Math.round(PROJECT_SPLIT_DEFAULT * 100));
     expect(separator.props.tabIndex).toBe(0);
   });
+});
+
+it('omits project section and splitter without projects, while keeping accessible creation', () => {
+  const onCreate = vi.fn(), onNewSession = vi.fn();
+  const sdk = {
+    React: { Fragment: 'fragment', useId: () => 'empty-projects',
+      createElement: (type: string, props: any, ...children: any[]) => ({ type, props: props || {}, children: children.flat() }) },
+    hooks: { useState: (value: any) => [value, vi.fn()], useRef: (value: any) => ({ current: value }), useEffect: vi.fn() },
+  };
+  const tree = createProjectNavigation(sdk)({
+    profile: 'empty', sessions: [], projects: [], activeSessionId: '', renderSession: vi.fn(),
+    onCreate, onNewSession, onRename: vi.fn(), onDelete: vi.fn(), onMove: vi.fn(),
+  });
+  const descendants = (node: any): any[] => node && typeof node === 'object' ? [node, ...node.children.flatMap(descendants)] : [];
+  const nodes = descendants(tree);
+  expect(nodes.some(node => node.props.className === 'project-navigation')).toBe(false);
+  expect(nodes.some(node => node.props.role === 'separator')).toBe(false);
+  const create = nodes.find(node => node.props['aria-label'] === '新建临时会话' || node.props['aria-label'] === 'New temporary session');
+  create.props.onClick();
+  expect(onNewSession).toHaveBeenCalledOnce();
+  const trigger = {} as HTMLElement;
+  create.props.onContextMenu({ preventDefault: vi.fn(), currentTarget: trigger });
+  create.props.onKeyDown({ key: 'F10', shiftKey: true, preventDefault: vi.fn(), currentTarget: trigger });
+  expect(onCreate).toHaveBeenCalledTimes(2);
+  expect(onCreate).toHaveBeenCalledWith(trigger);
 });
