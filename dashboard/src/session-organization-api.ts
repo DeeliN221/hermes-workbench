@@ -21,10 +21,12 @@ function query(value: string): string {
 export async function loadSessionOrganization(
   fetchJSON: FetchJSON,
   profile: string,
+  signal?: AbortSignal,
 ): Promise<SessionOrganizationMap> {
-  const response = await fetchJSON<{ items?: unknown[] }>(
-    `${ORGANIZATION_API}?profile=${query(profile)}`,
-  );
+  const url = `${ORGANIZATION_API}?profile=${query(profile)}`;
+  const response = await (signal
+    ? fetchJSON<{ items?: unknown[] }>(url, { signal })
+    : fetchJSON<{ items?: unknown[] }>(url));
   return indexSessionOrganization(response?.items);
 }
 

@@ -103,6 +103,15 @@ class BridgeSearchContract(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(result['contentSearch'])
         self.assertIn('thread/search', result['contentError'])
 
+    async def test_metadata_only_search_skips_the_native_thread_index(self):
+        result = await self.bridge.search_sessions('qa', 'project-manager', 'metals', 20, content=False)
+
+        self.assertEqual([hit['session_id'] for hit in result['results']], ['session-a'])
+        self.assertEqual(result['results'][0]['matched'], 'title')
+        self.assertFalse(result['contentSearch'])
+        self.assertEqual(result['contentError'], '')
+        self.assertEqual(self.calls, [])
+
 
 if __name__ == '__main__':
     unittest.main()
