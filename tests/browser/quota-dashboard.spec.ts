@@ -33,10 +33,13 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       await page.goto('/config?profile=default');
       const nav = page.locator('.dashboard-settings-nav');
       await expect(nav).toBeVisible();
-      await expect(nav.locator('[data-settings-group]')).toHaveCount(3);
+      await expect(nav.locator('[data-settings-group]')).toHaveCount(4);
+      await expect(nav.locator('[data-settings-group]').first()).toHaveAttribute('data-settings-group', 'versions');
+      await expect(nav.getByRole('link', { name: 'Version switching', exact: true })).toBeVisible();
+      await expect(nav.getByRole('button', { name: 'General settings', exact: true })).toHaveAttribute('aria-expanded', 'false');
       const more = nav.getByRole('button', { name: /More/ });
       await expect(more).toHaveAttribute('aria-expanded', 'false');
-      for (const href of ['/env', '/logs', '/config?workbench=versions']) {
+      for (const href of ['/env', '/logs']) {
         await expect(nav.locator(`[data-settings-group="more"] a[href^="${href}"]`)).toBeHidden();
       }
       await more.click();
@@ -83,13 +86,13 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
       }
     });
 
-    test('deep links keep More expanded and current routes reachable', async ({ page }) => {
+    test('deep links keep current routes reachable without expanding More for versions', async ({ page }) => {
       for (const [url, name] of [['/env', 'Credentials'], ['/logs', 'Logs'], ['/config?workbench=versions', 'Version switching'], ['/config?workbench=settings', 'Version switching']]) {
         await page.goto(url);
         const nav = page.locator('.dashboard-settings-nav');
         await expect(nav.getByRole('link', { name, exact: true, includeHidden: true })).toHaveAttribute('aria-current', 'page');
         if (mobile) await page.getByRole('button', { name: '← Settings', exact: true }).click();
-        await expect(nav.getByRole('button', { name: /More/ })).toHaveAttribute('aria-expanded', 'true');
+        await expect(nav.getByRole('button', { name: /More/ })).toHaveAttribute('aria-expanded', name === 'Version switching' ? 'false' : 'true');
         await expect(nav.getByRole('link', { name, exact: true })).toBeVisible();
       }
     });
