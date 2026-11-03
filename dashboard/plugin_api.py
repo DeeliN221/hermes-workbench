@@ -14,6 +14,7 @@ from contextvars import ContextVar
 import fcntl
 import hashlib
 import json
+import mimetypes
 import os
 import pty
 import re
@@ -1065,6 +1066,45 @@ def _resolve_path(raw_path: str | None, *, must_exist: bool = True) -> tuple[Pat
     return resolved, relative
 
 
+def _scan_listing(path: str) -> tuple[Path, Path, Path, list[dict[str, Any]]]:
+    """Scan one directory while silently omitting unsafe or unreadable children."""
+
+    target, relative = _resolve_path(path)
+    root = _workspace_root()
+    if not target.is_dir():
+        raise HTTPException(status_code=400, detail="Path is not a directory")
+
+    entries: list[dict[str, Any]] = []
+    try:
+        children = sorted(
+            target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower())
+        )
+    except PermissionError:
+        raise HTTPException(status_code=403, detail="Directory is not readable")
+    for child in children:
+        try:
+            resolved = child.resolve(strict=True)
+            child_relative = resolved.relative_to(root)
+        except (OSError, RuntimeError, ValueError):
+            continue
+        if _hide_from_tree(child_relative):
+            continue
+        try:
+            stat = resolved.stat()
+        except OSError:
+            continue
+        entries.append(
+            {
+                "name": child.name,
+                "path": child_relative.as_posix(),
+                "type": "directory" if resolved.is_dir() else "file",
+                "size": None if resolved.is_dir() else stat.st_size,
+                "mtime": stat.st_mtime,
+            }
+        )
+    return root, target, relative, entries
+
+
 def _version(data: bytes) -> str:
     """Build the stable content version used by optimistic saves."""
 
@@ -1226,41 +1266,50 @@ async def post_kanban_overview(body: KanbanOverviewBody) -> dict[str, Any]:
 async def list_files(path: str = Query(default="")) -> dict[str, Any]:
     """List direct children of one workspace directory."""
 
-    target, relative = await asyncio.to_thread(_resolve_path, path)
-    root = await asyncio.to_thread(_workspace_root)
-    if not target.is_dir():
-        raise HTTPException(status_code=400, detail="Path is not a directory")
+    root, _target, relative, entries = await asyncio.to_thread(_scan_listing, path)
+    return {
+        "path": relative.as_posix(),
+        "entries": entries,
+        "root": str(root),
+    }
 
-    def _scan() -> list[dict[str, Any]]:
-        entries: list[dict[str, Any]] = []
-        try:
-            children = sorted(target.iterdir(), key=lambda item: (not item.is_dir(), item.name.lower()))
-        except PermissionError:
-            raise HTTPException(status_code=403, detail="Directory is not readable")
-        for child in children:
-            try:
-                resolved = child.resolve(strict=True)
-                child_relative = resolved.relative_to(root)
-            except (OSError, RuntimeError, ValueError):
-                continue
-            if _hide_from_tree(child_relative):
-                continue
-            try:
-                stat = resolved.stat()
-            except OSError:
-                continue
-            entries.append(
-                {
-                    "name": child.name,
-                    "path": child_relative.as_posix(),
-                    "type": "directory" if resolved.is_dir() else "file",
-                    "size": None if resolved.is_dir() else stat.st_size,
-                    "mtime": stat.st_mtime,
-                }
-            )
-        return entries
 
-    return {"path": relative.as_posix(), "entries": await asyncio.to_thread(_scan)}
+@router.get("/managed-files")
+async def list_managed_files(path: str = Query(default="")) -> dict[str, Any]:
+    """Mirror the native Files response while keeping the Workbench root policy.
+
+    Older host releases abort the whole directory listing when one child is a
+    symlink outside the managed root. Workbench uses this endpoint only for a
+    failed root listing, so ordinary out-of-root requests still go through the
+    host's original validation and remain forbidden.
+    """
+
+    root, target, _relative, entries = await asyncio.to_thread(_scan_listing, path)
+    managed_entries: list[dict[str, Any]] = []
+    for entry in entries:
+        absolute = root / str(entry["path"])
+        is_directory = entry["type"] == "directory"
+        managed_entries.append(
+            {
+                "name": entry["name"],
+                "path": str(absolute),
+                "is_directory": is_directory,
+                "size": entry["size"],
+                "mtime": entry["mtime"],
+                "mime_type": None
+                if is_directory
+                else (mimetypes.guess_type(absolute.name)[0] or "application/octet-stream"),
+            }
+        )
+    parent = str(target.parent) if target != root and target.parent != target else None
+    return {
+        "root": str(root),
+        "locked_root": str(root),
+        "can_change_path": False,
+        "path": str(target),
+        "parent": parent,
+        "entries": managed_entries,
+    }
 
 
 @router.get("/file")

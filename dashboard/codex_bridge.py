@@ -3110,8 +3110,8 @@ class CodexBridge:
                     detail = f"{detail}: {message}"
                 raise HTTPException(status_code=502, detail=detail) from exc
 
-    async def search_sessions(self, user: str, profile: str, query: str, limit: int = 60) -> dict[str, Any]:
-        """Search every mapped session by metadata and native thread content."""
+    async def search_sessions(self, user: str, profile: str, query: str, limit: int = 60, content: bool = True) -> dict[str, Any]:
+        """Search every mapped session by metadata and, when requested, native thread content."""
 
         term = " ".join(str(query or "").split()).strip()[:200]
         if not term:
@@ -3124,6 +3124,18 @@ class CodexBridge:
                 **session,
                 "matched": "id" if term.casefold() in identity else "title",
                 "snippet": "",
+            }
+
+        ordered = sorted(
+            results.values(),
+            key=lambda item: (0 if item.get("matched") in ("title", "id") else 1, -float(item.get("updated_at") or 0)),
+        )
+        if not content:
+            return {
+                "results": ordered[:limit],
+                "contentSearch": False,
+                "contentError": "",
+                "truncated": len(ordered) > limit,
             }
 
         content_search = False
@@ -3390,10 +3402,12 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
         return {"items": await asyncio.to_thread(service.store.list_sessions, _user(request), _safe(profile, "profile"), min(max(limit, 1), _MAX_PAGE), max(offset, 0), deleted, recent)}
 
     @router.get("/search")
-    async def search(request: Request, profile: str = "default", q: str = "", limit: int = 60) -> dict[str, Any]:
+    async def search(request: Request, profile: str = "default", q: str = "", limit: int = 60, content: bool = True) -> dict[str, Any]:
         """Search every session by title, id, or message content across the profile."""
 
-        return await service.search_sessions(_user(request), _safe(profile, "profile"), q, min(max(limit, 1), 100))
+        return await service.search_sessions(
+            _user(request), _safe(profile, "profile"), q, min(max(limit, 1), 100), content,
+        )
 
     @router.get("/execution-nodes")
     async def execution_nodes(request: Request, profile: str = "default") -> dict[str, Any]:

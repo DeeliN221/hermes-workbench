@@ -1,5 +1,8 @@
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { readSearchPreview, searchAllProfiles, searchResultKey, searchTime } from '../dashboard/src/session-search';
+import { clearSessionSearchCaches } from '../dashboard/src/session-search-api';
+
+beforeEach(() => clearSessionSearchCaches());
 
 describe('cross-profile search identity and partial failures', () => {
   it('includes the current profile even when absent from the roster and keeps identical IDs distinct', async () => {
@@ -45,7 +48,7 @@ describe('cross-profile search identity and partial failures', () => {
       return { results: [] };
     });
     expect((await searchAllProfiles(read as any, 'default', 'needle')).failures).toEqual(['Profile list']);
-    expect(read).toHaveBeenCalledTimes(4);
+    expect(read).toHaveBeenCalledTimes(5);
   });
 });
 

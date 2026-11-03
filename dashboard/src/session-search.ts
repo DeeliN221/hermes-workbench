@@ -1,65 +1,21 @@
 /** Cross-profile search keeps profile + engine + id together through preview and navigation. */
 import type { FetchJSON } from './workbench-api';
-import { searchCodexSessions, organizeCodexSession } from './codex-api';
+import { organizeCodexSession } from './codex-api';
 import { loadSessionOrganization } from './session-organization-api';
-import { searchSessions, loadRecentTranscript } from './session-api';
+import { loadRecentTranscript } from './session-api';
 import { messagesFromTurns, type ChatMessage } from './codex-messages';
 import type { WorkbenchTranscript } from './session-api';
 import { openHomeConversation } from './home-navigation';
 import { uiText as text } from './ui-locale';
+import { searchAllProfiles, searchResultKey, type SearchResult, type SearchSnapshot } from './session-search-api';
 import './session-search.css';
 
-export interface SearchResult {
-  id: string; profile: string; kind: 'session' | 'hermes' | 'archived';
-  title: string; snippet?: string; groupName?: string; updatedAt?: string | number;
-  session?: any;
-}
-export const searchResultKey = (row: SearchResult) => JSON.stringify([row.profile, row.kind, row.id]);
+export { searchAllProfiles, searchResultKey, type SearchResult } from './session-search-api';
 export function searchTime(value: SearchResult['updatedAt']): string {
   if (!value) return text('时间未知', 'Unknown date');
   const number = Number(value);
   const date = new Date(Number.isFinite(number) ? (number < 1e12 ? number * 1000 : number) : value);
   return Number.isNaN(date.valueOf()) ? text('时间未知', 'Unknown date') : date.toLocaleString();
-}
-
-export async function searchAllProfiles(read: FetchJSON, current: string, query: string) {
-  let profiles = [current];
-  const failures: string[] = [];
-  try {
-    const roster = await read<{ profiles: { name: string }[] }>('/api/profiles');
-    if (!Array.isArray(roster.profiles)) throw new Error('Invalid profile list');
-    profiles = [...new Set([current, ...roster.profiles.map(row => row.name).filter(Boolean)])];
-  } catch { failures.push(text('档案列表', 'Profile list')); }
-  const results: SearchResult[] = [];
-  // Bound fan-out on installations with many profiles; each worker reads both engines concurrently.
-  let cursor = 0;
-  await Promise.all(Array.from({ length: Math.min(4, profiles.length) }, async () => {
-    while (cursor < profiles.length) {
-      const profile = profiles[cursor++];
-      const codexRead: FetchJSON = async <T,>(url: string, init?: RequestInit) => {
-        const response = await read<T>(url, init);
-        if ((response as { contentError?: string }).contentError) failures.push(`${profile} / Codex ${text('正文搜索', 'content search')}`);
-        return response;
-      };
-      const [codex, hermes, organization] = await Promise.allSettled([
-        searchCodexSessions(codexRead, profile, query, 100), searchSessions(read, profile, query, true), loadSessionOrganization(read, profile),
-      ]);
-      if (organization.status === 'rejected') failures.push(`${profile} / ${text('项目信息', 'project metadata')}`);
-      if (codex.status === 'fulfilled') results.push(...codex.value.map(row => ({ ...row, profile,
-        kind: (row.deleted ? 'archived' : 'session') as SearchResult['kind'] })));
-      else failures.push(`${profile} / Codex`);
-      if (hermes.status === 'fulfilled') for (const row of hermes.value) {
-        if (!row.session_id || String(row.source).toLowerCase() === 'codex') continue;
-        const metadata = organization.status === 'fulfilled' ? organization.value[String(row.session_id)] : undefined;
-        results.push({ id: String(row.session_id), profile, kind: 'hermes', title: String(metadata?.displayName || row.title || row.session_title || row.snippet || row.session_id),
-          snippet: String(row.snippet || ''), groupName: String(metadata?.collection || row.group_name || row.project_name || ''), updatedAt: row.session_started });
-      } else failures.push(`${profile} / Hermes`);
-    }
-  }));
-  const kindOrder = { session: 0, hermes: 1, archived: 2 };
-  results.sort((a, b) => Number(b.profile === current) - Number(a.profile === current)
-    || a.profile.localeCompare(b.profile) || kindOrder[a.kind] - kindOrder[b.kind] || a.id.localeCompare(b.id));
-  return { results, failures };
 }
 
 export async function readSearchPreview(read: FetchJSON, row: SearchResult): Promise<ChatMessage[]> {
@@ -106,16 +62,25 @@ export function createSessionSearch(sdk: any, localResults: (props: any) => Sear
     useEffect(() => {
       if (!props.open || !query.trim()) { setRemote([]); setLoading(false); setNotice(''); return; }
       let live = true;
+      const controller = new AbortController();
       setLoading(true); setRemote([]); setNotice('');
+      const apply = (snapshot: SearchSnapshot) => {
+        if (!live) return;
+        setRemote(snapshot.results);
+        setNotice(snapshot.failures.length
+          ? text('部分来源搜索失败：', 'Some sources could not be searched: ') + snapshot.failures.join(', ')
+          : '');
+        setLoading(!snapshot.complete);
+      };
       const timer = setTimeout(() => {
-        searchAllProfiles(props.fetchJSON, props.profile, query.trim()).then(({ results, failures }) => {
-          if (!live) return;
-          setRemote(results);
-          setNotice(failures.length ? text('部分来源搜索失败：', 'Some sources could not be searched: ') + failures.join(', ') : '');
-        }).catch(() => { if (live) setNotice(text('搜索失败，请重试', 'Search failed. Please retry.')); })
+        searchAllProfiles(props.fetchJSON, props.profile, query.trim(), {
+          signal: controller.signal, onUpdate: apply,
+        }).then(apply).catch((reason: any) => {
+          if (live && reason?.name !== 'AbortError') setNotice(text('搜索失败，请重试', 'Search failed. Please retry.'));
+        })
           .finally(() => { if (live) setLoading(false); });
       }, 220);
-      return () => { live = false; clearTimeout(timer); };
+      return () => { live = false; clearTimeout(timer); controller.abort(); };
     }, [props.open, props.profile, query]);
     useEffect(() => {
       lifecycle.current += 1; setOpening(false);
@@ -189,7 +154,9 @@ export function createSessionSearch(sdk: any, localResults: (props: any) => Sear
               event.preventDefault(); setIndex(Math.max(0, Math.min(visible.length - 1, index + (event.key === 'ArrowDown' ? 1 : -1))));
             } else if (event.key === 'Enter' && visible[index]) { event.preventDefault(); choose(visible[index], index); }
           } }),
-        h('small', { role: 'status' }, loading ? text('正在搜索全部档案…', 'Searching all profiles…') : query.trim()
+        h('small', { role: 'status' }, loading ? visible.length
+          ? text('已显示部分结果，正在搜索其他档案…', 'Showing partial results; searching other profiles…')
+          : text('正在搜索全部档案…', 'Searching all profiles…') : query.trim()
           ? text(`显示 ${visible.length} 条结果（每个来源最多 100 条，请细化关键词）`, `${visible.length} results shown (up to 100 per source; refine your search)`)
           : text('当前档案最近会话；输入关键词搜索全部档案', 'Recent sessions in this profile; type to search all profiles')),
         notice ? h('p', { role: 'alert', className: 'codex-session-search-error' }, notice) : null,

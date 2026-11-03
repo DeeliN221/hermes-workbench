@@ -1,6 +1,6 @@
 import { rememberKanbanReturn } from './kanban-navigation';
 import { useFolderUpload } from './attachment-preferences';
-import { GenerationSpeed, generationSpeedPlacements } from './generation-speed';
+import { GenerationSpeed, latestGenerationMetrics } from './generation-speed';
 import { createSessionSearch } from './session-search';
 import { createWorkbenchTerminal } from './terminal-runtime';
 import { renderMarkdownSource as S2 } from './markdown-source';
@@ -9553,14 +9553,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     );
   }
   function P5(i, e, Process = Q5, Message = T5, detail = "standard") {
-    const blocks = processBlocks(e), speeds = generationSpeedPlacements(blocks);
-    return blocks.flatMap((block, index) => {
+    const blocks = processBlocks(e);
+    return blocks.flatMap((block) => {
       const message = block.kind === "message" ? block.message : block.messages[0];
       const content = block.kind === "message"
         ? W(i, Message, { key: message.id, React: i, message, detail })
         : W(i, Process, { key: block.key, React: i, messages: block.messages, hasFollowingBody: block.hasFollowingBody, timing: block.timing, detail });
-      const speed = speeds.get(index);
-      return speed ? [content, W(i, GenerationSpeed, { key: `speed:${speed.turnId}`, React: i, metrics: speed.metrics })] : [content];
+      return [content];
     });
   }
 
@@ -12820,6 +12819,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               ),
             )
           : null,
+        headerGenerationMetrics = latestGenerationMetrics(It),
         kv = B ? PM?.title || B : ei ? sessionDisplayTitle(M, ei) : runtimeText("新会话", "New session"),
         nc = Ts || !!B,
         dD = W(
@@ -12911,6 +12911,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                       : null,
                   )
                 : null,
+              !B && headerGenerationMetrics ? W(e, GenerationSpeed, { React: e, metrics: headerGenerationMetrics }) : null,
               W(e, "div", { className: "codex-center-heading-copy" },
               W(
                 e,

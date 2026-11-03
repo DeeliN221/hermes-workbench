@@ -3,16 +3,16 @@ import './generation-speed.css';
 
 export interface GenerationMetrics {
   outputTokens: number; reasoningOutputTokens?: number; activeSeconds: number;
-  samples: number; tokensPerSecond?: number;
+  samples: number; timingBasis?: string; tokensPerSecond?: number;
 }
 export function normalizeGenerationMetrics(value: unknown): GenerationMetrics | undefined {
   if (!value || typeof value !== 'object') return undefined;
   const row = value as Record<string, unknown>;
   const finite = (v: unknown): v is number => typeof v === 'number' && Number.isFinite(v) && v >= 0;
   if (!finite(row.outputTokens) || !finite(row.activeSeconds) || !finite(row.samples)) return undefined;
-  const valid = row.samples >= 2 && row.activeSeconds >= .25 && row.outputTokens >= 2;
+  const valid = row.timingBasis === 'model-generation' && row.samples >= 2 && row.activeSeconds >= .25 && row.outputTokens >= 2;
   const rate = valid ? row.outputTokens / row.activeSeconds : undefined;
-  return { outputTokens: row.outputTokens, activeSeconds: row.activeSeconds, samples: row.samples,
+  return { timingBasis: typeof row.timingBasis === 'string' ? row.timingBasis : undefined, outputTokens: row.outputTokens, activeSeconds: row.activeSeconds, samples: row.samples,
     reasoningOutputTokens: finite(row.reasoningOutputTokens) ? row.reasoningOutputTokens : undefined,
     tokensPerSecond: finite(rate) ? rate : undefined };
 }
@@ -20,12 +20,17 @@ export function generationSpeedLabel(metrics?: GenerationMetrics): string {
   return metrics?.tokensPerSecond === undefined ? '—' : `${metrics.tokensPerSecond.toFixed(1)} tok/s`;
 }
 export function generationSpeedDetails(metrics?: GenerationMetrics): string {
-  const definition = uiText('输出 token / 活跃生成时间，不含工具等待；超过 5 秒空闲会断开窗口。', 'Output tokens / active generation time, excluding tool waits; gaps over 5 seconds split the window.');
+  const definition = metrics?.timingBasis === 'model-generation'
+    ? uiText('模型输出 token / 模型生成时间，不含工具返回、排队和等待。', 'Model output tokens / model generation time, excluding tool output, queueing and waits.')
+    : uiText('仅有上游模型输出 token 计数；事件间隔无法准确区分生成、排队和等待，暂不显示 TPS。工具返回不计入输出。', 'Only provider model output token counts are available. Event gaps cannot reliably separate generation, queueing and waits; TPS is unavailable. Tool output is excluded.');
   if (!metrics) return definition + ' ' + uiText('样本不足。', 'Insufficient samples.');
   const reasoning = metrics.reasoningOutputTokens === undefined
     ? uiText('reasoning 明细未提供（沿用上游输出口径）', 'Reasoning breakdown unavailable (provider output counter)')
     : uiText(`其中 reasoning ${metrics.reasoningOutputTokens} token（已包含）`, `Includes ${metrics.reasoningOutputTokens} reasoning tokens`);
-  return `${definition} ${metrics.outputTokens} output tokens / ${metrics.activeSeconds.toFixed(2)} s. ${reasoning}.`;
+  const counts = metrics.timingBasis === 'model-generation'
+    ? `${metrics.outputTokens} output tokens / ${metrics.activeSeconds.toFixed(2)} s.`
+    : `${metrics.outputTokens} output tokens.`;
+  return `${definition} ${counts} ${reasoning}.`;
 }
 /** Native details supports hover, keyboard and touch without a global overlay. */
 export function GenerationSpeed({ React, metrics }: { React: any; metrics?: GenerationMetrics }) {
@@ -35,19 +40,9 @@ export function GenerationSpeed({ React, metrics }: { React: any; metrics?: Gene
     h('span', { className: 'codex-generation-tooltip', role: 'tooltip' }, details));
 }
 
-/** Place one chip after the last visible block of each measured Codex turn. */
-export function generationSpeedPlacements(blocks: Array<
-  { kind: 'message'; message: { turnId?: string; generationMetrics?: GenerationMetrics } }
-  | { kind: 'process'; messages: Array<{ turnId?: string; generationMetrics?: GenerationMetrics }> }
->): Map<number, { turnId: string; metrics: GenerationMetrics }> {
-  const turns = new Map<string, { index: number; metrics?: GenerationMetrics }>();
-  blocks.forEach((block, index) => {
-    for (const message of block.kind === 'message' ? [block.message] : block.messages) {
-      if (!message.turnId) continue;
-      turns.set(message.turnId, { index, metrics: message.generationMetrics ?? turns.get(message.turnId)?.metrics });
-    }
-  });
-  const result = new Map<number, { turnId: string; metrics: GenerationMetrics }>();
-  for (const [turnId, value] of turns) if (value.metrics) result.set(value.index, { turnId, metrics: value.metrics });
-  return result;
+/** Latest turn only, shared by live updates and restored transcripts. */
+export function latestGenerationMetrics(messages: Array<{ turnId?: string; generationMetrics?: GenerationMetrics }>): GenerationMetrics | undefined {
+  const latest = [...messages].reverse();
+  const latestTurn = latest.find(message => message.turnId)?.turnId;
+  return latest.find(message => message.turnId === latestTurn && message.generationMetrics)?.generationMetrics;
 }

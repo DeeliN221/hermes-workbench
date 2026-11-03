@@ -28,4 +28,14 @@ describe('Codex session search API', () => {
     expect(hits).toHaveLength(1);
     expect(hits[0]).toMatchObject({ id: 'ok', matched: 'title', deleted: false });
   });
+
+  it('can request title and id matches without the native content index', async () => {
+    const read = vi.fn(async () => ({ results: [{ session_id: 'metadata-only', matched: 'title' }] }));
+
+    await searchCodexSessions(read as any, 'default', 'needle', 100, { content: false });
+
+    expect(read).toHaveBeenCalledWith(
+      '/api/plugins/workbench/codex/search?profile=default&q=needle&limit=100&content=false',
+    );
+  });
 });
