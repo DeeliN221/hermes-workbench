@@ -87,7 +87,9 @@ try {
   profilePage.on('pageerror', error => profileErrors.push(error.stack || error.message));
   await profilePage.goto(host.origin + '/sessions?profile=default', { waitUntil: 'domcontentloaded' });
   await profilePage.locator('.profile-overview').waitFor({ state: 'attached', timeout: 5000 });
-  await profilePage.getByRole('link', { name: 'Manage profiles', exact: true }).click();
+  await profilePage.keyboard.press('w');
+  await profilePage.locator('.workbench-actions-dialog').getByRole('link', { name: 'Settings', exact: true }).click();
+  await profilePage.locator('.dashboard-settings-nav').getByRole('link', { name: 'Profiles', exact: true }).click();
   await profilePage.waitForURL(url => url.pathname === '/profiles');
   await profilePage.evaluate(() => document.activeElement?.blur());
   await profilePage.keyboard.press('w');

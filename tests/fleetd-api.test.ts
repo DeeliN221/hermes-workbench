@@ -50,3 +50,12 @@ describe("fleetd snapshot", () => {
   });
 
 });
+
+it("sends Unicode search and opaque cursors to the server including archived scope", async () => {
+  const calls: string[] = [];
+  const api = fleetAPI(async <T>(url: string) => { calls.push(url); return { tasks: [], has_more: false, next_cursor: "" } as T; });
+  await api.search("旧任务 %_", true, "page:a+/=");
+  const url = new URL(calls[0], "http://localhost");
+  expect(url.pathname).toBe("/api/plugins/workbench/fleetd/tasks/search");
+  expect(Object.fromEntries(url.searchParams)).toEqual({q: "旧任务 %_", archived: "true", cursor: "page:a+/="});
+});

@@ -282,3 +282,21 @@ def test_lifecycle_contract(client, monkeypatch, action, status, payload, expect
     assert response.status_code == 200, response.text
     assert writes == [("tasks/T-example/" + action, expected)]
     assert client.post(BASE + "/tasks/T-example/" + action, headers={**headers, "origin": "https://evil.example"}, json=payload).status_code == 403
+
+
+def test_runtime_and_session_metadata_are_not_invented(client, monkeypatch):
+    row = {"id": "T-meta", "status": "blocked", "spec_json": '{"prompt":"Do the work","model":"requested-model","reasoning_effort":"high"}'}
+    data = {"task": row, "decision": None, "attempts": [
+        {"status": "failed", "started_at": "2026-01-01T00:00:00Z", "ended_at": "2026-01-01T00:02:00Z", "model_used": "actual-model"},
+        {"status": "ok", "started_at": "2026-01-01T00:03:00Z", "ended_at": "2026-01-01T00:04:00Z"}],
+        "events": [{"type": "task.blocked", "payload": '{"detail":"No matching worker"}'}]}
+    monkeypatch.setattr(transport.FleetClient, "get", lambda *_: data)
+    mapped = client.get(BASE + "/tasks/T-meta", headers=HEADERS).json()["task"]
+    assert mapped["duration_seconds"] == 180
+    assert mapped["model_used"] == "actual-model"
+    assert mapped["reasoning_effort"] == "high"
+    assert mapped["spec_json"] == {"summary": "Do the work"}
+    assert mapped["blocked_reason"] == "No matching worker"
+    assert not mapped.get("source_session_id") and not mapped.get("conversation_id")
+    data["attempts"] *= 25
+    assert "duration_seconds" not in client.get(BASE + "/tasks/T-meta", headers=HEADERS).json()["task"]

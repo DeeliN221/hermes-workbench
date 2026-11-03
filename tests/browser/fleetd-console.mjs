@@ -38,13 +38,14 @@ try {
   browser=await chromium.launch({headless:true,executablePath:process.env.CHROMIUM_EXECUTABLE_PATH || undefined});
   const context=await browser.newContext({viewport:{width:1536,height:960}});
   const page=await context.newPage();
+  page.setDefaultTimeout(12000);
   const errors=[],responses=[],requests=[];
   page.on('pageerror',error=>errors.push(error.message));
   page.on('request',request=>requests.push(request.url()));
   page.on('response',async response=>{
     if (response.url().includes('/fleet')) responses.push(await response.text().catch(()=>''));
   });
-  const loaded = async () => page.locator('.tower-board [data-task-id="T-review"]').waitFor({state:'attached'});
+  const loaded = async () => page.locator('.tower-board [data-task-id="T-ready"]').waitFor({state:'attached'});
   const refresh = () => page.evaluate(() => window.dispatchEvent(new Event('focus')));
   console.log(`Local validation: ${host.origin}/kanban`);
   for (const width of [1536, 390]) for (const theme of ['light', 'dark']) {
@@ -65,6 +66,10 @@ try {
       : ['Pending','Queued','In progress','Completed']);
     if (width > 800) assert.equal(await page.locator('.dashboard-global-nav').isVisible(),false);
     else assert.ok(await page.locator('.dashboard-action-rail').isVisible());
+    const meta = await page.locator(`${layout} [data-task-id="T-review"] .tower-card-meta`).innerText();
+    for (const field of ['Device:', 'CLI:', 'Model:', 'Reasoning:', 'Total time:']) assert.ok(meta.includes(field));
+    assert.ok(!meta.includes('T-review') && !meta.includes('attempts') && !meta.includes('Human review'));
+    assert.equal(await page.locator(`${layout} [data-task-id="T-archived"]`).count(), 0);
     await page.screenshot({path:path.join(shotDir,`kanban-${width}-${theme}.png`)});
     await page.locator(`${layout} [data-task-id="T-review"] .tower-card-title`).click();
     await page.getByText('Source conversation',{exact:true}).waitFor();
@@ -95,6 +100,56 @@ try {
   await page.getByRole('button',{name:'Approve',exact:true}).click();
   await page.locator('.column-done [data-task-id="T-review"]').waitFor();
   await page.getByRole('button',{name:'Close details'}).click();
+  await page.locator('.tower-board [data-task-id="T-decision"] .tower-card-title').click();
+  await page.getByRole('button',{name:/Retry safely/}).click();
+  await page.locator('.column-queued [data-task-id="T-decision"]').waitFor();
+  assert.deepEqual(fleet.calls.find(c => c.method === 'POST' && c.path.endsWith('/T-decision/decide')).body, {choice:'Retry safely',note:''});
+  await page.getByRole('button',{name:'Close details',exact:true}).click();
+  // Single selection, select all, partial failure, retry and archived discovery.
+  const board = page.locator('.tower-board');
+  await board.locator('[data-task-id="T-review"] input[type="checkbox"]').check();
+  assert.equal(await board.locator('input:checked').count(), 1);
+  await board.getByRole('button',{name:'Select all',exact:true}).click();
+  await page.route('**/fleetd/tasks/T-review/archive', route => route.fulfill({status:409,json:{detail:'Task changed'}}));
+  await board.getByRole('button',{name:'Archive selected',exact:true}).click();
+  await page.getByRole('alert').filter({hasText:'Selection retained'}).waitFor();
+  assert.equal(await board.locator('input:checked').count(),1);
+  await page.unroute('**/fleetd/tasks/T-review/archive');
+  await board.getByRole('button',{name:'Archive selected',exact:true}).click();
+  await page.waitForFunction(()=>!document.querySelector('.tower-board .column-done .tower-card'));
+  await board.getByRole('button',{name:'View archived',exact:true}).click();
+  const search = page.locator('.tower-search');
+  await search.getByRole('button',{name:'Load more',exact:true}).click();
+  await search.getByRole('button',{name:'Sample archived task',exact:true}).waitFor();
+  await search.getByRole('button',{name:'Close search',exact:true}).click();
+  await board.getByRole('button',{name:'Search all tasks',exact:true}).click();
+  await search.getByRole('searchbox').fill('T-archived');
+  await search.getByRole('button',{name:'Sample archived task',exact:true}).click();
+  await page.getByRole('dialog').getByRole('heading',{name:'Sample archived task',exact:true}).waitFor();
+  await page.getByRole('button',{name:'Close details',exact:true}).click();
+  await page.route('**/fleetd/tasks/search?**', route => route.fulfill({status:501,json:{detail:'Unsupported'}}));
+  await search.getByRole('searchbox').fill('unsupported-query');
+  await search.getByRole('alert').filter({hasText:'search API is unavailable'}).waitFor();
+  await page.unroute('**/fleetd/tasks/search?**');
+  await search.getByRole('button',{name:'Retry',exact:true}).click();
+  await search.getByText('No matching tasks',{exact:true}).waitFor();
+  await search.getByRole('button',{name:'Close search',exact:true}).click();
+  await board.locator('[data-task-id="T-blocked"] .tower-card-title').click();
+  await page.getByRole('button',{name:'Unblock and retry',exact:true}).click();
+  await board.locator('.column-queued [data-task-id="T-blocked"]').waitFor();
+  await page.getByRole('button',{name:'Close details',exact:true}).click();
+  // Only explicit upstream profile/kind associations become navigation controls.
+  await board.getByRole('button',{name:'Search all tasks',exact:true}).click();
+  await search.getByRole('searchbox').fill('T-review');
+  await search.getByRole('button',{name:'Sample review task',exact:true}).click();
+  await page.locator('.tower-sessions button').first().click();
+  await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'default' && url.searchParams.get('session') === 'codex-preview');
+  await page.goto(host.origin + '/kanban'); await loaded();
+  await board.getByRole('button',{name:'Search all tasks',exact:true}).click();
+  await search.getByRole('searchbox').fill('T-review');
+  await search.getByRole('button',{name:'Sample review task',exact:true}).click();
+  await page.locator('.tower-sessions button').last().click();
+  await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'writer' && url.searchParams.get('session') === 'codex-preview');
   await page.goto(host.origin+'/chat?session=codex-preview&profile=default');
   const composer = page.locator('textarea:visible').first();
   await composer.fill('Unsent draft\nKeep my input');
@@ -119,6 +174,7 @@ try {
     await page.screenshot({path:path.join(shotDir,`home-${width}-${theme}.png`)});
   }
   await page.goto(host.origin+'/config?workbench=display&profile=default');
+  await page.addStyleTag({content:'#preview-banner {display:none}'});
   const labels = page.getByRole('checkbox', {name:'Show session project labels · default'});
   await labels.uncheck();
   await page.getByRole('button',{name:'writer Move up',exact:true}).click();
@@ -127,6 +183,7 @@ try {
   assert.equal(await page.locator('.profile-overview-column').first().getAttribute('data-profile'),'writer');
   assert.equal(await page.locator('[data-profile="default"] .profile-session-project').count(),0);
   await page.goto(host.origin+'/config?workbench=display&profile=default');
+  await page.addStyleTag({content:'#preview-banner {display:none}'});
   await labels.waitFor();
   assert.equal(await labels.isChecked(),false);
   const exposed=responses.join('')+await page.content()+await page.evaluate(()=>JSON.stringify({...localStorage,...sessionStorage}))+await readFile('dashboard/dist/index.js','utf8');

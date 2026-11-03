@@ -164,7 +164,7 @@ try {
   assert.ok(fleet.calls.some((c) => c.path.endsWith("/archive")));
   assert.deepEqual(errors, []);
   console.log(
-    `PASS: authenticated proxy lifecycle, four columns, all drag paths/reorder/rejections, auto/human review, decision, download, archive/restore, list/mobile, empty state, console. Screenshots: ${shotDir}`,
+    `PASS: authenticated proxy lifecycle, four responsive columns, human review, decision, download, bulk archive, desktop/mobile themes, navigation, console. Screenshots: ${shotDir}`,
   );
 } catch (error) {
   if (page) {

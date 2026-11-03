@@ -1,6 +1,7 @@
 """Same-origin, authenticated, task console API for fleetd v1."""
 import json
 import os
+from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Request, Query
 from urllib.parse import urlencode
 from starlette.concurrency import run_in_threadpool
@@ -108,11 +109,30 @@ def detail(task_id: str):
         raise HTTPException(502, "Invalid Fleet task detail; retry")
     row = task(data["task"])
     summary = data["task"].get("spec_json", "")
-    row["spec_json"] = {"summary": summary if isinstance(summary, str) else summary.get("summary", "")}
+    try:
+        spec = json.loads(summary) if isinstance(summary, str) else summary
+    except ValueError:
+        spec = None
+    row["spec_json"] = {"summary": (spec.get("summary") or spec.get("prompt") or "") if isinstance(spec, dict) else summary if isinstance(summary, str) else ""}
+    if isinstance(spec, dict):
+        for target, source in (("model_used", "model"), ("reasoning_effort", "reasoning_effort")):
+            if isinstance(spec.get(source), str):
+                row[target] = spec[source]
     acceptance = data["task"].get("acceptance", "")
     if isinstance(acceptance, str):
         row["acceptance"] = [{"label": s, "checked": row["status"] == "done"} for s in acceptance.splitlines() if s.strip()]
     attempts = data.get("attempts") or []
+    model = next((a.get("model_used") for a in attempts if a.get("model_used")), None)
+    if model:
+        row["model_used"] = model
+    # Missing/truncated attempt history is not a trustworthy total.
+    if attempts and len(attempts) < 50 and all(a.get("ended_at") or a.get("status") == "running" for a in attempts):
+        try:
+            total = sum(max(0, ((datetime.fromisoformat(a["ended_at"].replace("Z", "+00:00")) if a.get("ended_at") else datetime.now(timezone.utc))
+                               - datetime.fromisoformat(a["started_at"].replace("Z", "+00:00"))).total_seconds()) for a in attempts)
+            row["duration_seconds"] = total
+        except (ValueError, KeyError, TypeError):
+            pass
     # v1's list attempts counter counts retries, so detail records are authoritative.
     row["attempt_count"] = len(attempts)
     if not row.get("conversation_id"):
@@ -120,7 +140,21 @@ def detail(task_id: str):
     if row["status"] in ("blocked", "triage") and not row.get("blocked_reason"):
         row["blocked_reason"] = next((a.get("error") or a.get("reason") for a in attempts if a.get("error") or a.get("reason")), None)
 
-    choices = [decision(d) for d in client.collection("decisions", status="open")
+    if row["status"] in ("blocked", "triage") and not row.get("blocked_reason"):
+        for event in data.get("events", []):
+            if event.get("type") not in ("task.blocked", "task.failed"):
+                continue
+            try:
+                payload = json.loads(event.get("payload", "{}"))
+            except (ValueError, TypeError):
+                continue
+            if isinstance(payload, dict):
+                reason = payload.get("detail") or payload.get("reason")
+                if isinstance(reason, str) and reason:
+                    row["blocked_reason"] = reason
+                    break
+    decisions = ([data["decision"]] if isinstance(data.get("decision"), dict) else []) if "decision" in data else client.collection("decisions", status="open")
+    choices = [decision(d) for d in decisions
                if d.get("status") == "open" and d.get("task_id") == task_id]
     row["decision"] = choices[0] if choices else None
     return reply({"task": row, "open_decision": row["decision"], "artifacts": [],

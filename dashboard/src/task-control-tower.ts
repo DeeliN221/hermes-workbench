@@ -77,6 +77,23 @@ export function createTaskControlTower(
       return () => { clearTimeout(timer); ++searchVersion.current; };
     }, [query, archiveView, searchOpen]);
     const refreshLock = useRef(false);
+    useEffect(() => {
+      let cancelled = false;
+      const queue = tasks.filter(t => t.read_only).map(t => t.id);
+      const worker = async () => {
+        while (queue.length && !cancelled) {
+          const id = queue.shift()!;
+          try {
+            const { task } = await api.detail(id);
+            if (!task || task.id !== id) continue;
+            if (!cancelled) setTasks(previous => previous.map(t => t.id === id ? { ...t,
+              model_used: task.model_used, reasoning_effort: task.reasoning_effort, duration_seconds: task.duration_seconds } : t));
+          } catch { /* Missing metadata stays explicitly unrecorded; board remains usable. */ }
+        }
+      };
+      void Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
+      return () => { cancelled = true; };
+    }, [lastSuccess]);
     const [detail, setDetail] = useState(null as Detail | null),
       [selected, setSelected] = useState("");
     const [error, setError] = useState(""),
@@ -494,7 +511,7 @@ export function createTaskControlTower(
             h("section", { key: c.id, "data-column": c.id },
               h("h2", null, c.label()), columnTools(c.id), tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t, true))))),
       )),
-      searchOpen ? h("section", { className: "tower-search", "aria-label": tr("搜索全部任务", "Search all tasks") },
+      searchOpen ? h("section", { className: "tower-search", onKeyDown: (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setSearchOpen(false); } }, "aria-label": tr("搜索全部任务", "Search all tasks") },
         btn(tr("关闭搜索", "Close search"), () => setSearchOpen(false)),
         h("h2", null, archiveView ? tr("已归档", "Archived") : tr("全部任务（包含归档）", "All tasks (including archived)")),
         h("input", { type: "search", value: query, maxLength: 256, "aria-label": tr("搜索任务", "Search tasks"), onChange: (e: any) => setQuery(e.target.value) }),
@@ -551,7 +568,7 @@ export function createTaskControlTower(
                       "section",
                       { className: "tower-next" },
                       h("h3", null, tr("摘要", "Summary")),
-                      h("p", null, t.review_actions ? tr("核对交付后确认，或提交修改意见", "Review the delivery, then approve or request changes") : t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
+                      h("p", null, t.review_actions ? tr("核对交付后确认，或提交修改意见", "Review the delivery, then approve or request changes") : t.lifecycle_actions ? tr("任务状态由执行者推进，可使用下方可用操作", "The worker advances this task. Use the available actions below.") : t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
 
                       t.spec_json?.summary ? h("p", { style: { whiteSpace: "pre-wrap" } }, t.spec_json.summary) : null,
                       t.review_actions ? h("section", { className: "tower-review", "aria-busy": busy },
@@ -612,14 +629,6 @@ export function createTaskControlTower(
                     ),
                     h("section", { className: "tower-runtime" }, h("h3", null, tr("运行信息", "Run information")),
                       h("p", null, [t.machine, t.capability, t.model_used, t.reasoning_effort].filter(Boolean).join(" · ") || tr("未提供", "Not recorded"))),
-                    h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
-                      ...([
-                        [tr("来源会话", "Source conversation"), t.source_session_id, t.source_profile, t.source_session_kind],
-                        [tr("执行会话", "Execution conversation"), t.conversation_id, t.conversation_profile, t.conversation_kind],
-                      ] as const).map(([label, id, scope, kind]) => h("div", { key: label },
-                        h("h4", null, label), id && scope && ["hermes", "codex"].includes(kind || "")
-                          ? btn(id, () => navigate(`/chat?${kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(id)}`, scope || profile))
-                          : h("p", { className: "tower-muted" }, id ? tr("已记录会话编号，但缺少档案或会话类型，无法安全打开", "Conversation recorded, but profile or kind is missing; cannot open safely") : tr("历史任务未记录此会话", "This historical task did not record a conversation"))))) ,
                     t.status === "blocked" || t.status === "triage" ? h("section", { className: "tower-blocker" },
                       h("h3", null, tr("需要处理", "Needs attention")),
                       t.lifecycle_actions && t.status === "blocked" && !decision ? btn(tr("解除阻塞并重试", "Unblock and retry"), () => void run(() => api.lifecycle(t.id, "retry")), { disabled: busy }) : null,
@@ -627,7 +636,7 @@ export function createTaskControlTower(
                     h(
                       "section",
                       { className: "tower-checklist" },
-                      h("h3", null, tr("验收清单", "Acceptance checklist")),
+                      h("h3", null, tr("验收", "Acceptance")),
                       t.acceptance.length
                         ? t.acceptance.map((c, i) =>
                             h(
@@ -701,6 +710,14 @@ export function createTaskControlTower(
                               ),
                         )
                       : null,
+                    h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
+                      ...([
+                        [tr("来源会话", "Source conversation"), t.source_session_id, t.source_profile, t.source_session_kind],
+                        [tr("执行会话", "Execution conversation"), t.conversation_id, t.conversation_profile, t.conversation_kind],
+                      ] as const).map(([label, id, scope, kind]) => h("div", { key: label },
+                        h("h4", null, label), id && scope && ["hermes", "codex"].includes(kind || "")
+                          ? btn(id, () => navigate(`/chat?${kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(id)}`, scope || profile))
+                          : h("p", { className: "tower-muted" }, id ? tr("已记录会话编号，但缺少档案或会话类型，无法安全打开", "Conversation recorded, but profile or kind is missing; cannot open safely") : tr("历史任务未记录此会话", "This historical task did not record a conversation"))))) ,
                     draft
                       ? h(
                           "form",

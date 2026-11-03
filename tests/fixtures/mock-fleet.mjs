@@ -22,6 +22,13 @@ export function fixtureTask(id, status, extra = {}) {
 }
 export async function createMockFleet() {
   const v1 = structuredClone(JSON.parse(readFileSync(new URL("./fleetd-v1.json", import.meta.url), "utf8")));
+  v1.tasks.tasks.push({...v1.tasks.tasks.find(t => t.id === 'T-blocked'), id:'T-decision', title:'Choose an execution approach'});
+  v1.decisions.decisions.push({id:'D-choice', task_id:'T-decision', status:'open', question:'Choose the next step', options:['Retry safely','Stop here']});
+  Object.assign(v1.tasks.tasks.find(t => t.id === 'T-review'), {
+    source_session_id:'codex-preview', source_profile:'default', source_session_kind:'codex',
+    conversation_id:'codex-preview', conversation_profile:'writer', conversation_kind:'codex',
+    model_used:'sample-model', reasoning_effort:'high', duration_seconds:632,
+  });
   const reviewEvents = {};
   const decision = {
     id: "decision-1",
