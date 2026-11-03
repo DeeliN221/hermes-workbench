@@ -180,9 +180,10 @@ try {
     await page.locator('#action-status').filter({ hasText: /^Archived$/ }).waitFor();
     assert.equal(patches, 3);
     if (panel) {
-      assert.equal(await page.locator('.dashboard-accessory-close').count(), 0, 'Legacy panel links use the standalone Kanban tab');
+      assert.equal(await page.locator('.dashboard-accessory-close').count(), 0, 'Legacy panel links use the standalone Kanban page');
       await page.getByRole('button', { name: '关闭', exact: true }).click();
-      await page.locator('.overview-tabs').getByRole('link', { name: 'Project sessions' }).click();
+      await page.keyboard.press('w');
+      await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Home', exact: true }).click();
       await page.locator('.profile-overview').waitFor();
       assert.equal(await page.locator('.dashboard-global-nav').evaluate(node => node.inert), false);
       const unrelatedLayer = await page.evaluate(() => {

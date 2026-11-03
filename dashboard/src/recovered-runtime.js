@@ -31,7 +31,7 @@ import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-alias
 import { createQuotaSettings } from './quota-dashboard';
 import { settingsNavSections, settingsLinkActive, readSettingsMoreOpen, writeSettingsMoreOpen } from './settings-navigation';
 installModelAliasSync();
-import { createProfileOverview, createOverviewTabs } from './profile-overview-page';
+import { createProfileOverview } from './profile-overview-page';
 import { overviewRoute } from './profile-overview';
 import { createTaskControlTower } from './task-control-tower';
 import { installHomeChatNavigation, openHomeConversation } from './home-navigation';
@@ -2580,7 +2580,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       VersionSettings = createVersionSettings(i),
       QuotaSettings = createQuotaSettings(i),
       ProfileOverview = createProfileOverview(i, Kp),
-      OverviewTabs = createOverviewTabs(i, Kp),
       TaskControlTower = createTaskControlTower(i, Kp),
       l = t.createElement;
     return function () {
@@ -3095,7 +3094,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           ? l("main", {
               ref: D, className: "dashboard-owned-page", tabIndex: -1,
               "aria-label": runtimeText("看板", "Kanban"),
-            }, l(OverviewTabs, { board: true, profile: F }), l(TaskControlTower, { key: "kanban", profile: F }))
+            }, l(TaskControlTower, { key: "kanban", profile: F }))
           : M
           ? l(
               "main",
@@ -3105,7 +3104,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 tabIndex: -1,
                 "aria-label": isQuotaSettings ? runtimeText("订阅额度", "Subscription allowances") : isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isQuotaSettings ? l(QuotaSettings) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(t.Fragment, null, l(OverviewTabs, { board: false, profile: F }), l(ProfileOverview)) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isQuotaSettings ? l(QuotaSettings) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(ProfileOverview) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )

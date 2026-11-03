@@ -13,6 +13,7 @@ afterEach(async () => {
   for (const root of roots.splice(0)) await React.act(async () => root.unmount());
   document.body.innerHTML = '';
   localStorage.clear();
+  window.history.replaceState(null, '', '/');
 });
 
 it('renders only the freshest three per profile after merging unordered sources, preserving full membership', async () => {
@@ -46,5 +47,18 @@ it('renders only the freshest three per profile after merging unordered sources,
   }
   expect(host.textContent).not.toMatch(/Hidden fourth|Hidden fifth|Show all|Expand all/);
   expect(host.querySelectorAll('a[href*="fourth"], a[href*="fifth"]')).toHaveLength(0);
+  expect(host.querySelectorAll('.profile-new-session')).toHaveLength(2);
+  expect(host.querySelectorAll('time, .profile-session-meta')).toHaveLength(0);
+  const filter = host.querySelector<HTMLSelectElement>('select[aria-label="Filter by project"]')!;
+  await React.act(async () => { filter.value = 'Older project'; filter.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect([...host.querySelectorAll('.profile-session strong')].map(node => node.textContent)).toEqual(['Hidden fourth', 'Hidden fourth']);
+  expect(new URLSearchParams(location.search).get('project')).toBe('Older project');
+  expect(host.querySelector('.profile-session')?.getAttribute('data-freshness')).toBe('0');
+  await React.act(async () => { filter.value = ''; filter.dispatchEvent(new Event('change', { bubbles: true })); });
+  const sort = host.querySelector<HTMLSelectElement>('select[aria-label="Sort sessions"]')!;
+  await React.act(async () => { sort.value = 'updated'; sort.dispatchEvent(new Event('change', { bubbles: true })); });
+  expect([...host.querySelector('.profile-overview-column')!.querySelectorAll('.profile-session strong')].map(node => node.textContent))
+    .toEqual(['Second', 'Third from history', 'Hidden fourth']);
+  expect(new URLSearchParams(location.search).get('sort')).toBe('updated');
   expect(sessions.map(row => row.id)).toEqual(['fourth', 'second', 'opened', 'fifth']);
 });
