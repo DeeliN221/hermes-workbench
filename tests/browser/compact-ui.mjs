@@ -74,6 +74,16 @@ try {
     await page.mouse.click(2, 2);
     await menu.waitFor({ state: 'hidden' });
     assert.equal(await page.evaluate(() => window.__underlayClicks), 0);
+    // Native close events are queued; reopening immediately must survive the old event.
+    for (let cycle = 0; cycle < 3; cycle++) {
+      await openMenu();
+      await menu.waitFor({ state: 'visible' });
+      await menu.evaluate(node => { node.close(); node.showModal(); });
+      await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+      assert.equal(await menu.isVisible(), true, 'A delayed native close event cannot close a reopened menu');
+      await page.keyboard.press('Escape');
+      await menu.waitFor({ state: 'hidden' });
+    }
     await openMenu();
     await items.nth(1).click();
     const search = page.locator('dialog.codex-session-search-dialog-backdrop');

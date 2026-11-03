@@ -59,7 +59,9 @@ export function createWorkbenchDialog(sdk: Record<string, any>) {
     }, [open]);
     return h('dialog', {
       ref, className: 'workbench-actions-dialog', 'aria-label': uiText('工作台', 'Workbench'),
-      onCancel: (event: Event) => { event.preventDefault(); onClose(); }, onClose,
+      onCancel: (event: Event) => { event.preventDefault(); onClose(); },
+      // A queued close event from the previous opening must not dismiss a reopened dialog.
+      onClose: (event: Event) => { if (!(event.currentTarget as HTMLDialogElement).open) onClose(); },
       onKeyDown: (event: KeyboardEvent) => {
         if (event.key !== 'Tab' || (event.target instanceof Element && event.target.closest('dialog') !== ref.current)) return;
         const dialog = ref.current as HTMLDialogElement | null;
