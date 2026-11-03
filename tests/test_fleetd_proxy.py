@@ -114,6 +114,19 @@ def test_pagination(client, monkeypatch):
     assert "cursor=next" in seen[1]
 
 
+def test_archived_collection_is_separate_and_bounded(client, monkeypatch):
+    seen = []
+    def get(self, path):
+        seen.append(path)
+        return {"tasks": [{"id": "T-archived", "title": "Old", "status": "archived"}]}
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    response = client.get(BASE + "/tasks/archived", headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["tasks"][0]["status"] == "archived"
+    assert "status=archived" in seen[0]
+    assert "include_archived=1" in seen[0]
+
+
 @pytest.mark.parametrize("status,expected", V1_STATUSES + [
     ("future-status", "triage"), (None, "triage"), ([], "triage"), ("", "triage"),
 ])
@@ -295,8 +308,51 @@ def test_runtime_and_session_metadata_are_not_invented(client, monkeypatch):
     assert mapped["duration_seconds"] == 180
     assert mapped["model_used"] == "actual-model"
     assert mapped["reasoning_effort"] == "high"
-    assert mapped["spec_json"] == {"summary": "Do the work"}
+    assert mapped["spec_json"]["prompt"] == "Do the work"
+    assert mapped["spec_json"]["summary"] == ""
     assert mapped["blocked_reason"] == "No matching worker"
     assert not mapped.get("source_session_id") and not mapped.get("conversation_id")
     data["attempts"] *= 25
     assert "duration_seconds" not in client.get(BASE + "/tasks/T-meta", headers=HEADERS).json()["task"]
+
+
+def test_attempt_precedence_stale_and_broken_spec_preservation(client, monkeypatch):
+    data = {'task': {'id': 'T-meta', 'status': 'running', 'machine': 'auto', 'capability': 'codex',
+                     'spec_json': '{"model":"opencode-go/deepseek-v4.1-flash","reasoning_effort":"high","prompt":"# Brief"}\nAdditional instructions'},
+            'attempts': [{'worker_id': 'W-actual', 'model_used': 'initial-model',
+                          'started_at': '2026-01-01T00:00:00Z', 'ended_at': '2026-01-01T00:02:00Z',
+                          'evidence_json': '{"final_model":"actual-model","runner":"opencode","reasoning_effort":"low","duration_ms":120000}'}],
+            'decision': None}
+    monkeypatch.setattr(transport.FleetClient, 'get', lambda *_: data)
+    monkeypatch.setattr(transport.FleetClient, 'collection', lambda *_a, **_k: [{'id': 'W-actual', 'machine': 'home'}])
+    row = client.get(BASE + '/tasks/T-meta', headers=HEADERS).json()['task']
+    assert row['stale'] is True
+    assert row['model_used'] == 'actual-model'
+    assert row['capability'] == 'opencode'
+    assert row['reasoning_effort'] == 'low'
+    assert row['attempts'][0]['machine'] == 'home'
+    assert row['duration_seconds'] == 120
+    assert row['spec_json']['model'] == 'opencode-go/deepseek-v4.1-flash'
+    assert row['spec_json']['prompt'] == '# Brief\n\nAdditional instructions'
+
+
+def test_thread_metadata_refreshes_and_overrides_planned_effort(client, monkeypatch, tmp_path):
+    import sqlite3
+    home = tmp_path / 'codex'
+    home.mkdir()
+    db = sqlite3.connect(home / 'state_5.sqlite')
+    db.execute('CREATE TABLE threads (id TEXT, model TEXT, reasoning_effort TEXT)')
+    monkeypatch.setenv('FLEET_CODEX_HOME', str(home))
+    assert proxy._local_thread_metadata('fresh-thread') is None
+    db.execute('INSERT INTO threads VALUES (?, ?, ?)', ('fresh-thread', 'actual-model', 'low'))
+    db.commit()
+    data = {'task': {'id': 'T-thread', 'status': 'running', 'assignee': 'W-one', 'conversation_id': 'fresh-thread',
+                     'spec_json': '{"model":"planned-model","reasoning_effort":"high"}'},
+            'attempts': [{'started_at': '2026-01-01T00:00:00Z'}], 'decision': None}
+    monkeypatch.setattr(transport.FleetClient, 'get', lambda *_: data)
+    row = client.get(BASE + '/tasks/T-thread', headers=HEADERS).json()['task']
+    assert row['model_used'] == 'actual-model'
+    assert row['reasoning_effort'] == 'low'
+    assert row['conversation_local'] is True
+    assert row['stale'] is False
+    db.close()

@@ -23,12 +23,14 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
     method = "GET",
     body?: unknown,
     revision?: number,
+    signal?: AbortSignal,
   ) => {
     if (method !== "GET" && base !== FLEET_PROXY && !(method === "POST" && /^\/tasks\/[A-Za-z0-9_-]+\/(approve|request_changes|note|archive|retry|decide)$/.test(path)))
       throw new Error(uiText("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes"));
     try {
       const url = base + path + (explicitDemo ? (path.includes("?") ? "&" : "?") + "demo=1" : "");
       const reviewWrite = method === "POST" && base !== FLEET_PROXY;
+      const timeout = AbortSignal.timeout(reviewWrite ? 35000 : 12000);
       const init = {
         method,
         headers: {
@@ -36,7 +38,7 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
           ...(revision === undefined ? {} : { "If-Match": String(revision) }),
         },
         ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-        signal: AbortSignal.timeout(reviewWrite ? 35000 : 12000),
+        signal: signal && typeof AbortSignal.any === "function" ? AbortSignal.any([signal, timeout]) : signal || timeout,
       };
       if (reviewWrite && authedFetch) {
         const response = await authedFetch(url, init);
@@ -116,8 +118,9 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
       const data = await request<{ tasks: Task[] } | Task[]>("/tasks");
       return Array.isArray(data) ? data : data.tasks;
     },
-    search: (q: string, archived = false, cursor = "") => request<{ tasks: Task[]; next_cursor: string; has_more: boolean }>(
-      `/tasks/search?${new URLSearchParams({ q, archived: String(archived), cursor })}`),
+    search: (q: string, archived = false, cursor = "", signal?: AbortSignal) => request<{ tasks: Task[]; next_cursor: string; has_more: boolean }>(
+      `/tasks/search?${new URLSearchParams({ q, archived: String(archived), cursor })}`, "GET", undefined, undefined, signal),
+    archived: () => request<{ tasks: Task[] }>(base === FLEET_PROXY ? "/tasks?status=archived" : "/tasks/archived"),
     lifecycle: (id: string, action: "archive" | "retry") => request(`/tasks/${encodeURIComponent(id)}/${action}`, "POST", {}),
     review: (id: string, action: "approve" | "request_changes", text?: string) =>
       request(`/tasks/${encodeURIComponent(id)}/${action}`, "POST", action === "approve" ? {} : { text }),

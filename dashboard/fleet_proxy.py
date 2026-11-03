@@ -199,11 +199,27 @@ def _task(task):
         "acceptance",
         "spec_json",
         "needs_human",
+        "assignee",
+        "capability",
+        "model_used",
+        "reasoning_effort",
+        "duration_seconds",
+        "attempt_count",
+        "source_session_id",
+        "source_profile",
+        "source_session_kind",
+        "conversation_id",
+        "conversation_profile",
+        "conversation_kind",
+        "conversation_local",
+        "source_local",
+        "blocked_reason",
+        "error",
     }
     row = {k: task[k] for k in keys if k in task}
     row.setdefault("acceptance", [])
     if isinstance(row.get("spec_json"), str):
-        row["spec_json"] = {"summary": row["spec_json"]}
+        row["spec_json"] = {"summary": row["spec_json"], "prompt": row["spec_json"], "raw": row["spec_json"]}
     if isinstance(row["acceptance"], str):
         row["acceptance"] = [
             {
@@ -219,6 +235,15 @@ def _task(task):
     row["verify_mode"] = _mode(task)
     row["decision"] = _decision(task.get("decision") or task.get("open_decision"))
     return row
+
+
+def _attempts(value):
+    if not isinstance(value, list):
+        return []
+    keys = {"id", "status", "worker_id", "machine", "capability", "runner", "model_used",
+            "final_model", "reasoning_effort", "conversation_id", "started_at", "ended_at",
+            "duration_ms", "evidence_json"}
+    return [{k: row[k] for k in keys if k in row} for row in value if isinstance(row, dict)]
 
 
 def _decision(value):
@@ -263,6 +288,8 @@ def _artifact(value, task_id):
 def _detail(task_id):
     value = _upstream("GET", "tasks/" + _id(task_id))
     task = _task(value["task"])
+    if value.get("attempts"):
+        task["attempts"] = _attempts(value.get("attempts"))
     task["decision"] = _decision(
         value.get("open_decision") or value.get("decision") or task.get("decision")
     )
@@ -274,6 +301,7 @@ def _detail(task_id):
             if a.get("task_id") == task_id
         ],
         "open_decision": task["decision"],
+        "attempts": task.get("attempts", []),
         "links": [
             {k: link[k] for k in ("label", "url") if k in link}
             for link in value.get("links", [])
@@ -317,6 +345,23 @@ def fleet_tasks(status: str | None = None):
         futures = [pool.submit(copy_context().run, project, row) for row in rows]
         tasks = [future.result() for future in futures]
     return _reply({"tasks": tasks})
+
+
+@router.get("/tasks/search")
+def fleet_search(q: str = "", archived: bool = False, cursor: str = ""):
+    if "\x00" in q:
+        raise HTTPException(422, "Invalid search query")
+    value = _upstream("GET", "tasks")
+    rows = value if isinstance(value, list) else value.get("tasks", [])
+    needle = q.strip().lower()
+    matches = [row for row in rows if isinstance(row, dict)
+               and (not archived or row.get("status") == "archived")
+               and (not needle or any(needle in str(row.get(key, "")).lower()
+                                      for key in ("title", "id", "repo")))]
+    start = int(cursor) if cursor.isdigit() else 0
+    page = matches[start:start + 100]
+    return _reply({"tasks": [_task(row) for row in page], "next_cursor": str(start + 100) if len(matches) > start + 100 else "",
+                   "has_more": len(matches) > start + 100})
 
 
 @router.get("/tasks/{task_id}")

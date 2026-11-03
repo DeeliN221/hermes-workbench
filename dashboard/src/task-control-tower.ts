@@ -8,19 +8,27 @@ import {
 } from "./task-control-api";
 import {
   attention,
+  activeAttempt,
   canMove,
   columns,
   decisionOptions,
   delivered,
+  durationMinutes,
+  hasStarted,
   expired,
+  isZombieRunning,
+  runtimeLine,
   reordered,
   safeLink,
+  sessionEntries,
+  specMarkdown,
   statusLabel,
   verifyMode,
   type Detail,
   type Status,
   type Task,
 } from "./task-control-model";
+import { renderMarkdownSource } from "./markdown-source";
 
 type SDK = {
   React: any;
@@ -46,6 +54,34 @@ export function createTaskControlTower(
     onClick: () => void,
     extra: Record<string, unknown> = {},
   ) => h("button", { type: "button", onClick, ...extra }, label);
+  function SpecDetails({ task }: { task: Task }) {
+    const [raw, setRaw] = useState(false);
+    const markdown = useRef(null as HTMLElement | null);
+    const source = specMarkdown(task);
+    useEffect(() => {
+      const element = markdown.current;
+      if (!element || raw) return;
+      element.innerHTML = renderMarkdownSource(source);
+      for (const anchor of Array.from(element.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
+        const href = safeLink(anchor.getAttribute("href") || "");
+        if (!href) { anchor.removeAttribute("href"); continue; }
+        anchor.href = href;
+        anchor.target = "_blank";
+        anchor.rel = "noopener noreferrer";
+      }
+    }, [source, raw]);
+    return h("details", { className: "tower-details" },
+      h("summary", null, tr("详情", "Details")),
+      h("div", { className: "tower-detail-meta" },
+        h("p", null, task.id), h("p", null, task.repo || "—"),
+        h("p", null, `${tr("完成时刻", "Completed at")}: ${task.completed_at ? new Date(task.completed_at).toLocaleString() : "—"}`)),
+      source
+        ? h(sdk.React.Fragment, null,
+            raw ? h("pre", { className: "tower-spec-raw" }, source) : h("div", { className: "tower-markdown hti-rich-markdown", ref: markdown }),
+            btn(raw ? tr("查看渲染", "Show rendered") : tr("查看原文", "Show source"), () => setRaw(value => !value), { className: "tower-spec-toggle" }))
+        : h("p", { className: "tower-muted" }, tr("未提供详情", "No details recorded")),
+    );
+  }
   function TaskControlTower({ profile }: { profile: string }) {
     const [tasks, setTasks] = useState([] as Task[]),
       [config, setConfig] = useState(null as FleetConfig | null);
@@ -55,45 +91,102 @@ export function createTaskControlTower(
       [refreshing, setRefreshing] = useState(false),
       [truncated, setTruncated] = useState(false);
     const [query, setQuery] = useState(""), [searchOpen, setSearchOpen] = useState(false),
-      [archiveView, setArchiveView] = useState(false), [searchRows, setSearchRows] = useState([] as Task[]),
+      [searchRows, setSearchRows] = useState([] as Task[]),
       [searchError, setSearchError] = useState(""), [searchBusy, setSearchBusy] = useState(false),
       [cursor, setCursor] = useState(""), [checked, setChecked] = useState([] as string[]);
+    const [showArchived, setShowArchived] = useState(false),
+      [archivedTasks, setArchivedTasks] = useState([] as Task[]),
+      [archivedBusy, setArchivedBusy] = useState(false),
+      [now, setNow] = useState(Date.now());
     const searchVersion = useRef(0);
-    const searchPage = async (more = false) => {
+    const searchAbort = useRef(null as AbortController | null);
+    const searchPage = async (more = false, signal?: AbortSignal) => {
+      if (!signal) {
+        searchAbort.current?.abort();
+        searchAbort.current = new AbortController();
+        signal = searchAbort.current.signal;
+      }
       const version = ++searchVersion.current;
       setSearchBusy(true); setSearchError("");
       try {
-        const page = await api.search(query, archiveView, more ? cursor : "");
+        const page = await api.search(query, false, more ? cursor : "", signal);
         if (version !== searchVersion.current) return;
         setSearchRows(previous => [...new Map([...(more ? previous : []), ...page.tasks].map(t => [t.id, t])).values()]);
         setCursor(page.next_cursor);
-      } catch (e) { if (version === searchVersion.current) setSearchError(String(e instanceof Error ? e.message : e)); }
+      } catch (e) {
+        if (signal?.aborted || (e instanceof DOMException && e.name === "AbortError")) return;
+        if (version === searchVersion.current) setSearchError(String(e instanceof Error ? e.message : e));
+      }
       finally { if (version === searchVersion.current) setSearchBusy(false); }
     };
     useEffect(() => {
-      ++searchVersion.current; setSearchRows([]); setCursor(""); setSearchError("");
-      if (!searchOpen) return;
-      const timer = setTimeout(() => void searchPage(), 250);
-      return () => { clearTimeout(timer); ++searchVersion.current; };
-    }, [query, archiveView, searchOpen]);
+      searchAbort.current?.abort();
+      ++searchVersion.current; setSearchRows([]); setCursor(""); setSearchError(""); setSearchBusy(false);
+      if (!searchOpen || !query.trim()) return;
+      const controller = new AbortController();
+      searchAbort.current = controller;
+      const timer = setTimeout(() => void searchPage(false, controller.signal), 250);
+      return () => { clearTimeout(timer); controller.abort(); ++searchVersion.current; };
+    }, [query, searchOpen]);
+    useEffect(() => {
+      const timer = setInterval(() => setNow(Date.now()), 30000);
+      return () => clearInterval(timer);
+    }, []);
+    useEffect(() => {
+      if (!showArchived) { setArchivedTasks([]); setArchivedBusy(false); return; }
+      let cancelled = false;
+      setArchivedBusy(true);
+      api.archived().then(result => {
+        if (!cancelled) setArchivedTasks(result.tasks || []);
+      }).catch(() => {
+        if (!cancelled) setArchivedTasks([]);
+      }).finally(() => {
+        if (!cancelled) setArchivedBusy(false);
+      });
+      return () => { cancelled = true; };
+    }, [showArchived, lastSuccess]);
+    useEffect(() => {
+      const focusSearch = (event: KeyboardEvent) => {
+        const target = event.target as HTMLElement | null;
+        if (event.metaKey || event.ctrlKey || event.altKey || document.querySelector(".tower-drawer")) return;
+        if (event.key === "Escape" && searchOpen) {
+          event.preventDefault(); event.stopImmediatePropagation();
+          setSearchOpen(false); setQuery(""); return;
+        }
+        if (target?.closest("input, textarea, select, [contenteditable='true']")) return;
+        if (event.key === "/" || event.key === "f" || event.key === "F") {
+          event.preventDefault();
+          setSearchOpen(true);
+          requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus());
+        }
+      };
+      document.addEventListener("keydown", focusSearch, true);
+      return () => document.removeEventListener("keydown", focusSearch, true);
+    }, [searchOpen]);
     const refreshLock = useRef(false);
     useEffect(() => {
       let cancelled = false;
-      const queue = tasks.filter(t => t.read_only).map(t => t.id);
+      const queue = [...new Set([...tasks, ...searchRows, ...archivedTasks].filter(t => t.read_only || !Array.isArray(t.attempts)).map(t => t.id))];
       const worker = async () => {
         while (queue.length && !cancelled) {
           const id = queue.shift()!;
           try {
-            const { task } = await api.detail(id);
+            const detail = await api.detail(id);
+            const task = detail.task;
             if (!task || task.id !== id) continue;
-            if (!cancelled) setTasks(previous => previous.map(t => t.id === id ? { ...t,
-              model_used: task.model_used, reasoning_effort: task.reasoning_effort, duration_seconds: task.duration_seconds } : t));
+            const attempts = (Array.isArray(task.attempts) && task.attempts.length ? task.attempts : detail.attempts) as Task["attempts"];
+            if (!cancelled) {
+              const merge = (previous: Task[]) => previous.map(t => t.id === id ? {
+                ...t, ...task, attempts,
+              } : t);
+              setTasks(merge); setSearchRows(merge); setArchivedTasks(merge);
+            }
           } catch { /* Missing metadata stays explicitly unrecorded; board remains usable. */ }
         }
       };
       void Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
       return () => { cancelled = true; };
-    }, [lastSuccess]);
+    }, [lastSuccess, searchRows.map(t => t.id).join(","), archivedTasks.map(t => t.id).join(",")]);
     const [detail, setDetail] = useState(null as Detail | null),
       [selected, setSelected] = useState("");
     const [error, setError] = useState(""),
@@ -207,7 +300,7 @@ export function createTaskControlTower(
       const wasInert = nav?.inert;
       if (nav) nav.inert = true;
       const key = (event: KeyboardEvent) => {
-        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); close(); }
+        if (event.key === "Escape") { event.preventDefault(); event.stopImmediatePropagation(); close(); }
         if (event.key === "Tab") {
           const nodes = Array.from(
             dialog.current?.querySelectorAll<HTMLElement>(
@@ -225,10 +318,10 @@ export function createTaskControlTower(
           }
         }
       };
-      document.addEventListener("keydown", key);
+      document.addEventListener("keydown", key, true);
       dialog.current?.focus();
       return () => {
-        document.removeEventListener("keydown", key);
+        document.removeEventListener("keydown", key, true);
         if (nav) nav.inert = !!wasInert;
       };
     }, [selected]);
@@ -356,7 +449,7 @@ export function createTaskControlTower(
       },
     });
     const pending = tasks.filter(attention),
-      running = tasks.filter((t) => t.status === "running"),
+      running = tasks.filter((t) => !!activeAttempt(t)),
       blocked = tasks.filter((t) => t.status === "blocked" || t.fleet_status === "blocked"),
       done = delivered(tasks);
     const decisions = pending.filter((t) => t.decision).length,
@@ -380,35 +473,46 @@ export function createTaskControlTower(
       );
       return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
     };
-    const card = (t: Task, compact = false) =>
+    const card = (t: Task, compact = false, archived = false) => {
+      const runtime = runtimeLine(t, now);
+      const duration = hasStarted(t) ? durationMinutes(t, now) : "";
+      const values = duration ? runtime.slice(0, -duration.length).trim() : runtime;
+      const stale = isZombieRunning(t);
+      return (
       h(
         "article",
         {
           key: t.id,
-          className: `tower-card ${compact ? "is-row" : ""}`,
+          className: `tower-card ${compact ? "is-row" : ""}${archived ? " is-archived-card" : ""}`,
           "data-task-id": t.id,
+          "data-archived": archived ? "true" : undefined,
+          "data-runtime": runtime,
+          "data-active-attempt": activeAttempt(t) ? "true" : "false",
           onClick: (e: MouseEvent) => { if (!(e.target as Element).closest("button, a, input, label")) void open(t.id); },
-          draggable: !busy && !t.read_only && t.status !== "done",
+          draggable: !archived && !busy && !t.read_only && t.status !== "done",
           onDragStart: (e: DragEvent) => {
             e.dataTransfer?.setData("text/workbench-task", t.id);
             if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
           },
-          ...dropProps(t.status, t.id),
+          ...(archived ? {} : dropProps(t.status, t.id)),
         },
-        btn(t.title, () => void open(t.id), { className: "tower-card-title" }),
+        h("div", { className: "tower-card-heading" },
+          btn(t.title, () => void open(t.id), { className: "tower-card-title" }),
+          archived ? h("span", { className: "tower-archived-tag" }, tr("已归档", "Archived")) : null,
+          stale ? h("span", { className: "tower-stale-tag", title: tr("最新执行已结束或没有负责人，计时已停止", "The latest attempt ended or has no assignee; the timer is stopped") }, tr("等待/异常", "Waiting / stale")) : null,
+        ),
         h(
           "div",
-          { className: "tower-card-meta" },
-          ...[[tr("设备", "Device"), t.machine], ["CLI", t.capability],
-            [tr("模型", "Model"), t.model_used], [tr("思考深度", "Reasoning"), t.reasoning_effort],
-            [tr("总耗时", "Total time"), typeof t.duration_seconds === "number" ? `${(t.duration_seconds / 60).toFixed(1)} min` : undefined]
-          ].map(([label, value]) => h("span", { key: label }, `${label}: ${value || tr("未提供", "Not recorded")}`)),
+          { className: "tower-card-meta", title: runtime || undefined },
+          values ? h("span", { className: "tower-runtime-values" }, values) : null,
+          duration ? h("span", { className: "tower-runtime-duration" }, `${values ? " " : ""}${duration}`) : null,
         ),
-        t.status === "done" ? h("label", { className: "tower-select" }, h("input", {
+        t.status === "done" && !archived ? h("label", { className: "tower-select" }, h("input", {
           type: "checkbox", checked: checked.includes(t.id), disabled: busy,
           onChange: () => setChecked(previous => previous.includes(t.id) ? previous.filter(id => id !== t.id) : [...previous, t.id]),
         }), tr("选择", "Select")) : null,
-      );
+      ));
+    };
     const group = (status: Status) => {
       const rows =
         status === "done"
@@ -444,17 +548,18 @@ export function createTaskControlTower(
       setChecked(failed);
       if (failed.length) throw new Error(tr(`${failed.length} 个任务归档失败，已保留选择，可重试`, `${failed.length} tasks could not be archived. Selection retained; retry.`));
     });
-    const columnTools = (id: string) => id === "pending" ? btn(tr("搜索全部任务", "Search all tasks"), () => { setArchiveView(false); setSearchOpen(true); })
-      : id === "done" ? h("div", { className: "tower-column-actions" },
+    const columnTools = (id: string) => id === "done" ? h("div", { className: "tower-column-actions" },
         btn(tr("全选", "Select all"), () => setChecked(completed.map(t => t.id)), { disabled: busy || !completed.length }),
         btn(tr("清除选择", "Clear selection"), () => setChecked([]), { disabled: busy || !checked.length }),
         btn(tr("批量归档", "Archive selected"), bulkArchive, { disabled: busy || !completed.some(t => checked.includes(t.id)) }),
-        btn(tr("查看归档", "View archived"), () => { setArchiveView(true); setQuery(""); setSearchOpen(true); })) : null;
+        btn(`${showArchived ? tr("隐藏已归档", "Hide archived") : tr("显示已归档", "Show archived")}${archivedTasks.length ? ` ${archivedTasks.length}` : ""}`,
+          () => setShowArchived(value => !value), { "aria-pressed": showArchived, disabled: archivedBusy })) : null;
     const t = detail?.task,
       decision = detail?.open_decision || detail?.decision || t?.decision;
     const nextAction = (task: Task) => {
       if (task.decision)
         return tr("选择一个方案继续", "Choose an option to continue");
+      if (isZombieRunning(task)) return tr("等待重新调度", "Waiting for rescheduling");
       return {
         triage: tr("补全规格后派遣", "Complete the brief, then dispatch"),
         ready: tr("等待智能体认领", "Ready for an agent to claim"),
@@ -471,6 +576,12 @@ export function createTaskControlTower(
         scheduled: tr("等待重试", "Waiting for retry"),
       }[task.status];
     };
+    const searching = searchOpen && !!query.trim();
+    const visibleSearchRows = searchRows.filter((task) => showArchived || task.status !== "archived");
+    const columnRows = (column: (typeof columns)[number]) => tasks.filter((task) => column.statuses.includes(task.status));
+    const columnCount = (column: (typeof columns)[number]) =>
+      column.id === "active" ? columnRows(column).filter((task) => !!activeAttempt(task)).length : columnRows(column).length;
+    const closeSearch = () => { setSearchOpen(false); setQuery(""); setSearchRows([]); };
     return h(
       "main",
       {
@@ -503,24 +614,46 @@ export function createTaskControlTower(
         : null,
       h("div", { className: "tower-layout" },
         h("div", { className: "tower-workspace" },
-          h("div", { className: "tower-board" }, columns.map(c =>
+          h("div", { className: "tower-searchbar" },
+            searchOpen ? h(sdk.React.Fragment, null,
+              h("input", { type: "search", value: query, maxLength: 256, autoFocus: true,
+                "aria-label": tr("搜索任务", "Search tasks"), placeholder: tr("搜索全部任务", "Search all tasks"),
+                onChange: (e: any) => setQuery(e.target.value),
+                onKeyDown: (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); closeSearch(); } } }),
+              query ? btn("×", () => setQuery(""), { className: "tower-search-clear", "aria-label": tr("清空搜索", "Clear search") }) : null,
+              btn(tr("关闭", "Close"), closeSearch, { className: "tower-search-close" })) : null,
+            btn(searchOpen ? tr("搜索", "Search") : tr("搜索任务", "Search tasks"),
+              () => { setSearchOpen(true); requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus()); },
+              { className: "tower-search-toggle", "aria-expanded": searchOpen, "aria-label": tr("搜索任务", "Search tasks"), title: tr("搜索任务（/ 或 f）", "Search tasks (/ or f)") })),
+          searching ? h("section", { className: "tower-search-results", "aria-label": tr("搜索结果", "Search results") },
+            btn(showArchived ? tr("隐藏已归档", "Hide archived") : tr("显示已归档", "Show archived"),
+              () => setShowArchived(value => !value), { "aria-pressed": showArchived }),
+            searchError ? h("p", { role: "alert" }, searchError, btn(tr("重试", "Retry"), () => void searchPage())) : null,
+            searchBusy && !visibleSearchRows.length ? h("p", { role: "status" }, tr("搜索中…", "Searching…")) : null,
+            !searchBusy && !searchError && !visibleSearchRows.length ? h("p", { className: "tower-muted" }, tr("没有匹配任务", "No matching tasks")) : null,
+            ...visibleSearchRows.map(t => card(t, true, t.status === "archived")),
+            cursor ? btn(tr("加载更多", "Load more"), () => void searchPage(true), { disabled: searchBusy }) : null)
+          : h(sdk.React.Fragment, null, h("div", { className: "tower-board" }, columns.map(c =>
             h("section", { key: c.id, className: `tower-column column-${c.id}`, "data-column": c.id },
-              h("h2", null, c.label(), h("span", null, tasks.filter(t => c.statuses.includes(t.status)).length)),
+              h("h2", null, c.label(), h("span", null, columnCount(c))),
               columnTools(c.id),
-              h("div", { className: "tower-column-scroll" }, tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t)))))),
+              h("div", { className: "tower-column-scroll" },
+                columnRows(c).map(t => card(t)),
+                c.id === "done" && showArchived
+                  ? h("div", { className: "tower-archived-group", "data-archived-group": "true" },
+                      h("h3", null, tr("已归档", "Archived"), h("span", null, archivedBusy ? "…" : archivedTasks.length)),
+                      archivedTasks.map(t => card(t, false, true)))
+                  : null)))),
           h("div", { className: "tower-list" }, columns.map(c =>
             h("section", { key: c.id, "data-column": c.id },
-              h("h2", null, c.label()), columnTools(c.id), tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t, true))))),
+              h("h2", null, c.label(), h("span", null, columnCount(c))), columnTools(c.id),
+              columnRows(c).map(t => card(t, true)),
+              c.id === "done" && showArchived
+                ? h("div", { className: "tower-archived-group", "data-archived-group": "true" },
+                    h("h3", null, tr("已归档", "Archived"), h("span", null, archivedBusy ? "…" : archivedTasks.length)),
+                    archivedTasks.map(t => card(t, true, true)))
+                : null)))),
       )),
-      searchOpen ? h("section", { className: "tower-search", onKeyDown: (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setSearchOpen(false); } }, "aria-label": tr("搜索全部任务", "Search all tasks") },
-        btn(tr("关闭搜索", "Close search"), () => setSearchOpen(false)),
-        h("h2", null, archiveView ? tr("已归档", "Archived") : tr("全部任务（包含归档）", "All tasks (including archived)")),
-        h("input", { type: "search", value: query, maxLength: 256, "aria-label": tr("搜索任务", "Search tasks"), onChange: (e: any) => setQuery(e.target.value) }),
-        searchError ? h("p", { role: "alert" }, searchError, btn(tr("重试", "Retry"), () => void searchPage())) : null,
-        searchBusy ? h("p", { role: "status" }, tr("搜索中…", "Searching…")) : null,
-        !searchBusy && !searchError && !searchRows.length ? h("p", null, tr("没有匹配任务", "No matching tasks")) : null,
-        ...searchRows.map(t => h("div", { key: t.id }, btn(t.title, () => void open(t.id)), h("span", null, statusLabel(t.status)))),
-        cursor ? btn(tr("加载更多", "Load more"), () => void searchPage(true), { disabled: searchBusy }) : null) : null,
       selected
         ? h(
             "div",
@@ -540,18 +673,6 @@ export function createTaskControlTower(
                 tabIndex: -1,
                 ref: dialog,
               },
-              h(
-                "header",
-                null,
-                h(
-                  "p",
-                  { className: "tower-eyebrow" },
-                  t ? statusLabel(t.status) : tr("详情", "Details"),
-                ),
-                btn("×", close, {
-                  "aria-label": tr("关闭详情", "Close details"),
-                }),
-              ),
               h(
                 "h2",
                 { id: "tower-detail-title" },
@@ -628,8 +749,6 @@ export function createTaskControlTower(
                           ),
                       ),
                     ),
-                    h("section", { className: "tower-runtime" }, h("h3", null, tr("运行信息", "Run information")),
-                      h("p", null, [t.machine, t.capability, t.model_used, t.reasoning_effort].filter(Boolean).join(" · ") || tr("未提供", "Not recorded"))),
                     t.status === "blocked" || t.status === "triage" ? h("section", { className: "tower-blocker" },
                       h("h3", null, tr("需要处理", "Needs attention")),
                       t.lifecycle_actions && t.status === "blocked" && !decision ? btn(tr("解除阻塞并重试", "Unblock and retry"), () => void run(() => api.lifecycle(t.id, "retry")), { disabled: busy }) : null,
@@ -711,14 +830,12 @@ export function createTaskControlTower(
                               ),
                         )
                       : null,
-                    h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
-                      ...([
-                        [tr("来源会话", "Source conversation"), t.source_session_id, t.source_profile, t.source_session_kind],
-                        [tr("执行会话", "Execution conversation"), t.conversation_id, t.conversation_profile, t.conversation_kind],
-                      ] as const).map(([label, id, scope, kind]) => h("div", { key: label },
-                        h("h4", null, label), id && scope && ["hermes", "codex"].includes(kind || "")
-                          ? btn(id, () => navigate(`/chat?${kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(id)}`, scope || profile))
-                          : h("p", { className: "tower-muted" }, id ? tr("已记录会话编号，但缺少档案或会话类型，无法安全打开", "Conversation recorded, but profile or kind is missing; cannot open safely") : tr("历史任务未记录此会话", "This historical task did not record a conversation"))))) ,
+                    sessionEntries(t).length ? h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
+                      ...sessionEntries(t).map((entry) => h("div", { key: entry.label },
+                        h("h4", null, entry.label === "source" ? tr("来源会话", "Source conversation") : tr("执行会话", "Execution conversation")),
+                        entry.canOpen
+                          ? btn(entry.id, () => navigate(`/chat?${entry.kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(entry.id)}`, entry.profile || profile))
+                          : h("p", { className: "tower-muted" }, tr("任务执行结束后可查看", "Available after the run finishes"))))) : null,
                     draft
                       ? h(
                           "form",
@@ -772,7 +889,7 @@ export function createTaskControlTower(
                               onChange: (e: any) =>
                                 setDraft({
                                   ...draft,
-                                  spec_json: { summary: e.target.value },
+                                  spec_json: { ...draft.spec_json, summary: e.target.value },
                                 }),
                             }),
                           ),
@@ -884,12 +1001,11 @@ export function createTaskControlTower(
                           btn(tr("取消", "Cancel"), () => setDraft(null)),
                         )
                       : null,
-                    h(
+                    detail.artifacts.length ? h(
                       "section",
                       { className: "tower-artifacts" },
                       h("h3", null, tr("产物", "Artifacts")),
-                      detail.artifacts.length
-                        ? detail.artifacts.map((a) =>
+                      ...detail.artifacts.map((a) =>
                             h(
                               "div",
                               { key: a.id },
@@ -926,24 +1042,9 @@ export function createTaskControlTower(
                                     { disabled: busy || !!t?.read_only },
                                   ),
                             ),
-                          )
-                        : h(
-                            "p",
-                            { className: "tower-muted" },
-                            tr("尚无产物", "No artifacts yet"),
                           ),
-                    ),
-                    h(
-                      "details",
-                      null,
-                      h("summary", null, tr("详情", "Details")),
-                      h("p", null, t.id), h("p", null, t.repo || "—"),
-                      h("p", null, `${tr("完成时刻", "Completed at")}: ${t.completed_at ? new Date(t.completed_at).toLocaleString() : "—"}`),
-                      h("p", null, t.spec_json?.summary || "—"),
-                    ),
-                    detail?.review_notes?.length ? h("section", { className: "tower-review-notes" },
-                      h("h3", null, tr("修改意见", "Review feedback")),
-                      ...detail.review_notes.map((note, i) => h("p", { key: i, style: { whiteSpace: "pre-wrap" } }, note.text))) : null,
+                    ) : null,
+                    h(SpecDetails, { task: t }),
                     h(
                       "details",
                       null,
@@ -958,29 +1059,6 @@ export function createTaskControlTower(
                         null,
                         `${tr("当前状态", "Current status")} · ${statusLabel(t.status)}`,
                       ),
-                    ),
-                    h(
-                      "details",
-                      null,
-                      h(
-                        "summary",
-                        null,
-                        tr("关联会话 / PR", "Linked sessions / PRs"),
-                      ),
-                      (detail.links || [])
-                        .filter((l) => safeLink(l.url))
-                        .map((l) =>
-                          h(
-                            "a",
-                            {
-                              key: l.url,
-                              href: safeLink(l.url)!,
-                              target: "_blank",
-                              rel: "noopener noreferrer",
-                            },
-                            l.label,
-                          ),
-                        ),
                     ),
                   )
                 : null,
