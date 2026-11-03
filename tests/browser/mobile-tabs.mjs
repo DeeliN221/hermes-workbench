@@ -62,7 +62,7 @@ try {
       assert.equal(await rail.evaluate(el => el.inert || el.getAttribute('aria-hidden') === 'true'), false);
       assert.equal(await rail.locator('a[href^="/skills"], a[href^="/sample-plugin"]').count(), 0);
       assert.deepEqual(await rail.locator('.dashboard-rail-actions a').evaluateAll(links => links.map(a => { const url = new URL(a.href); url.searchParams.delete('profile'); return url.pathname + url.search; }).sort()),
-        ['/config', '/kanban', '/cron', '/chat?workbench=terminal', '/achievements'].sort(), 'Rail links match main');
+        ['/config?workbench=versions', '/kanban', '/cron', '/chat?workbench=terminal', '/achievements'].sort(), 'Rail links match main');
       if (!['/skills', '/sample-plugin'].includes(route)) assert.ok(await rail.locator('[aria-current="page"]').count());
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       if (evidence) await page.screenshot({ path: path.join(evidence, `${route.slice(1)}-${theme}.png`) });

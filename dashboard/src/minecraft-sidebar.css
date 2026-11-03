@@ -128,9 +128,6 @@
   box-shadow: inset 2px 2px var(--craft-light), inset -2px -2px var(--craft-shadow), 0 12px 48px #0006;
 }
 .workbench-actions-dialog::backdrop { background: var(--mc-backdrop, #24281eb3); }
-.workbench-actions-dialog > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-.workbench-actions-dialog h2 { margin: 0; font: inherit; font-size: 18px; font-weight: 600; }
-.workbench-actions-close { width: 32px; height: 32px; padding: 0; border: 1px solid var(--dashboard-line); color: inherit; background: var(--craft-slot); font-size: 24px; cursor: pointer; }
 .dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid { padding: 10px; gap: 8px; }
 .dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid :is(a, button) { font-size: 14px; }
 .dashboard-global-nav .workbench-actions-dialog .dashboard-crafting-grid :is(a, button) > span {
@@ -208,8 +205,6 @@
 }
 
 .dashboard-crafting-grid .workbench-profile-action { display: contents; }
-.workbench-actions-dialog > header > a { margin-left: auto; margin-right: 12px; }
-.workbench-actions-dialog > header > a span { display: none; }
 .dashboard-rail-top {
   display: flex; flex-direction: column; gap: 2px;
   padding-bottom: 6px; margin-bottom: 6px;
@@ -361,8 +356,5 @@ html[data-workbench-accessory][data-workbench-accessory-settings="true"][data-wo
   :root[data-workbench-shell="true"][data-workbench-page="settings"] #app-sidebar + div { margin-left: var(--dashboard-settings-width) !important; }
 }
 
-.workbench-menu-sessions { margin-top: 14px; }
-.workbench-menu-sessions > summary { padding: 8px; cursor: pointer; }
-.workbench-menu-sessions > div { max-height: 40vh; overflow: auto; }
-.workbench-actions-dialog > .workbench-profile-action { margin-bottom: 10px; }
-.workbench-actions-dialog > .workbench-profile-action > button { width: 100%; padding: 8px; color: inherit; background: var(--craft-slot); border: 1px solid var(--dashboard-line); font: inherit; cursor: pointer; }
+.workbench-actions-dialog[open] { visibility: visible; }
+.dashboard-rail-top .workbench-launcher { display: grid; place-items: center; width: 40px; height: 40px; padding: 7px; border: 0; background: transparent; color: inherit; cursor: pointer; }

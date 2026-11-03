@@ -24,13 +24,12 @@ export function createWorkbenchLauncher(sdk: Record<string, any>) {
 export function createWorkbenchDialog(sdk: Record<string, any>) {
   const h = sdk.React.createElement;
   const { useRef, useEffect } = sdk.hooks;
-  return function WorkbenchDialog({ open, onClose, children, headerAction }: { open: boolean; onClose: () => void; children: any; headerAction?: any }) {
+  return function WorkbenchDialog({ open, onClose, children }: { open: boolean; onClose: () => void; children: any }) {
     const ref = useRef(null as HTMLDialogElement | null);
-    const titleId = sdk.React.useId();
+    const trigger = useRef(null as HTMLElement | null);
     useEffect(() => {
       const onKeyDown = (event: KeyboardEvent) => {
-        if (window.innerWidth <= 800 || window.matchMedia('(pointer: coarse)').matches
-          || event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229
+        if (event.defaultPrevented || event.repeat || event.isComposing || event.keyCode === 229
           || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey
           || event.key.toLowerCase() !== 'w') return;
         const editable = (target: EventTarget | null) => target instanceof Element
@@ -45,15 +44,22 @@ export function createWorkbenchDialog(sdk: Record<string, any>) {
       return () => window.removeEventListener('keydown', onKeyDown);
     }, []);
     useEffect(() => {
-      const dialog = ref.current;
+      const dialog = ref.current as HTMLDialogElement | null;
       if (!dialog) return;
-      if (open && !dialog.open) dialog.showModal();
-      if (!open && dialog.open) dialog.close();
+      if (open && !dialog.open) {
+        trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        dialog.showModal();
+        dialog.querySelector<HTMLElement>('a[href], button:not(:disabled)')?.focus();
+      }
+      if (!open && dialog.open) {
+        dialog.close();
+        trigger.current?.focus({ preventScroll: true });
+      }
       window.dispatchEvent(new CustomEvent('workbench:actions-state', { detail: { open } }));
     }, [open]);
     return h('dialog', {
-      ref, className: 'workbench-actions-dialog', 'aria-labelledby': titleId,
-      onCancel: onClose, onClose,
+      ref, className: 'workbench-actions-dialog', 'aria-label': uiText('工作台', 'Workbench'),
+      onCancel: (event: Event) => { event.preventDefault(); onClose(); }, onClose,
       onKeyDown: (event: KeyboardEvent) => {
         if (event.key !== 'Tab' || (event.target instanceof Element && event.target.closest('dialog') !== ref.current)) return;
         const dialog = ref.current as HTMLDialogElement | null;
@@ -64,11 +70,10 @@ export function createWorkbenchDialog(sdk: Record<string, any>) {
         else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
       },
       onClick: (event: MouseEvent) => { if (event.target === ref.current) {
+        event.preventDefault(); event.stopPropagation();
         const rect = ref.current!.getBoundingClientRect();
         if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) onClose();
       } },
-    }, h('header', null, h('h2', { id: titleId }, uiText('工作台', 'Workbench')), headerAction,
-      h('button', { type: 'button', className: 'workbench-actions-close', 'aria-label': uiText('关闭工作台', 'Close workbench'), onClick: onClose }, '×')),
-      children);
+    }, children);
   };
 }

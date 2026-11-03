@@ -1,3 +1,4 @@
+import { openSessionNavigation, openSecondSession } from './navigation-helpers.mjs';
 /**
  * Per-pane user message navigators: every chat pane must own one ball, one
  * panel, and one scroll target, and none of them may drift with the layout.
@@ -17,11 +18,7 @@ try {
   page.on('pageerror', error => errors.push(error.stack || error.message));
   await page.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await page.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
-  await page.evaluate(() => document.activeElement?.blur());
-  await page.keyboard.press('w');
-  await page.locator('.workbench-menu-sessions > summary').click();
-  await page.locator('.project-temporary .codex-session-row').nth(1).click();
-  await page.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2, null, { timeout: 5000 });
+  await openSecondSession(page);
   await injectMessages(page, 0, ['pane-a-user-1', 'pane-a-user-2', 'pane-a-user-3', 'pane-a-user-4', 'pane-a-user-5', 'pane-a-user-6']);
   await injectMessages(page, 1, ['pane-b-user-1', 'pane-b-user-2']);
   await page.waitForFunction((ball) => document.querySelectorAll(ball).length === 2
@@ -99,11 +96,7 @@ try {
   mobile.on('pageerror', error => mobileErrors.push(error.stack || error.message));
   await mobile.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await mobile.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
-  await mobile.evaluate(() => document.activeElement?.blur());
-  await mobile.keyboard.press('w');
-  await mobile.locator('.workbench-menu-sessions > summary').click();
-  await mobile.locator('.project-temporary .codex-session-row').nth(1).click();
-  await mobile.waitForFunction(() => document.querySelectorAll('.codex-pane-slot').length === 2, null, { timeout: 5000 });
+  await openSecondSession(mobile);
   await injectMessages(mobile, 0, ['mobile-a-1', 'mobile-a-2', 'mobile-a-3', 'mobile-a-4', 'mobile-a-5', 'mobile-a-6']);
   await injectMessages(mobile, 1, ['mobile-b-1', 'mobile-b-2']);
   await mobile.setViewportSize({ width: 390, height: 844 });

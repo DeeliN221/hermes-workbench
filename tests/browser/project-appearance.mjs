@@ -1,10 +1,11 @@
+import { openSessionNavigation } from './navigation-helpers.mjs';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { createMockHost } from './mock-host.mjs';
 const host = await createMockHost({ host: 'localhost' });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
 try {
-  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: 800, height: 900 } });
   page.setDefaultTimeout(10000);
   const errors = [];
   page.on('pageerror', error => errors.push(String(error)));
@@ -22,9 +23,7 @@ try {
     return route.fulfill({ json: { items: groups } });
   });
   await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
-  await page.locator('.codex-center-title').first().click();
-  await page.keyboard.press('w');
-  await page.locator('.workbench-menu-sessions > summary').click();
+  await openSessionNavigation(page);
   await page.locator('.project-temporary').waitFor();
   assert.equal(await page.locator('.project-navigation').count(), 0);
   assert.equal(await page.locator('.project-navigation-resizer').count(), 0);
@@ -42,9 +41,7 @@ try {
   await editor.waitFor({ state: 'detached' });
   await page.reload();
   await page.locator(".codex-pane-slot").first().waitFor();
-  await page.locator(".codex-center-title").first().click();
-  await page.keyboard.press("w");
-  await page.locator(".workbench-menu-sessions > summary").click();
+  await openSessionNavigation(page);
   await page.locator('.project-folder').waitFor();
   assert.equal(await page.locator('.project-folder-heading .project-appearance-mark').textContent(), '☆');
   assert.equal(await page.locator('.project-folder-heading .project-appearance-mark').evaluate(n => getComputedStyle(n).color), 'rgb(51, 155, 114)');

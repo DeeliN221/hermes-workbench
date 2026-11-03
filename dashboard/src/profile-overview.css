@@ -12,7 +12,7 @@
 .profile-session { display: flex; align-items: center; gap: 6px; padding: 9px 10px; border-bottom: 1px solid var(--mc-line-soft); color: inherit; text-decoration: none; background-color: var(--mc-surface); }
 .profile-session:last-child { border-bottom: 0; }
 .profile-session strong { order: -1; flex: 1; min-width: 0; font-size: 13px; line-height: 1.5; font-weight: 500; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
-.profile-session-project { width: 28%; min-width: 0; font-size: 11px; color: var(--mc-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.profile-session-project { order: 1; margin-left: auto; text-align: right; width: 28%; min-width: 0; font-size: 11px; color: var(--mc-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .profile-session-indicator { font-size: 10px; flex: none; }
 .profile-session:hover { background-color: var(--mc-raised); }
 .profile-overview :focus-visible { outline: 2px solid var(--mc-accent); outline-offset: -2px; }
