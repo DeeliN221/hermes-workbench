@@ -42,17 +42,12 @@
 .project-actions button:hover { color: var(--dashboard-ink); background: var(--dashboard-active); }
 .project-folder-row { position: relative; }
 .project-folder { border-radius: 10px; }
-.project-folder-heading { display: flex; align-items: center; gap: 9px; min-height: 40px; padding: 6px 8px 6px 10px;
+.project-folder-heading { display: flex; align-items: center; gap: 9px; min-height: 40px;
   border-radius: 10px; cursor: pointer; list-style: none; color: var(--dashboard-ink); }
 .project-folder-heading::-webkit-details-marker { display: none; }
-.project-folder-heading > svg { flex: 0 0 18px; }
 .project-folder-heading:hover { background: var(--dashboard-active); }
 .project-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.project-count { font-size: 11px; color: var(--dashboard-muted); }
-.project-actions { position: absolute; top: 6px; right: 8px; display: none; align-items: center; gap: 2px; }
-.project-folder-row:hover .project-actions, .project-folder-row:focus-within .project-actions { display: flex; }
-.project-folder-row:hover .project-folder-heading, .project-folder-row:focus-within .project-folder-heading { padding-right: 106px; }
-.project-folder-row:hover .project-count, .project-folder-row:focus-within .project-count { display: none; }
+.project-actions { position: absolute; right: 8px; align-items: center; }
 .project-folder > .project-session-drag { margin-left: 15px; border-left: 1px solid var(--dashboard-line); padding-left: 3px; }
 .project-temporary { margin-top: 14px; border-radius: 10px; min-height: 78px; }
 /* Split the project folders from temporary sessions so each section scrolls
@@ -138,11 +133,9 @@
   .dashboard-global-nav .dashboard-nav-primary > a span { font-size: 14px; }
   .dashboard-global-nav .dashboard-nav-primary > a,
   .dashboard-chat-actions .codex-navigation-create-actions > button { min-height: 40px; }
-  .project-actions { display: flex; }
   .project-list { --project-row-height: 48px; }
-  .project-folder-row .project-folder-heading { min-height: 48px; padding-right: 130px; }
+  .project-folder-row .project-folder-heading { min-height: 48px; }
   .project-actions button, .project-create { width: 36px; height: 36px; }
-  .project-count { display: none; }
 }
 
 /* Desktop collapse keeps one icon column: folders for projects, bubbles for
@@ -243,3 +236,29 @@
 .dashboard-chat-actions .new-session-workspace-menu > button:hover, .dashboard-chat-actions .new-session-workspace-menu > button:focus-visible { font-size: 13px; }
 
 .project-rail-folder.is-active { background: var(--dashboard-active); box-shadow: inset 3px 0 var(--dashboard-accent); }
+
+/* Project controls stay separate from the folder disclosure. */
+.project-folder-row .project-folder-heading { padding-left: 44px; padding-right: 44px; }
+.project-icon-edit { position: absolute; left: 4px; top: 2px; width: 36px; height: 36px;
+  display: grid; place-items: center; border: 0; padding: 0; border-radius: 6px;
+  color: var(--dashboard-ink); background: transparent; cursor: pointer; }
+.project-icon-edit:hover { background: var(--dashboard-active); }
+.project-actions { display: flex; opacity: 0; top: 6px; }
+.project-folder-row:hover .project-actions, .project-folder-row:focus-within .project-actions,
+.project-actions:has(:popover-open) { opacity: 1; }
+.project-icon-edit:focus-visible, .project-heading-label:focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: -2px; }
+.project-heading-label { border: 0; background: transparent; color: inherit; font: inherit; font-weight: inherit;
+  padding: 6px 0; min-height: 36px; cursor: context-menu; user-select: none; -webkit-touch-callout: none; touch-action: pan-y; }
+.project-create-hint { margin: 0; padding: 2px 10px 8px; font-size: 11px; line-height: 1.5; color: var(--dashboard-muted); }
+.project-menu-create { width: 100%; padding: 10px; border: 0; color: var(--dashboard-ink); background: transparent; text-align: start; cursor: pointer; font: inherit; }
+.project-menu-create:hover { background: var(--dashboard-active); }
+.project-action-menu { position: fixed; inset: auto; margin: 0; width: 180px; padding: 4px;
+  box-sizing: border-box; border: 1px solid var(--dashboard-line); border-radius: 8px;
+  background: var(--dashboard-page-surface, var(--mc-surface, #fff)); color: var(--dashboard-ink);
+  box-shadow: 0 8px 28px #0004; }
+.project-actions .project-action-menu > button { display: block; width: 100%; height: auto; min-height: 44px;
+  padding: 8px 12px; text-align: start; font: inherit; }
+@media (max-width: 800px), (hover: none) {
+  .project-actions { opacity: 1; }
+  .project-icon-edit { top: 6px; }
+}

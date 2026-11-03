@@ -127,13 +127,17 @@ it('keeps independent project actions outside disclosure summaries', () => {
   const summary = nodes.find(node => node.type === 'summary');
   expect(summary).toBeDefined();
   expect(descendants(summary).some(node => ['button', 'input', 'select', 'textarea', 'a'].includes(node.type))).toBe(false);
-  const actions = nodes.find(node => node.props.className === 'project-actions');
-  expect(nodes.find(node => node.type === 'details').children).not.toContain(actions);
-  const [, rename, remove] = actions.children;
-  const trigger = {} as HTMLElement;
-  rename.props.onClick({ preventDefault: vi.fn(), currentTarget: trigger });
-  remove.props.onClick({ preventDefault: vi.fn(), currentTarget: trigger });
-  expect(onRename).toHaveBeenCalledWith(project, trigger);
+  const appearance = nodes.find(node => node.props.className === 'project-icon-edit');
+  expect(appearance.type).toBe('button');
+  expect(appearance.props['aria-label']).toMatch(/Research/);
+  expect(nodes.find(node => node.type === 'details').children).not.toContain(appearance);
+  const component = nodes.find(node => typeof node.type === 'function' && node.props.onRename);
+  const menu = component.type(component.props);
+  const menuNodes = descendants(menu);
+  expect(menuNodes.find(node => node.props['aria-haspopup'] === 'menu')).toBeDefined();
+  const [rename, remove] = menuNodes.filter(node => node.props.role === 'menuitem');
+  rename.props.onClick(); remove.props.onClick();
+  expect(onRename).toHaveBeenCalledWith(project, null);
   expect(onDelete).toHaveBeenCalledWith(project);
 });
 
@@ -170,7 +174,7 @@ describe('project and temporary session split', () => {
   });
 });
 
-it('omits project section and splitter without projects, while keeping accessible creation', () => {
+it('keeps a project heading for creation when empty, without a splitter', () => {
   const onCreate = vi.fn(), onNewSession = vi.fn();
   const sdk = {
     React: { Fragment: 'fragment', useId: () => 'empty-projects',
@@ -183,14 +187,16 @@ it('omits project section and splitter without projects, while keeping accessibl
   });
   const descendants = (node: any): any[] => node && typeof node === 'object' ? [node, ...node.children.flatMap(descendants)] : [];
   const nodes = descendants(tree);
-  expect(nodes.some(node => node.props.className === 'project-navigation')).toBe(false);
+  expect(nodes.some(node => node.props.className === 'project-navigation')).toBe(true);
   expect(nodes.some(node => node.props.role === 'separator')).toBe(false);
   const create = nodes.find(node => node.props['aria-label'] === '新建临时会话' || node.props['aria-label'] === 'New temporary session');
   create.props.onClick();
   expect(onNewSession).toHaveBeenCalledOnce();
   const trigger = {} as HTMLElement;
-  create.props.onContextMenu({ preventDefault: vi.fn(), currentTarget: trigger });
-  create.props.onKeyDown({ key: 'F10', shiftKey: true, preventDefault: vi.fn(), currentTarget: trigger });
+  const heading = nodes.find(node => node.props.className === 'project-heading-label');
+  expect(create.props.onContextMenu).toBeUndefined();
+  heading.props.onContextMenu({ preventDefault: vi.fn(), currentTarget: trigger });
+  heading.props.onKeyDown({ key: 'F10', shiftKey: true, preventDefault: vi.fn(), currentTarget: trigger });
   expect(onCreate).toHaveBeenCalledTimes(2);
   expect(onCreate).toHaveBeenCalledWith(trigger);
 });
