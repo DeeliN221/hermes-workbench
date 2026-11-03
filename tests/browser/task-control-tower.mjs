@@ -299,7 +299,8 @@ try {
     () => (document.documentElement.dataset.workbenchTheme = "light"),
   );
   await page.screenshot({ path: path.join(shotDir, "desktop-empty.png") });
-  await page.goto(host.origin + '/');
+  await page.keyboard.press('w');
+  await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Home', exact: true }).click();
   await page.locator('.profile-overview').waitFor();
   await page.keyboard.press('w');
   await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Kanban', exact: true }).click();
