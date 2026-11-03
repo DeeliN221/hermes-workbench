@@ -221,3 +221,34 @@ it.each(['alias', 'visibility', 'show-all'])('rolls back %s after a failed serve
   expect(target.querySelector<HTMLInputElement>('input')!.disabled).toBe(false);
   expect(localStorage.length).toBe(0);
 });
+
+it('renders release Markdown, plain paragraphs, and only safe external links', async () => {
+  const notes = "## What's Changed\n\n* **Fix** `release` by @author in https://github.com/example/repo/pull/123\n* [commit](http://github.com/example/repo/commit/abc)\n\nBuilt from main commit abc.\n\n<script>alert(1)</script>\n\n[bad](javascript:alert%281%29) [data](data:text/html,evil) [mail](mailto:test@example.com) [relative](/config) [protocol-relative](//example.com) [encoded](javascript&#58;alert%281%29)\n\n![image](https://example.com/tracker.png)";
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ active: '1', versions: [{ version: '1', notes }] }))));
+  const target = panel();
+  await renderWorkbenchVersions(target);
+  const body = target.querySelector('.workbench-version-notes > div')!;
+  expect(body.querySelector('h2')?.textContent).toBe("What's Changed");
+  expect(body.querySelectorAll('ul > li')).toHaveLength(2);
+  expect(body.querySelector('strong')?.textContent).toBe('Fix');
+  expect(body.querySelector('code')?.textContent).toBe('release');
+  expect(Array.from(body.querySelectorAll('p')).some(p => p.textContent === 'Built from main commit abc.')).toBe(true);
+  expect(body.querySelector('script, img')).toBeNull();
+  expect(body.textContent).toContain('<script>alert(1)</script>');
+  expect(body.querySelectorAll('a')).toHaveLength(2);
+  for (const link of body.querySelectorAll('a')) {
+    expect(link.href).toMatch(/^https?:\/\//);
+    expect(link.target).toBe('_blank');
+    expect(link.rel).toBe('noopener noreferrer');
+  }
+});
+
+it('keeps plain release descriptions and empty-note fallback in paragraphs', async () => {
+  vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ active: '1', versions: [
+    { version: '1', notes: 'Built from main commit abc.' }, { version: '2' },
+  ] }))));
+  const target = panel();
+  await renderWorkbenchVersions(target);
+  expect(Array.from(target.querySelectorAll('.workbench-version-notes p'), p => p.textContent))
+    .toEqual(['Built from main commit abc.', '此版本暂无更新日志。']);
+});
