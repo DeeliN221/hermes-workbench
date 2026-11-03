@@ -65,7 +65,7 @@ def test_gate_projection_decisions_workers_detail(client, monkeypatch):
     assert detail["task"]["attempt_count"] == 1
     assert len(detail["open_decision"]["options"]) == 3
     assert detail["open_decision"]["options"][0]["label"] == "A Retry"
-    assert client.post(BASE + "/tasks/T-example/decide", headers=HEADERS, json={}).status_code == 404
+    assert client.post(BASE + "/tasks/T-example/decide", headers=HEADERS, json={}).status_code == 403
 
 
 def test_empty_and_partial_failure(client, monkeypatch):
@@ -246,3 +246,39 @@ def test_conversation_links_and_blocker_from_attempt(client, monkeypatch):
     assert result["conversation_id"] == "execution-1"
     assert result["blocked_reason"] == "Build needs a compiler"
     assert result["status"] == "blocked"
+
+
+def test_search_contract_pagination_and_old_server(client, monkeypatch):
+    from urllib.parse import urlsplit, parse_qs
+    seen = []
+    def get(self, path):
+        seen.append(parse_qs(urlsplit(path).query))
+        return {"tasks": [{"id": "T-old", "title": "历史 %_", "status": "archived"}],
+                "has_more": True, "next_cursor": "page:a+/="}
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    response = client.get(BASE + "/tasks/search", params={"q": "历史 %_", "cursor": "page:a+/=", "archived": "true"}, headers=HEADERS)
+    assert response.status_code == 200
+    assert response.json()["tasks"][0]["status"] == "archived"
+    assert seen == [{"q": ["历史 %_"], "cursor": ["page:a+/="], "status": ["archived"], "include_archived": ["1"], "limit": ["100"]}]
+    monkeypatch.setattr(transport.FleetClient, "get", lambda *_: {"tasks": []})
+    assert client.get(BASE + "/tasks/search", headers=HEADERS).status_code == 501
+    assert client.get(BASE + "/tasks/search", params={"q": "x" * 257}, headers=HEADERS).status_code == 422
+
+
+@pytest.mark.parametrize("action,status,payload,expected", [
+    ("archive", "done", {}, {}), ("retry", "blocked", {}, {}),
+    ("decide", "blocked", {"decision_id": "D-one", "option_id": "0"}, {"choice": "Retry", "note": ""}),
+])
+def test_lifecycle_contract(client, monkeypatch, action, status, payload, expected):
+    writes = []
+    def get(self, path):
+        if path.startswith("tasks/"):
+            return {"task": {"status": status}}
+        return {"decisions": [{"id": "D-one", "task_id": "T-example", "status": "open", "options": ["Retry", "Stop"]}] if action == "decide" else []}
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    monkeypatch.setattr(transport.FleetClient, "post", lambda self, path, body: writes.append((path, body)))
+    headers = {**HEADERS, "origin": "http://testserver"}
+    response = client.post(BASE + "/tasks/T-example/" + action, headers=headers, json=payload)
+    assert response.status_code == 200, response.text
+    assert writes == [("tasks/T-example/" + action, expected)]
+    assert client.post(BASE + "/tasks/T-example/" + action, headers={**headers, "origin": "https://evil.example"}, json=payload).status_code == 403

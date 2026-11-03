@@ -608,3 +608,10 @@
   .tower-list { display: block; }
   .tower-workspace, .tower-layout { height: auto; }
 }
+
+.tower-column-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; }
+.tower-select { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
+.tower-search { position: fixed; inset: 16px 16px 16px 64px; z-index: 72; padding: 24px; overflow: auto; background: var(--bg, #fff); color: var(--text, #222); border: 1px solid var(--border, #888); border-radius: 12px; }
+.tower-search input { width: 100%; margin: 16px 0; }
+.tower-search > div { display: flex; justify-content: space-between; gap: 12px; padding: 8px 0; }
+[data-workbench-theme="dark"] .tower-search { background: #202124; color: #eee; }

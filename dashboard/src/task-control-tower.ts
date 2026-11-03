@@ -54,6 +54,28 @@ export function createTaskControlTower(
       [connectionError, setConnectionError] = useState(""),
       [refreshing, setRefreshing] = useState(false),
       [truncated, setTruncated] = useState(false);
+    const [query, setQuery] = useState(""), [searchOpen, setSearchOpen] = useState(false),
+      [archiveView, setArchiveView] = useState(false), [searchRows, setSearchRows] = useState([] as Task[]),
+      [searchError, setSearchError] = useState(""), [searchBusy, setSearchBusy] = useState(false),
+      [cursor, setCursor] = useState(""), [checked, setChecked] = useState([] as string[]);
+    const searchVersion = useRef(0);
+    const searchPage = async (more = false) => {
+      const version = ++searchVersion.current;
+      setSearchBusy(true); setSearchError("");
+      try {
+        const page = await api.search(query, archiveView, more ? cursor : "");
+        if (version !== searchVersion.current) return;
+        setSearchRows(previous => [...new Map([...(more ? previous : []), ...page.tasks].map(t => [t.id, t])).values()]);
+        setCursor(page.next_cursor);
+      } catch (e) { if (version === searchVersion.current) setSearchError(String(e instanceof Error ? e.message : e)); }
+      finally { if (version === searchVersion.current) setSearchBusy(false); }
+    };
+    useEffect(() => {
+      ++searchVersion.current; setSearchRows([]); setCursor(""); setSearchError("");
+      if (!searchOpen) return;
+      const timer = setTimeout(() => void searchPage(), 250);
+      return () => { clearTimeout(timer); ++searchVersion.current; };
+    }, [query, archiveView, searchOpen]);
     const refreshLock = useRef(false);
     const [detail, setDetail] = useState(null as Detail | null),
       [selected, setSelected] = useState("");
@@ -347,7 +369,7 @@ export function createTaskControlTower(
           key: t.id,
           className: `tower-card ${compact ? "is-row" : ""}`,
           "data-task-id": t.id,
-          onClick: (e: MouseEvent) => { if (!(e.target as Element).closest("button, a")) void open(t.id); },
+          onClick: (e: MouseEvent) => { if (!(e.target as Element).closest("button, a, input, label")) void open(t.id); },
           draggable: !busy && !t.read_only && t.status !== "done",
           onDragStart: (e: DragEvent) => {
             e.dataTransfer?.setData("text/workbench-task", t.id);
@@ -359,37 +381,15 @@ export function createTaskControlTower(
         h(
           "div",
           { className: "tower-card-meta" },
-          h("span", null, t.id),
-          h("span", null, statusLabel(t.status)),
-          h("span", null, t.repo || "—"),
-          h("span", null, [t.machine, t.assignee].filter(Boolean).join(" / ") || "—"),
-          t.attempt_count !== undefined ? h("span", { title: tr("Fleet 列表计数；详情显示实际执行记录数", "Fleet list counter; details show execution records") }, `${t.attempt_count} attempts`) : null,
-          t.updated_at ? h("time", { dateTime: t.updated_at }, new Date(t.updated_at).toLocaleString()) : null,
+          ...[[tr("设备", "Device"), t.machine], ["CLI", t.capability],
+            [tr("模型", "Model"), t.model_used], [tr("思考深度", "Reasoning"), t.reasoning_effort],
+            [tr("总耗时", "Total time"), typeof t.duration_seconds === "number" ? `${(t.duration_seconds / 60).toFixed(1)} min` : undefined]
+          ].map(([label, value]) => h("span", { key: label }, `${label}: ${value || tr("未提供", "Not recorded")}`)),
         ),
-        h(
-          "div",
-          { className: "tower-card-foot" },
-          h("span", { className: `tower-risk risk-${t.risk}` }, t.risk),
-          h("span", null, t.priority),
-          h("time", null, age(t)),
-          !t.read_only ? h(
-            "span",
-            null,
-            `${t.acceptance.filter((c) => c.checked).length}/${t.acceptance.length}`,
-          ) : null,
-          !t.read_only && verifyMode(t) === "auto"
-            ? h(
-                "span",
-                { className: "tower-auto" },
-                tr("自动验收", "Auto verify"),
-              )
-            : null,
-        ),
-        !t.read_only ? h("progress", {
-          value: t.acceptance.filter((c) => c.checked).length,
-          max: t.acceptance.length || 1,
-          "aria-label": tr("交付进度", "Delivery progress"),
-        }) : null,
+        t.status === "done" ? h("label", { className: "tower-select" }, h("input", {
+          type: "checkbox", checked: checked.includes(t.id), disabled: busy,
+          onChange: () => setChecked(previous => previous.includes(t.id) ? previous.filter(id => id !== t.id) : [...previous, t.id]),
+        }), tr("选择", "Select")) : null,
       );
     const group = (status: Status) => {
       const rows =
@@ -418,6 +418,20 @@ export function createTaskControlTower(
             ),
       );
     };
+    const completed = tasks.filter(t => t.status === "done");
+    const bulkArchive = () => void run(async () => {
+      const targets = completed.filter(t => checked.includes(t.id));
+      const results = await Promise.allSettled(targets.map(t => t.lifecycle_actions ? api.lifecycle(t.id, "archive") : api.move(t, "archived", !!config?.extended_workflow)));
+      const failed = targets.filter((_, i) => results[i].status === "rejected").map(t => t.id);
+      setChecked(failed);
+      if (failed.length) throw new Error(tr(`${failed.length} 个任务归档失败，已保留选择，可重试`, `${failed.length} tasks could not be archived. Selection retained; retry.`));
+    });
+    const columnTools = (id: string) => id === "pending" ? btn(tr("搜索全部任务", "Search all tasks"), () => { setArchiveView(false); setSearchOpen(true); })
+      : id === "done" ? h("div", { className: "tower-column-actions" },
+        btn(tr("全选", "Select all"), () => setChecked(completed.map(t => t.id)), { disabled: busy || !completed.length }),
+        btn(tr("清除选择", "Clear selection"), () => setChecked([]), { disabled: busy || !checked.length }),
+        btn(tr("批量归档", "Archive selected"), bulkArchive, { disabled: busy || !completed.some(t => checked.includes(t.id)) }),
+        btn(tr("查看归档", "View archived"), () => { setArchiveView(true); setQuery(""); setSearchOpen(true); })) : null;
     const t = detail?.task,
       decision = detail?.open_decision || detail?.decision || t?.decision;
     const nextAction = (task: Task) => {
@@ -474,11 +488,21 @@ export function createTaskControlTower(
           h("div", { className: "tower-board" }, columns.map(c =>
             h("section", { key: c.id, className: `tower-column column-${c.id}`, "data-column": c.id },
               h("h2", null, c.label(), h("span", null, tasks.filter(t => c.statuses.includes(t.status)).length)),
+              columnTools(c.id),
               h("div", { className: "tower-column-scroll" }, tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t)))))),
           h("div", { className: "tower-list" }, columns.map(c =>
             h("section", { key: c.id, "data-column": c.id },
-              h("h2", null, c.label()), tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t, true))))),
+              h("h2", null, c.label()), columnTools(c.id), tasks.filter(t => c.statuses.includes(t.status)).map(t => card(t, true))))),
       )),
+      searchOpen ? h("section", { className: "tower-search", "aria-label": tr("搜索全部任务", "Search all tasks") },
+        btn(tr("关闭搜索", "Close search"), () => setSearchOpen(false)),
+        h("h2", null, archiveView ? tr("已归档", "Archived") : tr("全部任务（包含归档）", "All tasks (including archived)")),
+        h("input", { type: "search", value: query, maxLength: 256, "aria-label": tr("搜索任务", "Search tasks"), onChange: (e: any) => setQuery(e.target.value) }),
+        searchError ? h("p", { role: "alert" }, searchError, btn(tr("重试", "Retry"), () => void searchPage())) : null,
+        searchBusy ? h("p", { role: "status" }, tr("搜索中…", "Searching…")) : null,
+        !searchBusy && !searchError && !searchRows.length ? h("p", null, tr("没有匹配任务", "No matching tasks")) : null,
+        ...searchRows.map(t => h("div", { key: t.id }, btn(t.title, () => void open(t.id)), h("span", null, statusLabel(t.status)))),
+        cursor ? btn(tr("加载更多", "Load more"), () => void searchPage(true), { disabled: searchBusy }) : null) : null,
       selected
         ? h(
             "div",
@@ -526,9 +550,9 @@ export function createTaskControlTower(
                     h(
                       "section",
                       { className: "tower-next" },
-                      h("h3", null, tr("下一步动作", "Next action")),
+                      h("h3", null, tr("摘要", "Summary")),
                       h("p", null, t.review_actions ? tr("核对交付后确认，或提交修改意见", "Review the delivery, then approve or request changes") : t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
-                      h("p", null, [t.id, t.fleet_status, t.machine, t.assignee, t.attempt_count !== undefined ? `${t.attempt_count} attempts` : ""].filter(Boolean).join(" · ")),
+
                       t.spec_json?.summary ? h("p", { style: { whiteSpace: "pre-wrap" } }, t.spec_json.summary) : null,
                       t.review_actions ? h("section", { className: "tower-review", "aria-busy": busy },
                         h("div", { className: "tower-move-actions" },
@@ -586,16 +610,19 @@ export function createTaskControlTower(
                           ),
                       ),
                     ),
-                    h("section", { className: "tower-sessions" },
+                    h("section", { className: "tower-runtime" }, h("h3", null, tr("运行信息", "Run information")),
+                      h("p", null, [t.machine, t.capability, t.model_used, t.reasoning_effort].filter(Boolean).join(" · ") || tr("未提供", "Not recorded"))),
+                    h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
                       ...([
                         [tr("来源会话", "Source conversation"), t.source_session_id, t.source_profile, t.source_session_kind],
                         [tr("执行会话", "Execution conversation"), t.conversation_id, t.conversation_profile, t.conversation_kind],
                       ] as const).map(([label, id, scope, kind]) => h("div", { key: label },
-                        h("h3", null, label), id
+                        h("h4", null, label), id && scope && ["hermes", "codex"].includes(kind || "")
                           ? btn(id, () => navigate(`/chat?${kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(id)}`, scope || profile))
-                          : h("p", { className: "tower-muted" }, tr("历史任务未记录此会话", "This historical task did not record a conversation"))))) ,
+                          : h("p", { className: "tower-muted" }, id ? tr("已记录会话编号，但缺少档案或会话类型，无法安全打开", "Conversation recorded, but profile or kind is missing; cannot open safely") : tr("历史任务未记录此会话", "This historical task did not record a conversation"))))) ,
                     t.status === "blocked" || t.status === "triage" ? h("section", { className: "tower-blocker" },
                       h("h3", null, tr("需要处理", "Needs attention")),
+                      t.lifecycle_actions && t.status === "blocked" && !decision ? btn(tr("解除阻塞并重试", "Unblock and retry"), () => void run(() => api.lifecycle(t.id, "retry")), { disabled: busy }) : null,
                       h("p", { style: { whiteSpace: "pre-wrap" } }, t.blocked_reason || t.error || decision?.question || tr("任务未提供原因，请查看执行会话或联系执行者补充。", "No reason was recorded. Inspect the execution conversation or ask the worker for details."))) : null,
                     h(
                       "section",
@@ -661,7 +688,7 @@ export function createTaskControlTower(
                                     void run(() =>
                                       api.decide(t, decision.id, o.id),
                                     ),
-                                  { key: o.id, disabled: busy || !!t.read_only, title: t.read_only ? tr("只读：请在 Fleet 中提交决策", "Read-only: submit decisions in Fleet") : undefined },
+                                  { key: o.id, disabled: busy || (!!t.read_only && !t.lifecycle_actions), title: t.read_only && !t.lifecycle_actions ? tr("只读：请在 Fleet 中提交决策", "Read-only: submit decisions in Fleet") : undefined },
                                 ),
                               )
                             : h(
@@ -891,7 +918,9 @@ export function createTaskControlTower(
                     h(
                       "details",
                       null,
-                      h("summary", null, tr("规格", "Specification")),
+                      h("summary", null, tr("详情", "Details")),
+                      h("p", null, t.id), h("p", null, t.repo || "—"),
+                      h("p", null, `${tr("完成时刻", "Completed at")}: ${t.completed_at ? new Date(t.completed_at).toLocaleString() : "—"}`),
                       h("p", null, t.spec_json?.summary || "—"),
                     ),
                     detail?.review_notes?.length ? h("section", { className: "tower-review-notes" },

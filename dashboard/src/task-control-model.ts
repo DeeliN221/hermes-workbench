@@ -26,6 +26,11 @@ export type Task = {
   revision: number;
   read_only?: boolean;
   review_actions?: boolean;
+  lifecycle_actions?: boolean;
+  capability?: string;
+  model_used?: string;
+  reasoning_effort?: string;
+  duration_seconds?: number;
   fleet_status?: string;
   source_session_id?: string;
   source_profile?: string;

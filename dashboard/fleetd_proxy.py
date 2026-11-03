@@ -1,7 +1,8 @@
 """Same-origin, authenticated, task console API for fleetd v1."""
 import json
 import os
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Request, Query
+from urllib.parse import urlencode
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fleetd_client import FleetClient
@@ -42,11 +43,12 @@ def task(row):
     status = STATUS.get(raw, "triage") if isinstance(raw, str) else "triage"
     result = {k: row[k] for k in ("id", "title", "risk", "machine", "assignee", "repo",
               "created_at", "updated_at", "source_session_id", "source_profile", "source_session_kind",
-              "conversation_id", "conversation_profile", "conversation_kind", "blocked_reason", "error") if k in row}
+              "conversation_id", "conversation_profile", "conversation_kind", "blocked_reason", "error",
+              "capability", "model_used", "reasoning_effort", "duration_seconds", "completed_at") if k in row}
     result.update(status=status, fleet_status=raw, revision=0,
                   priority="P" + str(row.get("priority", "")),
                   attempt_count=row.get("attempts", 0), server_lifecycle=True, read_only=True,
-                  review_actions=raw == "review",
+                  review_actions=raw == "review", lifecycle_actions=True,
                   verify_mode="human" if status == "review" else "auto", acceptance=[])
     if raw == "done":
         result["completed_at"] = row.get("completed_at") or row.get("updated_at")
@@ -59,12 +61,30 @@ def config():
     return reply({"mode": "mock" if demo else "live", "extended_workflow": demo})
 
 
+@router.get("/tasks/search")
+def search(q: str = Query("", max_length=256), cursor: str = Query("", max_length=4096),
+           archived: bool = False):
+    if "\x00" in q:
+        raise HTTPException(422, "Invalid search query")
+    params = {"q": q, "include_archived": "1", "limit": 100}
+    if cursor:
+        params["cursor"] = cursor
+    if archived:
+        params["status"] = "archived"
+    data = FleetClient().get("tasks?" + urlencode(params))
+    # Old fleetd silently ignores q; never present that as a successful search.
+    if not isinstance(data.get("has_more"), bool):
+        raise HTTPException(501, "Fleet search API unavailable; upgrade fleetd to T-204d30db")
+    rows, cursor = data.get("tasks"), data.get("next_cursor", "")
+    if (not isinstance(rows, list) or any(not isinstance(r, dict) for r in rows)
+            or not isinstance(cursor, str) or bool(cursor) != data["has_more"]):
+        raise HTTPException(502, "Invalid Fleet search page")
+    return reply({"tasks": [task(r) for r in rows], "next_cursor": cursor, "has_more": data["has_more"]})
+
+
 @router.get("/tasks")
 def tasks():
-    client = FleetClient()
-    # v1 currently caps the list at 100. Ask for its maximum and follow cursors
-    # when provided. Expose the possible truncation instead of claiming a total.
-    rows = client.collection("tasks", limit=100)
+    rows = FleetClient().collection("tasks", limit=100)
     return reply({"tasks": [task(r) for r in rows], "possibly_truncated": len(rows) >= 100})
 
 
@@ -169,12 +189,37 @@ def perform_review(task_id, action, body):
 @router.post("/tasks/{task_id}/{action}")
 async def review_action(task_id: str, action: str, request: Request):
     _id(task_id)
-    if action not in ("approve", "request_changes", "note"):
+    if action not in ("approve", "request_changes", "note", "archive", "retry", "decide"):
         raise HTTPException(404, "Unknown review action")
     body = await write_body(request)
-    fields = set() if action == "approve" else {"text"}
+    fields = {"decision_id", "option_id"} if action == "decide" else {"text"} if action in ("note", "request_changes") else set()
     if set(body) != fields:
         raise HTTPException(422, "Invalid review fields")
-    if fields and (not isinstance(body["text"], str) or not body["text"].strip() or len(body["text"]) > 8000):
+    if "text" in fields and (not isinstance(body["text"], str) or not body["text"].strip() or len(body["text"]) > 8000):
         raise HTTPException(422, "Feedback must contain 1 to 8000 characters")
+    if action in ("archive", "retry", "decide"):
+        if action == "decide" and any(not isinstance(body[k], str) or len(body[k]) > 256 for k in fields):
+            raise HTTPException(422, "Invalid decision fields")
+        return await run_in_threadpool(perform_lifecycle, task_id, action, body)
     return await run_in_threadpool(perform_review, task_id, action, body)
+
+
+def perform_lifecycle(task_id, action, body):
+    client = FleetClient()
+    data = client.get("tasks/" + task_id)
+    status = data.get("task", {}).get("status")
+    if status != ("done" if action == "archive" else "blocked"):
+        raise HTTPException(409, "Task state changed; refresh and retry")
+    choices = [decision(d) for d in client.collection("decisions", status="open")
+               if d.get("status") == "open" and d.get("task_id") == task_id]
+    payload = {}
+    if action == "retry" and choices:
+        raise HTTPException(409, "Resolve the open decision first")
+    if action == "decide":
+        choice = next((o for d in choices if d["id"] == body["decision_id"]
+                       for o in d["options"] if o["id"] == body["option_id"]), None)
+        if choice is None:
+            raise HTTPException(409, "Decision changed; refresh and retry")
+        payload = {"choice": choice["label"], "note": ""}
+    client.post(f"tasks/{task_id}/{action}", payload)
+    return reply({"ok": True})
