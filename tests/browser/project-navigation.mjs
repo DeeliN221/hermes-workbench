@@ -2,6 +2,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
+import { expect } from '@playwright/test';
 import { createMockHost } from './mock-host.mjs';
 const host = await createMockHost({ host: 'localhost' });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
@@ -110,7 +111,7 @@ try {
     if (mobile) await more.tap(); else await more.click();
     await page.getByRole('menuitem', { name: 'Rename project', exact: true }).waitFor();
     await shot('menu');
-    assert.equal(await more.getAttribute('aria-expanded'), 'true');
+    await expect(more).toHaveAttribute('aria-expanded', 'true');
     await page.keyboard.press('ArrowDown');
     assert.equal(await page.getByRole('menuitem', { name: 'Delete project', exact: true }).evaluate(node => node === document.activeElement), true);
     await page.keyboard.press('Escape');
