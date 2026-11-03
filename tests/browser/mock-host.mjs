@@ -51,7 +51,7 @@ const fixture = `<!doctype html>
   class PreviewWebSocket extends EventTarget {
     static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
     readyState = PreviewWebSocket.CONNECTING;
-    constructor() { super(); queueMicrotask(() => { this.readyState = PreviewWebSocket.OPEN; this.onopen?.(new Event('open')); }); }
+    constructor(url) { super(); this.url = url; (window.__previewSockets ||= []).push(this); queueMicrotask(() => { this.readyState = PreviewWebSocket.OPEN; this.onopen?.(new Event('open')); }); }
     send() {}
     close() { this.readyState = PreviewWebSocket.CLOSED; }
   }
@@ -98,7 +98,7 @@ const loaderFixture = `<!doctype html>
   class PreviewWebSocket extends EventTarget {
     static CONNECTING = 0; static OPEN = 1; static CLOSING = 2; static CLOSED = 3;
     readyState = PreviewWebSocket.CONNECTING;
-    constructor() { super(); queueMicrotask(() => { this.readyState = PreviewWebSocket.OPEN; this.onopen?.(new Event('open')); }); }
+    constructor(url) { super(); this.url = url; (window.__previewSockets ||= []).push(this); queueMicrotask(() => { this.readyState = PreviewWebSocket.OPEN; this.onopen?.(new Event('open')); }); }
     send() {} close() { this.readyState = PreviewWebSocket.CLOSED; }
   }
   window.WebSocket = PreviewWebSocket;
@@ -211,6 +211,11 @@ let createdCounter = 0;
 /** Return deterministic plugin API data for the fixture routes. */
 function apiPayload(url, method, body = null, preferences = new Map()) {
   if (['/api/plugins/workbench/fleet/config', '/api/plugins/workbench/fleetd/config'].includes(url.pathname)) return { mode: 'unconfigured', extended_workflow: false };
+  if (url.pathname === '/api/plugins/workbench/attachment-preferences') {
+    const key = 'attachments:' + (url.searchParams.get('profile') || 'default');
+    if (method === 'PUT') preferences.set(key, { folderUploadEnabled: body.folderUploadEnabled === true });
+    return preferences.get(key) || { folderUploadEnabled: false };
+  }
   if (url.pathname.startsWith('/api/plugins/workbench/model-display')) {
     const profile = url.searchParams.get('profile') || 'default';
     const current = preferences.get(profile);
@@ -279,9 +284,9 @@ function apiPayload(url, method, body = null, preferences = new Map()) {
   }
   if (pathname === '/api/plugins/workbench/codex/workspaces') return { items: [{ id: 'preview-workspace', name: 'hermes-workbench', path: '/home/preview/hermes-workbench' }] };
   if (pathname === '/api/plugins/workbench/codex/models') return { data: [
-    { model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, supportsFast: true, fastServiceTier: 'priority',
+    { model: 'gpt-6.1-sol', displayName: 'GPT-6.1 Sol', isDefault: true, serviceTiers: [{ name: 'fast', id: 'priority' }],
       defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
-    { model: 'gpt-6-astra', displayName: 'GPT-6 Astra', isDefault: false, supportsFast: true, fastServiceTier: 'priority',
+    { model: 'gpt-6-astra', displayName: 'GPT-6 Astra', isDefault: false, serviceTiers: [{ name: 'fast', id: 'priority' }],
       defaultReasoningEffort: 'high', supportedReasoningEfforts: [{ reasoningEffort: 'medium' }, { reasoningEffort: 'high' }] },
     { model: 'gpt-6-luna', displayName: 'GPT-6 Luna', isDefault: false, supportsFast: false,
       defaultReasoningEffort: 'medium', supportedReasoningEfforts: [{ reasoningEffort: 'low' }, { reasoningEffort: 'medium' }] },

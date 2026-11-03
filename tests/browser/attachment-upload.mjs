@@ -27,6 +27,8 @@ try {
   });
   await page.waitForFunction(() => [...document.querySelectorAll('.codex-attachment-chip')]
     .some(node => node.textContent.includes('notes.txt')), null, { timeout: 5000 });
+  await page.request.put(host.origin + '/api/plugins/workbench/attachment-preferences?profile=default', { data: { folderUploadEnabled: true } });
+  await page.evaluate(() => window.dispatchEvent(new CustomEvent('workbench:attachment-preferences-change', { detail: { profile: 'default', enabled: true } })));
   await page.locator('input[name="attachment-folder"]').setInputFiles(path.join(uploadDir, 'project'));
   await page.waitForFunction(() => [...document.querySelectorAll('.codex-attachment-chip')]
     .some(node => node.textContent.includes('project') && node.textContent.includes('2 files')), null, { timeout: 5000 });

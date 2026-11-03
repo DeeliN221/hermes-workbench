@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import provider_quotas
 import response_metrics
+import generation_metrics
 
 import asyncio
 import contextlib
@@ -672,6 +673,7 @@ class BridgeStore:
                 ON codex_events(user_id,profile,session_id,seq)
                 WHERE method IN ('history/turn','history/turn-status','turn/completed')""")
             response_metrics.install_schema(self.connection)
+            generation_metrics.install_schema(self.connection)
             self.connection.commit()
 
     def _row(self, row: sqlite3.Row | None) -> dict[str, Any] | None:
@@ -1227,7 +1229,7 @@ class BridgeStore:
             tables = (
                 "codex_sessions", "codex_session_organization", "codex_events",
                 "codex_reads", "codex_approvals", "codex_completion_hooks",
-                "codex_item_times", "codex_requests", "codex_response_metrics",
+                "codex_item_times", "codex_requests", "codex_response_metrics", "codex_generation_metrics",
             )
             try:
                 self.connection.execute("BEGIN")
@@ -1453,9 +1455,13 @@ class BridgeStore:
                     # INSERT OR IGNORE advances SQLite's AUTOINCREMENT counter
                     # even for duplicates. Reopening history must remain read-only.
                     if row is None:
+                        observed_at = time.time()
+                        metrics = generation_metrics.observe(self.connection, (user, profile, session_id), method, payload, observed_at)
+                        if metrics is not None:
+                            payload = {**payload, 'params': {**payload.get('params', {}), 'generationMetrics': metrics}}
                         self.connection.execute(
                             "INSERT INTO codex_events(user_id,profile,session_id,event_key,method,payload,created_at) VALUES(?,?,?,?,?,?,?)",
-                            (user, profile, session_id, key, method, json.dumps(payload, separators=(",", ":")), time.time()),
+                            (user, profile, session_id, key, method, json.dumps(payload, separators=(",", ":")), observed_at),
                         )
                         row = self.connection.execute(
                             "SELECT seq,method,payload,created_at FROM codex_events WHERE user_id=? AND profile=? AND session_id=? AND event_key=?",
@@ -2086,6 +2092,7 @@ class CodexBridge:
         goal_value = params.get("goal")
         thread_id = str(
             params.get("threadId")
+            or params.get("thread_id")
             or (thread_value.get("id") if isinstance(thread_value, dict) else "")
             or (goal_value.get("threadId") if isinstance(goal_value, dict) else "")
             or ""

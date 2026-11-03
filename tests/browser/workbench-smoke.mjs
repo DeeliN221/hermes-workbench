@@ -496,7 +496,7 @@ try {
   ]);
   assert.equal(await detailPage.locator('[data-detail-mode="standard"]').getAttribute('aria-checked'), 'true');
   await detailPage.locator('[data-detail-mode="compact"]').click();
-  assert.match(await detailPage.locator('[role="status"]').innerText(), /Compact saved/);
+  assert.match(await detailPage.locator('.workbench-chat-display-status').innerText(), /Compact saved/);
 
   await detailPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   const detailGroup = detailPage.locator('.codex-tool-group').first();
