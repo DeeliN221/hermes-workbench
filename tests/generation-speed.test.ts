@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { applyChatEvent, messagesFromTurns } from '../dashboard/src/codex-messages';
-import { generationSpeedLabel, generationSpeedDetails, normalizeGenerationMetrics, generationSpeedPlacements } from '../dashboard/src/generation-speed';
-const metrics = { outputTokens: 100, reasoningOutputTokens: 40, activeSeconds: 2, samples: 3 };
+import { generationSpeedLabel, generationSpeedDetails, normalizeGenerationMetrics, latestGenerationMetrics } from '../dashboard/src/generation-speed';
+const metrics = { timingBasis: 'model-generation', outputTokens: 100, reasoningOutputTokens: 40, activeSeconds: 2, samples: 3 };
 describe('generation speed', () => {
   it('uses output including reasoning once and guards invalid samples', () => {
     const value = normalizeGenerationMetrics(metrics)!;
@@ -23,14 +23,15 @@ describe('generation speed', () => {
   });
 });
 
-it('places one chip per measured turn, without touching unmeasured Hermes messages', () => {
+it('selects the latest turn metric without falling back to stale turns', () => {
   const value = normalizeGenerationMetrics(metrics)!;
-  const placements = generationSpeedPlacements([
-    { kind: 'message', message: { turnId: 'first', generationMetrics: value } },
-    { kind: 'process', messages: [{ turnId: 'first', generationMetrics: value }] },
-    { kind: 'message', message: { turnId: 'first' } },
-    { kind: 'message', message: {} },
-    { kind: 'process', messages: [{ turnId: 'second', generationMetrics: value }] },
-  ]);
-  expect([...placements.keys()]).toEqual([2, 4]);
+  expect(latestGenerationMetrics([{ turnId: 'first', generationMetrics: value }, { turnId: 'second' }])).toBeUndefined();
+  expect(latestGenerationMetrics([{ turnId: 'second', generationMetrics: value }, { turnId: 'second' }])).toBe(value);
+});
+
+it('withholds rates from observed event gaps and legacy metrics', () => {
+  for (const timingBasis of [undefined, 'observed-event-gaps']) {
+    expect(generationSpeedLabel(normalizeGenerationMetrics({ ...metrics, timingBasis }))).toBe('—');
+    expect(generationSpeedDetails(normalizeGenerationMetrics({ ...metrics, timingBasis }))).toContain('TPS is unavailable');
+  }
 });

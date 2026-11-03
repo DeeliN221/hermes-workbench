@@ -20,7 +20,7 @@ try {
       await page.route('**/api/plugins/workbench/codex/session?*', async route => {
         const response = await route.fetch(), data = await response.json();
         for (const turn of data.turns || []) {
-          turn.generationMetrics = { outputTokens, activeSeconds, samples, reasoningOutputTokens: 24 };
+          turn.generationMetrics = { timingBasis: 'model-generation', outputTokens, activeSeconds, samples, reasoningOutputTokens: 24 };
           turn.status = turnStatus;
           for (const item of turn.items || []) if (item.type === 'agentMessage') item.content = [{ type: 'text', text: 'The response is complete. Generation speed stays available below this turn.' }];
         }
@@ -29,7 +29,7 @@ try {
       await page.route('**/api/plugins/workbench/codex/session/preview?*', async route => {
         const response = await route.fetch(), data = await response.json();
         for (const turn of data.turns || []) {
-          turn.generationMetrics = { outputTokens, activeSeconds, samples, reasoningOutputTokens: 24 };
+          turn.generationMetrics = { timingBasis: 'model-generation', outputTokens, activeSeconds, samples, reasoningOutputTokens: 24 };
           for (const item of turn.items || []) if (item.type === 'agentMessage') item.content = [{ type: 'text', text: 'The response is complete. Generation speed stays available below this turn.' }];
         }
         await route.fulfill({ response, json: data });
@@ -59,6 +59,9 @@ try {
       await page.keyboard.press('Escape');
       const chip = page.getByTestId('codex-generation-speed');
       await expect(chip).toHaveCount(1);
+      await expect(page.locator('.codex-center-heading > .codex-generation-speed')).toHaveCount(1);
+      await expect(page.locator('.codex-message-list .codex-generation-speed')).toHaveCount(0);
+      assert.deepEqual(await page.locator('.codex-center-heading').evaluate(node => [...node.children].map(child => child.className)), ['codex-pane-color-picker', 'codex-generation-speed', 'codex-center-heading-copy']);
       if (mobile) await expect(chip).toBeHidden();
       else {
         await expect(chip.locator('summary')).toHaveText('42.0 tok/s');
@@ -74,10 +77,13 @@ try {
           socket.dispatchEvent(new MessageEvent('message', { data: JSON.stringify({ type: 'event', method, payload: { method, params }, seq }) }));
         }, { method, params, seq });
       }
-      await event('token_usage_record', { turnId: 'preview-turn', generationMetrics: { turnId: 'preview-turn', outputTokens: 168, activeSeconds: 3, samples: 4, reasoningOutputTokens: 24 } }, 10000);
+      await event('token_usage_record', { turnId: 'preview-turn', generationMetrics: { timingBasis: 'model-generation', turnId: 'preview-turn', outputTokens: 168, activeSeconds: 3, samples: 4, reasoningOutputTokens: 24 } }, 10000);
       await expect(chip.locator('summary')).toHaveText('56.0 tok/s');
       await event('turn/completed', { turn: { id: 'preview-turn', status: 'completed' } }, 10001);
       await expect(chip.locator('summary')).toHaveText('56.0 tok/s');
+      await event('token_usage_record', { turnId: 'preview-turn', generationMetrics: { turnId: 'preview-turn', outputTokens: 168, activeSeconds: 3, samples: 4, timingBasis: 'observed-event-gaps' } }, 10002);
+      await expect(chip.locator('summary')).toHaveText('—');
+      await expect(chip.locator('summary')).toHaveAttribute('title', /TPS is unavailable/);
       outputTokens = 168; activeSeconds = 3; samples = 4; turnStatus = 'completed';
       await page.reload();
       await expect(chip.locator('summary')).toHaveText('56.0 tok/s');

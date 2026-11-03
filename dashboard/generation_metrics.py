@@ -1,8 +1,9 @@
-"""Turn-local output throughput. No token estimates or tool wall time.
+"""Turn-local provider output counters and diagnostic observed event windows.
 
-Output counters include reasoning tokens (a subset, never added twice). Gaps
-above five seconds split observed generation windows. Usage-only histories
-need at least two timestamped observations; a lone final counter has no rate.
+Output counters include reasoning tokens (a subset, never added twice), never
+text lengths or tool output. Event gaps cannot establish model-only generation
+time: queueing, buffering and short waits may be included. Retain those windows
+for diagnostics but withhold TPS until authoritative model timing is available.
 """
 import json
 import math
@@ -38,7 +39,7 @@ def public(state):
     return dict(outputTokens=output, reasoningOutputTokens=reasoning if state.get('hasReasoning') else None,
                 activeSeconds=active / 1000, firstGeneratedAt=state.get('first'), lastGeneratedAt=state.get('last'),
                 samples=state.get('samples', 0),
-                tokensPerSecond=output / (active / 1000) if active >= 250 and state.get('samples', 0) >= 2 and output >= 2 else None)
+                timingBasis='observed-event-gaps', tokensPerSecond=None)
 
 
 def read_state(connection, identity, turn):

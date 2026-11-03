@@ -345,15 +345,13 @@ html[data-workbench-accessory][data-workbench-accessory-settings="true"][data-wo
   html[data-workbench-accessory] .dashboard-accessory-close { display: none; }
 }
 
-/* Desktop navigation is available from the W dialog on every route. Keep the
-   dialog's ancestor mounted so showModal, its palette and focus trap still work. */
+/* Hide only overview routes. Keep navigation mounted across route changes so
+   scroll, folder expansion, selected sessions and the W dialog survive. */
 @media (min-width: 801px) {
-  :root[data-workbench-shell="true"] { --dashboard-nav-width: 0px !important; }
-  :root[data-workbench-shell="true"] :is(.dashboard-action-rail, #app-sidebar, .dashboard-nav-resizer, .hti-host-sidebar-resizer) { display: none !important; }
-  :root[data-workbench-shell="true"] .dashboard-global-nav { visibility: hidden; width: 0; padding: 0; border: 0; }
+  :root[data-workbench-shell="true"]:is([data-workbench-view="/"], [data-workbench-view="/home"], [data-workbench-view="/sessions"], [data-workbench-view="/kanban"], [data-workbench-view="/plugins/kanban"]) { --dashboard-nav-width: 0px !important; }
+  :root[data-workbench-shell="true"]:is([data-workbench-view="/"], [data-workbench-view="/home"], [data-workbench-view="/sessions"], [data-workbench-view="/kanban"], [data-workbench-view="/plugins/kanban"]) :is(.dashboard-action-rail, #app-sidebar, .dashboard-nav-resizer, .hti-host-sidebar-resizer) { display: none !important; }
+  :root[data-workbench-shell="true"]:is([data-workbench-view="/"], [data-workbench-view="/home"], [data-workbench-view="/sessions"], [data-workbench-view="/kanban"], [data-workbench-view="/plugins/kanban"]) .dashboard-global-nav { visibility: hidden; width: 0; padding: 0; border: 0; }
   :root[data-workbench-shell="true"] .workbench-actions-dialog[open] { visibility: visible; }
-  :root[data-workbench-shell="true"] #app-sidebar + div { margin-left: 0 !important; }
-  :root[data-workbench-shell="true"][data-workbench-page="settings"] #app-sidebar + div { margin-left: var(--dashboard-settings-width) !important; }
 }
 
 .workbench-actions-dialog[open] { visibility: visible; }
