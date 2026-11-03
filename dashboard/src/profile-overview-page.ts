@@ -5,6 +5,8 @@ import { useProfileDisplay } from './profile-display';
 import { profileTabName } from './kanban-agent-picker';
 import { uiText as tr } from './ui-locale';
 
+const HOME_SESSIONS_PER_PROFILE = 3;
+
 export function createOverviewTabs(sdk: { React: any }, navigate: (path: string, profile: string) => void) {
   const h = sdk.React.createElement;
   return function OverviewTabs({ board, profile }: { board: boolean; profile: string }) {
@@ -71,7 +73,8 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
             h('div', { className: 'profile-column-scroll', 'aria-label': profileTabName(column.name) },
               column.failed.length ? h('p', { role: 'alert', className: 'overview-notice' }, tr('部分数据加载失败，已保留可用会话。', 'Some data failed to load. Available sessions are shown.'), retry()) : null,
               column.loading ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载历史会话…', 'Loading conversation history…')) : null,
-              column.rows.map((row, index) => {
+              // Rows are already ordered by freshness; retain the full column for counts and project membership.
+              column.rows.slice(0, HOME_SESSIONS_PER_PROFILE).map((row, index) => {
                 const time = row.updated, rank = freshnessRank(row, index, now);
                 const href = `/chat?${row.source === 'Codex' ? 'session' : 'hermesSession'}=${encodeURIComponent(row.id)}&profile=${encodeURIComponent(column.name)}`;
                 return h('a', { key: `${row.source}:${row.id}`, href, className: 'profile-session', 'data-freshness': rank,
