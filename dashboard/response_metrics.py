@@ -4,6 +4,7 @@ import json
 import math
 
 import provider_quotas
+import generation_metrics
 
 
 def _ensure_column(connection, table, name, declaration):
@@ -118,7 +119,8 @@ def decorate_turns(store, identity, turns):
             **extra,
             'items': [{**item, **({'observedAt': items[str(item.get('id'))]} if str(item.get('id')) in items else {})} for item in turn.get('items', [])],
         })
-    return result
+    with store.lock:
+        return generation_metrics.decorate(store.connection, identity, result)
 
 
 def completion_time(turn, observed_seconds):

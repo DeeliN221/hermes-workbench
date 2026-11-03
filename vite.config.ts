@@ -17,9 +17,9 @@ const MAX_IIFE_BYTES = 2 * 1024 * 1024;
 // small block of UI/state helpers; the raw bundle keeps ~160 KiB of slack.
 // Task control tower adds the Fleet adapter and operator UI without new dependencies.
 // Combined live Fleet, configurable allowances and shared search previews measure
-// 647,565 gzip bytes after removing the legacy search-result merge path. Allow
+// ~649 KB gzip with turn throughput and profile-scoped attachment settings. Allow
 // 1 KiB for this integration; the 2 MiB raw cap and SDK/one-chunk checks stay fixed.
-const MAX_IIFE_GZIP_BYTES = 633 * 1024;
+const MAX_IIFE_GZIP_BYTES = 635 * 1024;
 const FORBIDDEN_REACT_IMPORT = /^(?:react(?:\/.*)?|react-dom(?:\/.*)?)$/;
 const EMBEDDED_REACT_FINGERPRINTS = [
   '__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED',

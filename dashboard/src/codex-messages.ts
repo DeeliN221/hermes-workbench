@@ -1,3 +1,4 @@
+import { normalizeGenerationMetrics, type GenerationMetrics } from './generation-speed';
 /** Normalize native snapshots and incremental notifications into stable chat state. */
 import { record, text, firstDefined, optionalNumber, timestamp, type JsonRecord } from './api-values';
 import { uiText } from './ui-locale';
@@ -15,6 +16,7 @@ export interface ChatMessage {
   turnDurationMs?: number | null; turnStatus?: TurnStatus; turnStartedAt?: number; observedAt?: number;
   turnCompletedAt?: number; weeklyRemainingPercent?: number; suppressDeltas?: boolean; error?: boolean;
   quota?: ResponseQuota;
+  generationMetrics?: GenerationMetrics;
   submissionError?: unknown; runtimeError?: unknown; delivery?: unknown; questions?: unknown;
   attachments?: MessageAttachmentPreview[];
   subagent?: {
@@ -135,6 +137,7 @@ export function normalizeMessage(value: unknown, fallbackId: string): ChatMessag
     observedAt: timestamp(item.observedAt), turnCompletedAt: timestamp(item.turnCompletedAt),
     weeklyRemainingPercent: typeof item.weeklyRemainingPercent === 'number' ? item.weeklyRemainingPercent : undefined,
     quota: normalizeResponseQuota(item.quota),
+    generationMetrics: normalizeGenerationMetrics(item.generationMetrics),
     error: item.error === true || status === 'failed' || (exitCode != null && exitCode !== 0), suppressDeltas: item.suppressDeltas === true,
   };
   message.paragraphs = visibleChatText(message).split(/\n{2,}/).filter(Boolean);
@@ -160,6 +163,7 @@ export function mergeMessage(previous: ChatMessage, next: ChatMessage): ChatMess
     turnCompletedAt: next.turnCompletedAt ?? previous.turnCompletedAt,
     weeklyRemainingPercent: next.weeklyRemainingPercent ?? previous.weeklyRemainingPercent,
     quota: next.quota ?? previous.quota,
+    generationMetrics: next.generationMetrics ?? previous.generationMetrics,
     turnStartedAt: next.turnStartedAt !== undefined ? next.turnStartedAt : previous.turnStartedAt,
     subagent,
   }, next.id)!; // A normalized message always contains an identity and content.
@@ -176,7 +180,7 @@ export function messageFromNotification(value: unknown, fallbackId: string): Cha
   return normalizeMessage({ ...item, observedAt: item.observedAt ?? timestamp(event.created_at), turnId: params.turnId ?? params.turn_id,
     turnDurationMs: duration === undefined ? firstDefined(turn, 'durationMs', 'duration_ms') : duration,
     turnStartedAt: started === undefined ? firstDefined(turn, 'startedAt', 'started_at') : started,
-    turnStatus: turnStatus(turn.status), status: itemStatus(item, method === 'item/completed' ? 'completed' : 'running'),
+    generationMetrics: params.generationMetrics, turnStatus: turnStatus(turn.status), status: itemStatus(item, method === 'item/completed' ? 'completed' : 'running'),
   }, fallbackId);
 }
 export function messagesFromTurns(turns: unknown[], sessionId: string): ChatMessage[] {
@@ -188,7 +192,7 @@ export function messagesFromTurns(turns: unknown[], sessionId: string): ChatMess
       const item = record(value), itemState = item.type === 'userMessage' ? 'completed' : itemStatus(item, status || 'completed');
       const message = normalizeMessage({ ...item, status: itemState, turnId: turn.id, turnDurationMs: duration, turnStartedAt: started,
         turnCompletedAt: timestamp(turn.completedAt ?? turn.completed_at) ?? (state !== 'running' && started !== undefined && duration != null ? started + duration : undefined),
-        weeklyRemainingPercent: turn.weeklyRemainingPercent, quota: normalizeResponseQuota(turn.quota), turnStatus: state,
+        generationMetrics: turn.generationMetrics, weeklyRemainingPercent: turn.weeklyRemainingPercent, quota: normalizeResponseQuota(turn.quota), turnStatus: state,
       }, `${sessionId}:${turnIndex}:${itemIndex}`);
       return message ? [{ ...message, suppressDeltas: itemState === 'running' }] : [];
     });
@@ -198,6 +202,11 @@ export function messagesFromTurns(turns: unknown[], sessionId: string): ChatMess
 export function applyChatEvent(messages: ChatMessage[], value: unknown): ChatMessage[] {
   const event = record(value), { method, params } = notification(event);
   if (event.hidden === true || params.hidden === true) return messages;
+  const generation = normalizeGenerationMetrics(params.generationMetrics);
+  if (generation) {
+    const turnId = record(params.generationMetrics).turnId;
+    messages = messages.map(message => message.turnId === turnId ? { ...message, generationMetrics: generation } : message);
+  }
   if (method === 'workbench/turnMetrics') return messages.map(message => message.turnId === params.turnId ? {
     ...message, turnCompletedAt: timestamp(params.completedAt),
     weeklyRemainingPercent: typeof params.weeklyRemainingPercent === 'number' ? params.weeklyRemainingPercent : undefined,
@@ -236,6 +245,7 @@ export function applyChatEvent(messages: ChatMessage[], value: unknown): ChatMes
     const index = messages.findIndex(message => message.itemId === id || message.id === id), previous = messages[index];
     if (previous?.suppressDeltas || previous?.status === 'completed' || previous?.status === 'failed') return messages;
     const message = normalizeMessage({ ...previous, id: previous?.id || id, itemId: id, turnId: params.turnId,
+      generationMetrics: generation ?? previous?.generationMetrics,
       role: previous?.role || (method.includes('reasoning') ? 'reasoning' : method.includes('commandExecution') ? 'tool' : 'assistant'),
       content: (previous?.content || '') + params.delta, status: 'running', result: undefined,
     }, id)!;
@@ -250,6 +260,7 @@ export function applyChatEvent(messages: ChatMessage[], value: unknown): ChatMes
   const previousTurn = incoming.turnId ? messages.find(message => message.turnId === incoming.turnId) : undefined;
   const message = previousTurn ? { ...incoming,
     turnDurationMs: incoming.turnDurationMs !== undefined ? incoming.turnDurationMs : previousTurn.turnDurationMs,
+    generationMetrics: incoming.generationMetrics ?? previousTurn.generationMetrics,
     turnStartedAt: incoming.turnStartedAt ?? previousTurn.turnStartedAt, turnStatus: incoming.turnStatus ?? previousTurn.turnStatus,
   } : incoming;
   if (index < 0) return [...messages, message];
