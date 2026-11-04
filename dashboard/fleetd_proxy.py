@@ -202,6 +202,22 @@ def workers():
     return reply({"workers": [{k: r[k] for k in ("id", "machine", "status", "last_heartbeat") if k in r} for r in rows]})
 
 
+@router.post("/tasks/sync")
+async def sync_tasks(request: Request):
+    from fleet_proxy import _body
+    from task_sync import card_sync
+    body = await _body(request)
+
+    def collect():
+        client = FleetClient()
+        rows = client.collection("tasks", include_archived="1", limit=100)
+        opened = {r.get("task_id"): decision(r) for r in client.collection("decisions", status="open") if r.get("status") == "open"}
+        cards = [{**task(r), "decision": opened.get(r["id"])} for r in rows]
+        return card_sync(cards, body.get("lane", "all"), body.get("cursor", ""))
+
+    return reply(await run_in_threadpool(collect))
+
+
 @router.get("/tasks/{task_id}")
 def detail(task_id: str):
     client = FleetClient()

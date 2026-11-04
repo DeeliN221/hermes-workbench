@@ -356,3 +356,40 @@ def test_thread_metadata_refreshes_and_overrides_planned_effort(client, monkeypa
     assert row['conversation_local'] is True
     assert row['stale'] is False
     db.close()
+
+
+def test_incremental_cards_never_fetch_details(client, monkeypatch):
+    rows = [dict(id="T-active", status="running", title="Before"),
+            dict(id="T-review", status="review", title="Review"),
+            dict(id="T-done", status="done", title="Done"),
+            dict(id="T-archived", status="archived", title="Archived")]
+    calls = []
+    def get(self, path):
+        calls.append(path)
+        assert not path.startswith("tasks/")
+        return {"tasks": rows} if path.startswith("tasks?") else {"decisions": []}
+    monkeypatch.setattr(transport.FleetClient, "get", get)
+    def sync(lane="all", cursor=""):
+        return client.post(BASE + "/tasks/sync", headers=HEADERS, json={"lane": lane, "cursor": cursor})
+    assert client.post(BASE + "/tasks/sync", json={}).status_code == 401
+    first = sync().json()
+    assert len(first["tasks"]) == 4
+    fast, slow = first["cursors"]["fast"], first["cursors"]["slow"]
+    assert sync("fast", fast).json()["tasks"] == []
+    rows[0]["title"] = "Changed"
+    rows[1]["title"] = "Review changed"
+    rows[2]["title"] = "Never polled"
+    rows[3]["title"] = "Never polled either"
+    changed = sync("fast", fast).json()
+    assert [t["id"] for t in changed["tasks"]] == ["T-active"]
+    assert [t["id"] for t in sync("slow", slow).json()["tasks"]] == ["T-review"]
+    rows[0]["status"] = "done"
+    completed = sync("fast", changed["cursors"]["fast"]).json()
+    assert completed["tasks"][0]["status"] == "done"
+    rows[0]["title"] = "Frozen now"
+    assert sync("fast", completed["cursors"]["fast"]).json()["tasks"] == []
+    rows.pop(1)
+    assert sync("slow", slow).json()["removed"] == ["T-review"]
+    assert sync("fast", "invalid").status_code == 422
+    assert sync("done").status_code == 422
+    assert all("spec_json" not in t and "attempts" not in t for t in first["tasks"])

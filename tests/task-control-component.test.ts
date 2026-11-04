@@ -23,7 +23,7 @@ it("renders four responsive groups without toolbar, creation or duplicate attent
   const fetchJSON: FetchJSON = async <T>(url: string) => {
     if (url.endsWith("/fleetd/config"))
       return { mode: "live", extended_workflow: false } as T;
-    if (url.endsWith("/fleetd/tasks")) return { tasks: [] } as T;
+    if (url.endsWith("/fleetd/tasks/sync")) return { removed: [], cursors: {}, full: true, tasks: [] } as T;
     if (url.endsWith("/decisions")) return { decisions: [] } as T;
     if (url.endsWith("/workers")) return { workers: [] } as T;
     if (url.includes("profile-names")) return { profiles: [] } as T;
@@ -53,7 +53,7 @@ it("retains the last complete snapshot on a failed refresh and recovers on retry
   let title = "Previous successful task", fail = false;
   const fetchJSON: FetchJSON = async <T>(url: string) => {
     if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
-    if (url.endsWith("/tasks")) return { tasks: [{ id: "T-one", title, status: "running", risk: "R1", priority: "P1", revision: 0, created_at: new Date().toISOString(), acceptance: [], read_only: true }] } as T;
+    if (url.endsWith("/tasks/sync")) { if (fail) throw new Error("HTTP 504"); return { removed: [], cursors: {}, full: true, tasks: [{ id: "T-one", title, status: "running", risk: "R1", priority: "P1", revision: 0, created_at: new Date().toISOString(), acceptance: [], read_only: true }] } as T; }
     if (url.endsWith("/decisions")) { if (fail) throw new Error("HTTP 504"); return { decisions: [] } as T; }
     if (url.endsWith("/workers")) return { workers: [] } as T;
     return { profiles: [], items: [], sessions: [], groups: [] } as T;
@@ -64,12 +64,14 @@ it("retains the last complete snapshot on a failed refresh and recovers on retry
   await act(async () => { root.render(React.createElement(Component, { profile: "default" })); await new Promise(r => setTimeout(r, 20)); });
   expect(host.textContent).toContain("Previous successful task");
   title = "New response task"; fail = true;
-  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(r => setTimeout(r, 20)); });
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(r => setTimeout(r, 20)); });
   expect(host.textContent).toContain("timed out");
   expect(host.textContent).toContain("Previous successful task");
   expect(host.textContent).not.toContain("New response task");
   fail = false;
-  await act(async () => { window.dispatchEvent(new Event("focus")); await new Promise(r => setTimeout(r, 20)); });
+  vi.useFakeTimers();
+  await act(async () => { vi.setSystemTime(Date.now() + 16000); document.dispatchEvent(new Event("visibilitychange")); await vi.advanceTimersByTimeAsync(1); });
+  vi.useRealTimers();
   expect(host.textContent).toContain("New response task");
   expect(host.textContent).not.toContain("timed out");
 });
@@ -87,8 +89,8 @@ it("renders compact runtime values, omits empty drawer blocks and hides archived
   const archived = { ...task, id: "T-archived", title: "Archived task", status: "archived" };
   const fetchJSON: FetchJSON = async <T>(url: string) => {
     if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
-    if (url.endsWith("/tasks/archived")) return { tasks: [archived] } as T;
-    if (url.endsWith("/tasks")) return { tasks: [task] } as T;
+    if (url.endsWith("/tasks/archived")) return { removed: [], cursors: {}, full: true, tasks: [archived] } as T;
+    if (url.endsWith("/tasks/sync")) return { removed: [], cursors: {}, full: true, tasks: [task] } as T;
     if (url.endsWith("/decisions")) return { decisions: [] } as T;
     if (url.endsWith("/workers")) return { workers: [] } as T;
     if (url.endsWith("/tasks/T-runtime")) return { task, artifacts: [], review_notes: [], attempts: task.attempts } as T;
@@ -127,7 +129,7 @@ it("keeps the done-card checkbox in the title row and labels bulk actions compac
   };
   const fetchJSON: FetchJSON = async <T>(url: string) => {
     if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
-    if (url.endsWith("/tasks")) return { tasks: [task] } as T;
+    if (url.endsWith("/tasks/sync")) return { removed: [], cursors: {}, full: true, tasks: [task] } as T;
     if (url.endsWith("/decisions")) return { decisions: [] } as T;
     if (url.endsWith("/workers")) return { workers: [] } as T;
     return { profiles: [], items: [], sessions: [], groups: [] } as T;
@@ -141,4 +143,30 @@ it("keeps the done-card checkbox in the title row and labels bulk actions compac
   expect(select.parentElement?.classList.contains("tower-card-heading")).toBe(true);
   expect(select.querySelector('input[type="checkbox"]')?.getAttribute("aria-label")).toBe("Select task");
   expect(Array.from(host.querySelectorAll('.column-done .tower-column-actions button')).map(button => button.textContent)).toEqual(["Select", "Clear", "Archive", "Show archived"]);
+});
+
+it("does not render unchanged cards when another card changes", async () => {
+  const renders: Record<string, number> = {};
+  const ReactWithCounts = { ...React, memo: (component: any, equal: any) => React.memo((props: any) => {
+    renders[props.task.id] = (renders[props.task.id] || 0) + 1;
+    return component(props);
+  }, equal) };
+  let title = "Running";
+  const fetchJSON: FetchJSON = async <T>(url: string) => {
+    if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
+    return { full: true, removed: [], cursors: {}, tasks: [
+      { id: "running", title, status: "running", acceptance: [] },
+      { id: "done", title: "Finished", status: "done", acceptance: [] },
+    ] } as T;
+  };
+  const Component = createTaskControlTower({React: ReactWithCounts, hooks: React, fetchJSON}, vi.fn());
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  await act(async () => { root.render(React.createElement(Component, {profile: "default"})); });
+  const before = {...renders};
+  title = "Changed";
+  await act(async () => { document.dispatchEvent(new Event("visibilitychange")); await new Promise(r => setTimeout(r, 20)); });
+  expect(renders.done).toBe(before.done);
+  expect(renders.running).toBeGreaterThan(before.running);
+  expect(host.textContent).toContain("Changed");
 });
