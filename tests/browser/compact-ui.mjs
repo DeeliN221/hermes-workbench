@@ -17,6 +17,16 @@ try {
     await page.route('**/api/plugins/workbench/profile-overview', route => route.fulfill({ json: { profiles: ['default', 'writer', 'research'].map(name => ({ name, failed: [], projects: [{ id: 'project', name: 'A very long project name for layout verification without overflow' }], sessions: [{ id: 'codex-preview', title: 'Review the next iteration', groupId: 'project', unread: true, status: 'running', updatedAt: Date.now() }] })) } }));
     await page.goto(host.origin + '/');
     await page.locator('.profile-session-project').first().waitFor();
+    if (mobile) {
+      const rail = page.locator('.dashboard-action-rail');
+      assert.equal(await rail.locator('.workbench-launcher').count(), 0);
+      assert.equal(await rail.locator('a[href*="/workbench"]').count(), 0);
+      assert.equal(await rail.locator('.dashboard-rail-top').evaluate(node => getComputedStyle(node).borderBottomWidth), '0px');
+      assert.deepEqual(await rail.locator('a, button').evaluateAll(nodes => nodes.map(node => node.getAttribute('aria-label'))), [
+        'Open navigation', 'Home', 'Search', 'Settings', 'Kanban', 'Scheduled jobs', 'Terminal', 'Files',
+        'Switch to dark theme', 'Achievements',
+      ]);
+    }
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
     const prefix = `${shots}/${mobile ? 'mobile' : 'desktop'}-${theme}`;
     await page.screenshot({ path: `${prefix}-home.png` });
@@ -41,8 +51,8 @@ try {
     await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
     await page.locator('.codex-pane-slot').first().waitFor();
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
-    const launcher = page.locator(mobile ? '.workbench-launcher:visible' : '.codex-pane-color-trigger:visible').first();
-    const openMenu = async () => { await launcher.focus(); if (mobile) await launcher.click(); else await page.keyboard.press('w'); };
+    const launcher = page.locator(mobile ? '.dashboard-action-rail a[aria-label="Home"]' : '.codex-pane-color-trigger:visible').first();
+    const openMenu = async () => { await launcher.focus(); await page.keyboard.press('w'); };
     if (before && mobile) { await page.close(); continue; }
     await openMenu();
     const menu = page.locator('.workbench-actions-dialog');
@@ -117,7 +127,8 @@ try {
   if (!before) {
     const small = await browser.newPage({ viewport: { width: 320, height: 568 } });
     await small.goto(host.origin + '/');
-    await small.locator('.workbench-launcher').click();
+    await small.locator('.dashboard-action-rail a[aria-label="Home"]').focus();
+    await small.keyboard.press('w');
     const menu = small.locator('.workbench-actions-dialog');
     await menu.waitFor();
     const box = await menu.boundingBox();

@@ -28,7 +28,7 @@ import './codex-user-input.css';
 import { createLanguageControl } from './language-control';
 import { useWorkbenchLocale } from './workbench-locale';
 import { uiText as runtimeText } from './ui-locale';
-import { createWorkbenchDialog, createWorkbenchLauncher, OPEN_WORKBENCH } from './workbench-launcher';
+import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
 import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-aliases';
 import { createQuotaSettings } from './quota-dashboard';
@@ -2576,7 +2576,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       a = e.skills(i),
       { ProfileAction, ProfilesPage } = createProfileControls(i),
       WorkbenchDialog = createWorkbenchDialog(i),
-      WorkbenchLauncher = createWorkbenchLauncher(i),
       LanguageControl = createLanguageControl(i),
       ShortcutSettings = createShortcutSettings(i),
       ChatDisplaySettings = createChatDisplaySettings(i),
@@ -2938,7 +2937,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             "aria-expanded": d, title: d ? runtimeText("收起全局导航", "Collapse navigation") : runtimeText("打开全局导航", "Open navigation"),
             onClick: () => f(!d),
           }, zc(t, "menu")),
-          k("/sessions", runtimeText("首页", "Home"), "home", isHome), l(WorkbenchLauncher)),
+          k("/sessions", runtimeText("首页", "Home"), "home", isHome)),
           renderActions(true),
           P ? l("p", { className: "workbench-theme-error", role: "status" }, P) : null) : null,
         d

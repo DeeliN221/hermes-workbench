@@ -173,6 +173,10 @@
 @media (max-width: 800px) {
   :root[data-workbench-shell="true"] { --dashboard-action-width: 48px; --dashboard-nav-width: var(--dashboard-action-width) !important; --dashboard-mobile-header-height: 0px; }
   :root[data-workbench-shell="true"] .dashboard-global-nav { width: min(288px, calc(100vw - var(--dashboard-action-width))); }
+  /* Home leads straight into the functional rail; no workbench entry or divider. */
+  .dashboard-action-rail .dashboard-rail-top {
+    padding-bottom: 0; margin-bottom: 0; border-bottom: 0;
+  }
   .dashboard-action-rail .dashboard-mobile-toggle {
     position: static; display: grid; flex: 0 0 40px;
     width: 40px; height: 40px; margin: 0 0 4px; padding: 7px;
