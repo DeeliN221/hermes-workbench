@@ -12,7 +12,7 @@
     "build": "vite build --config vite.config.ts && vite build --config vite.loader.config.ts && python3 scripts/build-provenance.py",
     "typecheck": "python3 scripts/check-typescript-source.py && tsc --noEmit",
     "test": "vitest run --config vitest.config.ts",
-    "test:browser": "node tests/browser/home-first-click.mjs && node tests/browser/release-notes.mjs && node tests/browser/route-sidebar.mjs && node tests/browser/files-root-recovery.mjs && node tests/browser/generation-speed.mjs && node tests/browser/profile-home.mjs && node tests/browser/compact-ui.mjs && node tests/browser/project-appearance.mjs && node tests/browser/project-navigation.mjs && node tests/browser/workbench-smoke.mjs && node tests/browser/opencode-go-check.mjs && node tests/browser/attachment-upload.mjs && node tests/browser/attachment-visibility.mjs && node tests/browser/cron-session-fallback.mjs && node tests/browser/startup-cache.mjs && node tests/browser/user-message-ball-panes.mjs && node tests/browser/session-rename.mjs && node tests/browser/kanban-smart.mjs && node tests/browser/kanban-confirmation.mjs && node tests/browser/task-control-tower.mjs && node tests/browser/kanban-task-tower.mjs && node tests/browser/mobile-tabs.mjs && node tests/browser/fleetd-console.mjs && node tests/browser/session-search.mjs && node tests/browser/workbench-search.mjs && node tests/browser/message-image-preview.mjs",
+    "test:browser": "playwright test",
     "preview:local": "pnpm build && node scripts/preview-local.mjs",
     "test:python": "env -u CODEX_APP_SERVER_ENDPOINT -u CODEX_HOME uv run --no-project --with-requirements requirements-dev.txt pytest -q tests",
     "release:verify": "bash scripts/verify-release.sh",
@@ -27,7 +27,12 @@
     "release:smoke": "python3 scripts/smoke-test-release.py",
     "test:quotas:e2e": "playwright test --config tests/quota-playwright.config.ts",
     "test:browser:tower": "node tests/browser/task-control-tower.mjs",
-    "test:browser:mobile-tabs": "node tests/browser/mobile-tabs.mjs"
+    "test:browser:mobile-tabs": "node tests/browser/mobile-tabs.mjs",
+    "test:browser:mock": "node tests/browser/home-first-click.mjs && node tests/browser/release-notes.mjs && node tests/browser/route-sidebar.mjs && node tests/browser/files-root-recovery.mjs && node tests/browser/generation-speed.mjs && node tests/browser/profile-home.mjs && node tests/browser/compact-ui.mjs && node tests/browser/project-appearance.mjs && node tests/browser/project-navigation.mjs && node tests/browser/workbench-smoke.mjs && node tests/browser/opencode-go-check.mjs && node tests/browser/attachment-upload.mjs && node tests/browser/attachment-visibility.mjs && node tests/browser/cron-session-fallback.mjs && node tests/browser/startup-cache.mjs && node tests/browser/user-message-ball-panes.mjs && node tests/browser/session-rename.mjs && node tests/browser/kanban-smart.mjs && node tests/browser/kanban-confirmation.mjs && node tests/browser/task-control-tower.mjs && node tests/browser/kanban-task-tower.mjs && node tests/browser/mobile-tabs.mjs && node tests/browser/fleetd-console.mjs && node tests/browser/session-search.mjs && node tests/browser/workbench-search.mjs && node tests/browser/message-image-preview.mjs",
+    "stack:rebuild": "python3 scripts/local-stack.py rebuild",
+    "stack:restart": "python3 scripts/local-stack.py restart",
+    "stack:check": "python3 scripts/local-stack.py check",
+    "stack:stop": "python3 scripts/local-stack.py stop"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
@@ -54,6 +59,7 @@
     "pele": "^1.12.0"
   },
   "devDependencies": {
+    "@fontsource/noto-sans-sc": "5.3.1",
     "@playwright/test": "^1.64.1",
     "@types/node": "^26.6.5",
     "happy-dom": "^21.0.4",

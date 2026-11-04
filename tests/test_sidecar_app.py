@@ -541,3 +541,23 @@ def test_quotas_require_trusted_proxy_and_do_not_cache_in_browser(sidecar):
     assert response.status_code == 200
     assert response.headers['cache-control'] == 'no-store'
     assert len(response.json()['providers']) == 3
+
+
+def test_runtime_version_is_startup_snapshot(tmp_path, monkeypatch):
+    import json
+    import sys
+    monkeypatch.syspath_prepend(str(Path(__file__).parents[1] / 'dashboard'))
+    from sidecar_app import create_app
+    monkeypatch.setenv('HERMES_DASHBOARD_TRUSTED_PROXY_SECRET', 'test-only')
+    monkeypatch.setenv('HERMES_WORKBENCH_ALLOWED_USERS', 'test')
+    monkeypatch.delenv('CODEX_APP_SERVER_ENDPOINT', raising=False)
+    (tmp_path/'dist').mkdir()
+    record = tmp_path/'dist/build-provenance.json'
+    record.write_text(json.dumps({'git_commit': 'startup'}))
+    app = create_app(tmp_path)
+    record.write_text(json.dumps({'git_commit': 'changed-on-disk'}))
+    with TestClient(app) as client:
+        assert client.get('/api/plugins/workbench/runtime-version').status_code == 401
+        result = client.get('/api/plugins/workbench/runtime-version', headers={'X-Hermes-Proxy-Secret': 'test-only', 'Remote-User': 'test'}).json()
+        assert result['git_commit'] == 'startup'
+        assert result['started_at']

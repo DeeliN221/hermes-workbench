@@ -2,12 +2,15 @@
 """Record source and asset hashes so a stale build cannot be published."""
 import hashlib
 import json
+import subprocess
+from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
 def source_digest(root):
     paths = list((root / 'dashboard/src').rglob('*')) + list((root / 'dashboard/vendor').rglob('*'))
+    paths += list((root / 'dashboard').glob('*.py'))
     paths += [root / name for name in ('package.json', 'pnpm-lock.yaml', 'vite.config.ts', 'vite.loader.config.ts', 'dashboard/loader.ts', 'dashboard/manifest.json')]
     digest = hashlib.sha256()
     for path in sorted(paths):
@@ -22,7 +25,7 @@ def asset_hashes(root):
             + [str(p.relative_to(root/'dashboard/dist')) for p in sorted((root/'dashboard/dist/plantuml').rglob('*')) if p.is_file()]}
 
 if __name__ == '__main__':
-    record = {'source': str(ROOT), 'source_sha256': source_digest(ROOT), 'assets': asset_hashes(ROOT)}
+    record = {'git_commit': subprocess.check_output(['git', 'rev-parse', 'HEAD'], cwd=ROOT, text=True).strip(), 'built_at': datetime.now(timezone.utc).isoformat(), 'source': str(ROOT), 'source_sha256': source_digest(ROOT), 'assets': asset_hashes(ROOT)}
     path = ROOT/'dashboard/dist/build-provenance.json'
     path.write_text(json.dumps(record, indent=2)+'\n')
     path.chmod(0o664)

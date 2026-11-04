@@ -10,7 +10,7 @@ pnpm install --frozen-lockfile
 pnpm version:check
 pnpm typecheck
 pnpm test
-pnpm build && pnpm test:browser
+pnpm build && pnpm test:browser:mock
 pnpm preview:local
 pnpm test:python
 pnpm build
@@ -19,7 +19,8 @@ pnpm release:package
 ```
 
 Browser source lives in `dashboard/src/`; `dashboard/dist/` contains generated assets.
-The browser smoke test loads the built bundle with real React in Chromium and a mock
+For real-stack acceptance, use `pnpm stack:rebuild && pnpm test:browser`; see
+[Mac acceptance](docs/mac-acceptance.md). The explicit mock browser smoke test loads the built bundle with real React in Chromium and a mock
 Hermes plugin host; run `pnpm build` before it. Install the test browser once with
 `pnpm exec playwright install chromium`.
 `pnpm preview:local` starts the same mock host at
