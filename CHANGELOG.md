@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Put the completed-task checkbox beside the card title and shorten the completed-column actions to Select, Clear, Archive, and Show archived.
 - Recover the Files root listing when a managed directory contains an external symlink, while still rejecting genuine out-of-root paths and ending the loading label after an error.
 - Answer /healthz with {"ok":true} so liveness probes pass while the release assets that /health requires are still missing.
 - Fold completed chat work to one summary line and open it as a bounded scroll window whose height follows the detail level, so long reasoning and tool output no longer stretch the transcript.

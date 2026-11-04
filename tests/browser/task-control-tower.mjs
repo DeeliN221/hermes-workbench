@@ -171,8 +171,8 @@ try {
     .getByRole("button", { name: "Accept delivery", exact: true })
     .click();
   await page.keyboard.press("Escape");
-  await page.locator('.tower-board').getByRole('button', {name:'Select all', exact:true}).click();
-  await page.locator('.tower-board').getByRole('button', {name:'Archive selected', exact:true}).click();
+  await page.locator('.tower-board').getByRole('button', {name:'Select', exact:true}).click();
+  await page.locator('.tower-board').getByRole('button', {name:'Archive', exact:true}).click();
   await page.waitForFunction(() => !document.querySelector('.tower-board .column-done .tower-card'));
   assert.ok(fleet.tasks.filter(t => ['review-task','delivered-new','delivered-old'].includes(t.id)).every(t => t.status === 'archived'));
   const archivedToggle = page.locator('.tower-board .column-done').getByRole('button', { name: /Show archived|显示已归档/ });

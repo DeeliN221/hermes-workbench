@@ -513,7 +513,12 @@ export function createTaskControlTower(
           ...(archived ? {} : dropProps(t.status, t.id)),
         },
         h("div", { className: "tower-card-heading" },
-          btn(t.title, () => void open(t.id), { className: "tower-card-title" }),
+          t.status === "done" && !archived ? h("label", { className: "tower-select" }, h("input", {
+            type: "checkbox", checked: checked.includes(t.id), disabled: busy,
+            "aria-label": tr("选择任务", "Select task"),
+            onChange: () => setChecked(previous => previous.includes(t.id) ? previous.filter(id => id !== t.id) : [...previous, t.id]),
+          })) : null,
+          btn(t.title, () => void open(t.id), { className: "tower-card-title", title: t.title }),
           archived ? h("span", { className: "tower-archived-tag" }, tr("已归档", "Archived")) : null,
           stale ? h("span", { className: "tower-stale-tag", title: tr("最新执行已结束或没有负责人，计时已停止", "The latest attempt ended or has no assignee; the timer is stopped") }, tr("等待/异常", "Waiting / stale")) : null,
         ),
@@ -523,10 +528,6 @@ export function createTaskControlTower(
           values ? h("span", { className: "tower-runtime-values" }, values) : null,
           duration ? h("span", { className: "tower-runtime-duration" }, `${values ? " " : ""}${duration}`) : null,
         ),
-        t.status === "done" && !archived ? h("label", { className: "tower-select" }, h("input", {
-          type: "checkbox", checked: checked.includes(t.id), disabled: busy,
-          onChange: () => setChecked(previous => previous.includes(t.id) ? previous.filter(id => id !== t.id) : [...previous, t.id]),
-        }), tr("选择", "Select")) : null,
       ));
     };
     const group = (status: Status) => {
@@ -565,10 +566,10 @@ export function createTaskControlTower(
       if (failed.length) throw new Error(tr(`${failed.length} 个任务归档失败，已保留选择，可重试`, `${failed.length} tasks could not be archived. Selection retained; retry.`));
     });
     const columnTools = (id: string) => id === "done" ? h("div", { className: "tower-column-actions" },
-        btn(tr("全选", "Select all"), () => setChecked(completed.map(t => t.id)), { disabled: busy || !completed.length }),
-        btn(tr("清除选择", "Clear selection"), () => setChecked([]), { disabled: busy || !checked.length }),
-        btn(tr("批量归档", "Archive selected"), bulkArchive, { disabled: busy || !completed.some(t => checked.includes(t.id)) }),
-        btn(`${showArchived ? tr("隐藏已归档", "Hide archived") : tr("显示已归档", "Show archived")}${archivedTasks.length ? ` ${archivedTasks.length}` : ""}`,
+        btn(tr("选择", "Select"), () => setChecked(completed.map(t => t.id)), { disabled: busy || !completed.length }),
+        btn(tr("取消", "Clear"), () => setChecked([]), { disabled: busy || !checked.length }),
+        btn(tr("归档", "Archive"), bulkArchive, { disabled: busy || !completed.some(t => checked.includes(t.id)) }),
+        btn(showArchived ? tr("隐藏已归档", "Hide archived") : tr("显示已归档", "Show archived"),
           () => setShowArchived(value => !value), { "aria-pressed": showArchived, disabled: archivedBusy })) : null;
     const t = detail?.task,
       decision = detail?.open_decision || detail?.decision || t?.decision;
