@@ -14,6 +14,7 @@ import {
   decisionOptions,
   delivered,
   durationMinutes,
+  finalDeliverables,
   hasStarted,
   expired,
   isZombieRunning,
@@ -21,14 +22,20 @@ import {
   reordered,
   safeLink,
   sessionEntries,
+  stageReport,
   specMarkdown,
   statusLabel,
   verifyMode,
+  type Artifact,
   type Detail,
+  type FinalDeliverable,
+  type StageReport,
   type Status,
   type Task,
 } from "./task-control-model";
 import { renderMarkdownSource } from "./markdown-source";
+import { renderMermaidBlocks } from "./file-preview";
+import { renderPlantUMLBlocks } from "./plantuml-renderer";
 
 type SDK = {
   React: any;
@@ -54,6 +61,122 @@ export function createTaskControlTower(
     onClick: () => void,
     extra: Record<string, unknown> = {},
   ) => h("button", { type: "button", onClick, ...extra }, label);
+
+  function StageReportDiagram({ report }: { report: StageReport }) {
+    const host = useRef(null as HTMLDivElement | null);
+    useEffect(() => {
+      const root = host.current;
+      if (!root) return;
+      let disposed = false;
+      const draw = async () => {
+        if (disposed) return;
+        root.replaceChildren();
+        const pre = document.createElement("pre");
+        const code = document.createElement("code");
+        code.className = `language-${report.format}`;
+        code.textContent = report.diagram;
+        pre.append(code);
+        root.append(pre);
+        if (report.format === "plantuml") await renderPlantUMLBlocks(root);
+        else await renderMermaidBlocks(root);
+      };
+      void draw();
+      // Re-render locally when the operator switches theme; no network is involved.
+      const observer = new MutationObserver(() => void draw());
+      observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class", "data-theme", "data-workbench-theme"] });
+      return () => { disposed = true; observer.disconnect(); };
+    }, [report.diagram, report.format]);
+    return h("div", { className: `tower-stage-diagram${/^\s*flowchart\s+(?:TB|TD)\b/i.test(report.diagram) ? " is-vertical" : ""}`, ref: host });
+  }
+
+  function ReviewFocus({
+    task, artifacts, links, busy, onDownload,
+  }: {
+    task: Task;
+    artifacts: Artifact[];
+    links: { label: string; url: string }[];
+    busy: boolean;
+    onDownload: (artifact: Artifact) => void;
+  }) {
+    const rows = finalDeliverables(task, artifacts, links);
+    if (rows.length) {
+      const labels: Record<FinalDeliverable["kind"], [string, string]> = {
+        pr: ["PR", "PR"], merge: ["合并", "Merge"], commit: ["提交", "Commit"],
+        demo: ["DEMO", "DEMO"], screenshot: ["截图", "IMAGE"], report: ["报告", "REPORT"],
+        artifact: ["产物", "FILE"], link: ["链接", "LINK"],
+      };
+      return h("section", { className: "tower-delivery", "data-review-material": "deliverable" },
+        h("h3", null, tr("最终交付物", "Final deliverable")),
+        h("div", { className: "tower-delivery-list" }, ...rows.map((row) => {
+          const badge = tr(...labels[row.kind]);
+          const body = h(sdk.React.Fragment, null,
+            h("span", { className: "tower-delivery-kind" }, badge),
+            h("strong", null, row.label));
+          return row.url
+            ? h("a", { key: row.id, className: "tower-delivery-row", href: row.url, target: "_blank", rel: "noopener noreferrer" }, body, h("span", { "aria-hidden": "true" }, "↗"))
+            : h("button", {
+                key: row.id, type: "button", className: "tower-delivery-row", disabled: busy || !row.artifact,
+                onClick: () => row.artifact && onDownload(row.artifact),
+              }, body, h("span", { "aria-hidden": "true" }, "↓"));
+        })));
+    }
+    const report = stageReport(task);
+    if (report) {
+      return h("section", { className: "tower-delivery tower-stage-report", "data-review-material": "report" },
+        h("h3", null, tr("阶段报告", "Stage report")),
+        h(StageReportDiagram, { report }),
+        h("ul", { className: "tower-stage-points" }, ...report.conclusions.slice(0, 5).map((point, index) => h("li", { key: index }, point))));
+    }
+    return h("section", { className: "tower-delivery tower-review-empty", "data-review-material": "empty", role: "status" },
+      h("h3", null, tr("审核重点", "Review focus")),
+      h("p", { className: "tower-review-warning" }, tr("暂无交付物/阶段报告", "No final deliverable or stage report")),
+      h("p", { className: "tower-muted" }, tr("请通过执行会话核对，或要求执行者补充后再确认。", "Check the execution session or ask the worker to add delivery details before approving.")));
+  }
+
+  function SessionLinks({ task, profile, navigate }: { task: Task; profile: string; navigate: (path: string, profile: string) => void }) {
+    const [copied, setCopied] = useState("");
+    const entries = sessionEntries(task);
+    const copy = async (key: string, value: string) => {
+      try { await navigator.clipboard.writeText(value); setCopied(key); }
+      catch { setCopied(`${key}:error`); }
+    };
+    const openLocal = (entry: ReturnType<typeof sessionEntries>[number]) =>
+      navigate(`/chat?${entry.kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(entry.id)}`, entry.profile || profile);
+    if (!entries.length) return h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")), h("p", { className: "tower-muted" }, tr("未记录执行会话", "No execution session recorded")));
+    return h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
+      ...entries.map((entry) => {
+        const key = `${entry.label}:${entry.id}`;
+        const title = entry.label === "source" ? tr("来源会话", "Source conversation") : tr("执行会话", "Execution conversation");
+        const fallback = () => {
+          const query = entry.kind === "hermes" ? "hermesSession" : "session";
+          const profileQuery = entry.profile ? `&profile=${encodeURIComponent(entry.profile)}` : "";
+          return h("div", { className: "tower-session-fallback" },
+            h("p", null, tr(`会话位于设备 ${entry.device || "未记录"}；此入口未配置可访问的远程地址。`, `This session is on ${entry.device || "an unrecorded device"}; no reachable remote address is configured.`)),
+            h("div", { className: "tower-session-fallback-actions" },
+              btn(copied === key ? tr("已复制", "Copied") : copied === `${key}:error` ? tr("复制失败", "Copy failed") : tr("复制会话 ID", "Copy session ID"), () => void copy(key, entry.id)),
+              h("a", { href: `/chat?${query}=${encodeURIComponent(entry.id)}${profileQuery}`, target: "_blank", rel: "noopener noreferrer" }, tr("打开 Workbench + 会话 ID", "Open Workbench + session ID"))));
+        };
+        let action: any;
+        if (entry.local) {
+          action = btn(tr("继续执行会话 →", "Continue execution session →"), () => openLocal(entry), { className: "tower-session-open" });
+        } else if (entry.remoteUrl) {
+          action = h("div", { className: "tower-session-remote-row" },
+            h("a", { href: entry.remoteUrl, target: "_blank", rel: "noopener noreferrer", className: "tower-session-remote" }, tr("打开远程 Workbench →", "Open remote Workbench →")),
+            btn(copied === key ? tr("已复制", "Copied") : copied === `${key}:error` ? tr("复制失败", "Copy failed") : tr("复制链接", "Copy link"), () => void copy(key, entry.remoteUrl), { "aria-label": tr("复制远程会话链接", "Copy remote session link") }));
+        } else if (entry.canOpen) {
+          action = h(sdk.React.Fragment, null,
+            entry.remote ? fallback() : null,
+            btn(tr("打开执行会话 →", "Open execution session →"), () => openLocal(entry), { className: "tower-session-open" }));
+        } else {
+          action = fallback();
+        }
+        return h("div", { className: "tower-session-entry", key, "data-session": entry.label },
+          h("div", { className: "tower-session-heading" }, h("h4", null, title),
+            h("span", { className: "tower-session-device" }, `${tr("设备", "Device")} · ${entry.device || tr("未记录", "Not recorded")}`)),
+          h("small", { className: "tower-session-id" }, `ID ${entry.id}`),
+          action);
+      }));
+  }
   function SpecDetails({ task }: { task: Task }) {
     const [raw, setRaw] = useState(false);
     const markdown = useRef(null as HTMLElement | null);
@@ -573,6 +696,7 @@ export function createTaskControlTower(
           () => setShowArchived(value => !value), { "aria-pressed": showArchived, disabled: archivedBusy })) : null;
     const t = detail?.task,
       decision = detail?.open_decision || detail?.decision || t?.decision;
+    const hasReviewMaterial = !!t && !!(finalDeliverables(t, detail?.artifacts || [], detail?.links || []).length || stageReport(t));
     const nextAction = (task: Task) => {
       if (task.decision)
         return tr("选择一个方案继续", "Choose an option to continue");
@@ -703,11 +827,21 @@ export function createTaskControlTower(
                 ? h(
                     sdk.React.Fragment,
                     null,
+                    h(ReviewFocus, {
+                      task: t,
+                      artifacts: detail?.artifacts || [],
+                      links: detail?.links || [],
+                      busy,
+                      onDownload: (artifact: Artifact) => void run(() => downloadArtifact(
+                        artifact,
+                        sdk.authedFetch || ((url, init) => fetch(url, { ...init, credentials: "same-origin" })),
+                      )),
+                    }),
                     h(
                       "section",
                       { className: "tower-next" },
                       h("h3", null, tr("摘要", "Summary")),
-                      h("p", null, t.review_actions ? tr("核对交付后确认，或提交修改意见", "Review the delivery, then approve or request changes") : t.lifecycle_actions ? tr("任务状态由执行者推进，可使用下方可用操作", "The worker advances this task. Use the available actions below.") : t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
+                      h("p", null, t.review_actions ? hasReviewMaterial ? tr("核对交付后确认，或提交修改意见", "Review the delivery, then approve or request changes") : tr("暂无交付物/阶段报告，请先核对执行会话或要求补充。", "No final deliverable or stage report. Check the execution session or request details before approving.") : t.lifecycle_actions ? tr("任务状态由执行者推进，可使用下方可用操作", "The worker advances this task. Use the available actions below.") : t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
 
                       t.spec_json?.summary ? h("p", { style: { whiteSpace: "pre-wrap" } }, t.spec_json.summary) : null,
                       t.review_actions ? h("section", { className: "tower-review", "aria-busy": busy },
@@ -847,12 +981,7 @@ export function createTaskControlTower(
                               ),
                         )
                       : null,
-                    sessionEntries(t).length ? h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
-                      ...sessionEntries(t).map((entry) => h("div", { key: entry.label },
-                        h("h4", null, entry.label === "source" ? tr("来源会话", "Source conversation") : tr("执行会话", "Execution conversation")),
-                        entry.canOpen
-                          ? btn(entry.id, () => navigate(`/chat?${entry.kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(entry.id)}`, entry.profile || profile))
-                          : h("p", { className: "tower-muted" }, tr("任务执行结束后可查看", "Available after the run finishes"))))) : null,
+                    h(SessionLinks, { task: t, profile, navigate }),
                     draft
                       ? h(
                           "form",

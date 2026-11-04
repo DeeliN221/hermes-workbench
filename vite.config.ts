@@ -21,7 +21,10 @@ const MAX_IIFE_BYTES = 2 * 1024 * 1024;
 // Inline archive/search, Markdown details and managed-root recovery share the
 // raw cap and SDK/one-chunk checks stay fixed.
 // Accessible project menus and guarded long-press creation add <1 KiB gzip.
-const MAX_IIFE_GZIP_BYTES = 638 * 1024;
+// Final-deliverable/stage-report prioritization and local/remote session
+// entry points add ~3.5 KiB gzip without a new dependency; keep the raw 2 MiB
+// cap and the single-IIFE/SDK checks unchanged.
+const MAX_IIFE_GZIP_BYTES = 642 * 1024;
 const FORBIDDEN_REACT_IMPORT = /^(?:react(?:\/.*)?|react-dom(?:\/.*)?)$/;
 const EMBEDDED_REACT_FINGERPRINTS = [
   '__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED',
