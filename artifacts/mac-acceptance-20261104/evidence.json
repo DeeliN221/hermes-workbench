@@ -1,0 +1,68 @@
+{
+  "git_commit": "7133566a0d31f3a4934bf76d383f4368ce2510b6",
+  "built_at": "2026-11-04T07:39:29.379284+00:00",
+  "source_sha256": "d89c9898efce0223fe6556323561cbf21dc35a454e3176b436b1e79da6046110",
+  "assets": {
+    "index.js": "6a0495d80ff1054183a52e930ac183dce9ae6d04d47616dca6fe766bd2354ade",
+    "loader.js": "033ee65a7b9dadfc1633a490c8f6864ee614ddf893d8ef61dc0a3dee19fbdce4",
+    "style.css": "82a9bfd5ef89ba56b825ef46a94d4f9272df05b9a5cf6e8a3cf5a95a707b3ea8",
+    "pele.global.js": "787ed66bb4bd56c15e224109ff5b89ed395ebfacf71fae2c0ccad1f86d6e24ef",
+    "plantuml/LICENSE-PlantUML.txt": "8ceb4b9ee5adedde47b31e975c1d90c73ad27b6b165a1dcd80c7c545eb65b903",
+    "plantuml/emoji.js": "29bc1feaf94d1570cf64621954e62c96537d740f9933a65bf69871ef306e5f24",
+    "plantuml/openiconic.js": "f0ba6c6ce4431e73a7e98ff35f374ed49a26572bb433f30b5c0848b890ded313",
+    "plantuml/plantuml.js": "4bf7e7eb250e488a419a0fa725822ab0af8640980dfd54ff52e91582d54fcbad",
+    "plantuml/runtime.js": "48695c082a7e925938f903d15583a3e9e569559daac61b01b42eca24e46bc20f",
+    "plantuml/themes.js": "4df9039fe1f38bce984c7ed2b48bde6f385181a21112d8c4bacb9e9ffc99bc26",
+    "plantuml/upstream.json": "749ece61d0b4d4a6f97e4c3e0631f59cc96e43d9ee78860768cca412f4b2cfa6",
+    "plantuml/viz-global.js": "ef2cd8a08b5cf8b65e3634131052b41870ff30bb6fb23e23a87fd09d44666cba"
+  },
+  "started_at": "2026-11-04T07:39:30.816681+00:00",
+  "environment": "local development acceptance; not NAS",
+  "host_commit": "5fc490e2b34123212d73ef316086f939567a725a",
+  "codex_version": "0.166.0",
+  "fleetd_sha256": "9d7882f3b99d47c98e5e0cf509d6bcaa513a57223239e86eb8221a84b7493c91",
+  "font": "@fontsource/noto-sans-sc 5.3.1",
+  "locale": "zh-CN",
+  "timezone": "Asia/Shanghai",
+  "desktop": {
+    "width": 1440,
+    "height": 900,
+    "dpr": 1
+  },
+  "mobile": {
+    "width": 390,
+    "height": 844,
+    "dpr": 3
+  },
+  "checks": {
+    "real_stack_projects": 4,
+    "screenshots": 12,
+    "python_tests": 34,
+    "frontend_tests": 556,
+    "typecheck": "passed",
+    "stale_HEAD_screenshot_gate": "blocked before browser launch",
+    "http_hash_negative_test": "passed"
+  },
+  "processes": [
+    {
+      "name": "fleetd",
+      "identity": "Wed Nov  4 15:39:30 2026"
+    },
+    {
+      "name": "codex",
+      "identity": "Wed Nov  4 15:39:30 2026"
+    },
+    {
+      "name": "hermes",
+      "identity": "Wed Nov  4 15:39:30 2026"
+    },
+    {
+      "name": "sidecar",
+      "identity": "Wed Nov  4 15:39:30 2026"
+    },
+    {
+      "name": "nginx",
+      "identity": "Wed Nov  4 15:39:30 2026"
+    }
+  ]
+}

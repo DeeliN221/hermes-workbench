@@ -8,6 +8,7 @@ secret and an instance-scoped Remote-User value.
 from __future__ import annotations
 
 import asyncio
+from datetime import datetime, timezone
 import hmac
 from contextlib import asynccontextmanager
 import json
@@ -138,6 +139,11 @@ def create_app(release_root: Path | None = None, *, codex_service: Any = None) -
 
     root = (release_root or Path(__file__).resolve().parent).resolve()
     assets = root / "dist"
+    started_at = datetime.now(timezone.utc).isoformat()
+    try:
+        build_identity = json.loads((assets / "build-provenance.json").read_text())
+    except (OSError, ValueError):
+        build_identity = {}
     update_manager = None
     if os.environ.get("CODEX_APP_SERVER_ENDPOINT"):
         from codex_update_manager import CodexUpdateManager, run_auto_updates
@@ -209,6 +215,10 @@ def create_app(release_root: Path | None = None, *, codex_service: Any = None) -
         if not (assets / "index.js").is_file() or not (assets / "style.css").is_file():
             raise HTTPException(status_code=503, detail="Workbench assets are missing")
         return {"status": "ok", "version": _release_version(root)}
+
+    @app.get(f"{_API_PREFIX}/runtime-version")
+    async def runtime_version() -> dict[str, Any]:
+        return {**build_identity, "started_at": started_at}
 
     @app.get("/healthz")
     async def healthz() -> dict[str, bool]:
