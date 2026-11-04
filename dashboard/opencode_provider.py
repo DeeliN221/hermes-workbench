@@ -1,9 +1,10 @@
 """OpenCode Go model adapter for Workbench.
 
-Workbench reads the OpenCode Go model catalog so that models available through an
-OpenCode Go subscription can be selected alongside Codex and direct-API models.
-The adapter is read-only and server-side only: credentials stay in the existing
-private OpenCode auth file and never cross the API boundary.
+Workbench reads the official OpenCode Go model catalog so that models available
+through an OpenCode Go subscription can be selected alongside Codex and
+direct-API models. The adapter is read-only and server-side only: credentials
+stay in the private OpenCode auth file or the OPENCODE_API_KEY environment
+variable and never cross the API boundary.
 """
 from __future__ import annotations
 
@@ -21,7 +22,7 @@ from pydantic import BaseModel
 
 import live_allowances
 
-BASE_URL = os.environ.get("WORKBENCH_OPENCODE_BASE_URL", "https://opencode.ai/zen/go").rstrip("/")
+BASE_URL = os.environ.get("WORKBENCH_OPENCODE_BASE_URL", "https://opencode.ai/inference/go").rstrip("/")
 MODELS_URL = f"{BASE_URL}/v1/models"
 OPENCODE_USER_AGENT = "Hermes-Workbench/1.0"
 PROVIDER = "opencode-go"
@@ -42,19 +43,31 @@ class ModelOption(BaseModel):
 
 
 def _auth_headers() -> dict[str, str]:
-    """Return request headers when a private OpenCode credential is available."""
+    """Return request headers when a private OpenCode credential is available.
+
+    The catalog endpoint is public, but Workbench only advertises OpenCode Go
+    models when a credential is configured. Inference also requires a separately
+    configured OpenCodex provider.
+    Credential presence is not proof of an active subscription.
+    """
     try:
-        return live_allowances.opencode_headers()
+        headers = live_allowances.opencode_headers()
     except (OSError, ValueError, TypeError, AttributeError):
-        return {}
+        headers = {}
+    if headers:
+        return headers
+    for variable in ("OPENCODE_API_KEY", "OPENCODE_GO_API_KEY"):
+        value = os.environ.get(variable, "").strip()
+        if value and "\r" not in value and "\n" not in value and " " not in value:
+            return {"Authorization": f"Bearer {value}"}
+    return {}
 
 
-def _fetch_raw(url: str, headers: dict[str, str]) -> dict[str, Any]:
-    """Fetch one JSON document without following redirects that could carry credentials."""
+def _fetch_raw(url: str) -> dict[str, Any]:
+    """Fetch the public catalog without credentials or redirects."""
     request = urllib.request.Request(
         url,
         headers={
-            **headers,
             "Accept": "application/json",
             "User-Agent": OPENCODE_USER_AGENT,
         },
@@ -149,7 +162,7 @@ def _cached_models() -> list[dict[str, Any]]:
         fetched_at, rows = _CACHE
         if rows and now - fetched_at < _CACHE_SECONDS:
             return [dict(row) for row in rows]
-    payload = _fetch_raw(MODELS_URL, _auth_headers())
+    payload = _fetch_raw(MODELS_URL)
     models = _normalize_models(payload)
     with _CACHE_LOCK:
         _CACHE = (time.monotonic(), tuple(dict(row) for row in models))
@@ -167,7 +180,7 @@ def model_options() -> ModelOption:
         if exc.code in (401, 403):
             raise HTTPException(
                 status_code=exc.code,
-                detail="OpenCode Go rejected the credentials or does not allow this account to use its models.",
+                detail="OpenCode Go catalog access was rejected. Check network or gateway policy.",
             ) from exc
         raise HTTPException(status_code=502, detail=f"OpenCode Go returned HTTP {exc.code}") from exc
     except urllib.error.URLError as exc:

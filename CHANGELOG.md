@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Read the OpenCode Go catalog from the officially documented inference endpoint, accept OPENCODE_API_KEY as a server-side credential alongside the private auth file, and document the official Go API, plan limits, and OpenCodex provider setup with a credential-free, idempotent scripts/configure-opencode-go.py helper. Fetch the public catalog without sending keys or cookies.
 - Put the completed-task checkbox beside the card title and shorten the completed-column actions to Select, Clear, Archive, and Show archived.
 - Recover the Files root listing when a managed directory contains an external symlink, while still rejecting genuine out-of-root paths and ending the loading label after an error.
 - Answer /healthz with {"ok":true} so liveness probes pass while the release assets that /health requires are still missing.
