@@ -29,6 +29,7 @@ try {
         return route.fulfill({ json: { tasks: url.searchParams.get('q') === 'empty-unique-query' ? [] : [task], next_cursor: '', has_more: false } });
       }
       const data = path === '/config' ? { mode: 'live', extended_workflow: false }
+        : path === '/tasks/sync' ? {tasks: [], removed: [], cursors: {}, full: true}
         : path === '/tasks' ? { tasks: [] } // Deep link must work outside the recent board snapshot.
         : path === '/workers' ? { workers: [] } : path === '/decisions' ? { decisions: [] }
         : { task, artifacts: [], attempts: [] };

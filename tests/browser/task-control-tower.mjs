@@ -104,6 +104,8 @@ try {
   await page.goto(host.origin + "/kanban?profile=default");
   await page.addStyleTag({ content: "#preview-banner { display: none }" });
   await page.locator('.tower-board [data-task-id="review-task"]').waitFor();
+  // The fixture includes an expired delivery; wait for its automatic archive before enumerating cards.
+  await page.locator('.tower-board [data-task-id="expired-delivery"]').waitFor({state: "hidden"});
   assert.equal(await page.locator('.tower-board [data-column]').count(), 4);
   assert.equal(await page.locator('.tower-header, .tower-sidebar, .tower-create, .tower-bottom-nav').count(), 0);
   const reviewCard = page.locator('.tower-board [data-task-id="review-task"]');

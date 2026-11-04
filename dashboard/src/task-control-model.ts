@@ -49,6 +49,7 @@ export type Task = {
   duration_seconds?: number;
   fleet_status?: string;
   stale?: boolean;
+  active_started_at?: string;
   source_session_id?: string;
   source_profile?: string;
   source_session_kind?: string;
@@ -206,6 +207,7 @@ export function hasStarted(task: Task): boolean {
 /** A task only ticks while its latest attempt is open and still assigned. */
 export function activeAttempt(task: Task): Attempt | null {
   if (["done", "archived"].includes(task.status) || !task.assignee) return null;
+  if (task.active_started_at && timestamp(task.active_started_at) !== null) return { started_at: task.active_started_at };
   const latest = orderedAttempts(task)[0];
   if (!latest || attemptTime(latest, "started_at") === null || !!latest.ended_at) return null;
   return latest;
@@ -244,7 +246,7 @@ function attemptDurationMs(attempt: Attempt): number | null {
 export function elapsedMs(task: Task, now = Date.now()): number | null {
   const attempts = taskAttempts(task);
   const active = activeAttempt(task);
-  let total = 0;
+  let total = task.active_started_at ? Math.max(0, task.duration_seconds || 0) * 1000 : 0;
   let measured = false;
   for (const attempt of attempts) {
     if (active && attempt === active) continue;

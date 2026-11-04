@@ -364,6 +364,19 @@ def fleet_search(q: str = "", archived: bool = False, cursor: str = ""):
                    "has_more": len(matches) > start + 100})
 
 
+@router.post("/tasks/sync")
+async def fleet_sync(request: Request):
+    from task_sync import card_sync, card_summary
+    body = await _body(request)
+
+    def collect():
+        value = _upstream("GET", "tasks")
+        rows = value if isinstance(value, list) else value.get("tasks", [])
+        return card_sync([card_summary(_task(row), row.get("attempts")) for row in rows], body.get("lane", "all"), body.get("cursor", ""))
+
+    return _reply(await run_in_threadpool(collect))
+
+
 @router.get("/tasks/{task_id}")
 def fleet_detail(task_id: str):
     return _reply(_detail(task_id))

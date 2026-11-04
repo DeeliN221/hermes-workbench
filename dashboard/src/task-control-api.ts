@@ -25,11 +25,11 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
     revision?: number,
     signal?: AbortSignal,
   ) => {
-    if (method !== "GET" && base !== FLEET_PROXY && !(method === "POST" && /^\/tasks\/[A-Za-z0-9_-]+\/(approve|request_changes|note|archive|retry|decide)$/.test(path)))
+    if (method !== "GET" && path !== "/tasks/sync" && base !== FLEET_PROXY && !(method === "POST" && /^\/tasks\/[A-Za-z0-9_-]+\/(approve|request_changes|note|archive|retry|decide)$/.test(path)))
       throw new Error(uiText("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes"));
     try {
       const url = base + path + (explicitDemo ? (path.includes("?") ? "&" : "?") + "demo=1" : "");
-      const reviewWrite = method === "POST" && base !== FLEET_PROXY;
+      const reviewWrite = method === "POST" && path !== "/tasks/sync" && base !== FLEET_PROXY;
       const timeout = AbortSignal.timeout(reviewWrite ? 35000 : 12000);
       const init = {
         method,
@@ -95,25 +95,8 @@ export function fleetAPI(fetchJSON: FetchJSON, authedFetch?: (url: string, init?
       if (config.mode === "mock") base = FLEET_PROXY;
       return config;
     },
-    snapshot: async () => {
-      if (base === FLEET_PROXY) {
-        const data = await request<{ tasks: Task[] }>("/tasks");
-        return { tasks: data.tasks, workers: [] as Worker[], truncated: false };
-      }
-      const [data, decisions, workers] = await Promise.all([
-        request<{ tasks: Task[]; possibly_truncated?: boolean }>("/tasks"),
-        request<{ decisions: (Decision & { task_id: string })[] }>("/decisions"),
-        request<{ workers: Worker[] }>("/workers"),
-      ]);
-      // An open decision may belong to a task outside v1's recent-list window.
-      const ids = new Set(data.tasks.map(t => t.id));
-      const missing = [...new Set(decisions.decisions.map(d => d.task_id).filter(id => !ids.has(id)))];
-      const details = await Promise.all(missing.map(id => request<Detail>(`/tasks/${encodeURIComponent(id)}`)));
-      return {
-        tasks: [...data.tasks, ...details.map(d => d.task)].map(t => ({ ...t, decision: decisions.decisions.find(d => d.task_id === t.id) || null })),
-        workers: workers.workers, truncated: !!data.possibly_truncated,
-      };
-    },
+    sync: (lane: "all" | "fast" | "slow", cursor = "", signal?: AbortSignal) =>
+      request<import("./task-control-refresh").CardDelta>("/tasks/sync", "POST", { lane, cursor }, undefined, signal),
     list: async () => {
       const data = await request<{ tasks: Task[] } | Task[]>("/tasks");
       return Array.isArray(data) ? data : data.tasks;

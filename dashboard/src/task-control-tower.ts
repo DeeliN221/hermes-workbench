@@ -4,7 +4,6 @@ import {
   fleetAPI,
   downloadArtifact,
   type FleetConfig,
-  type Worker,
 } from "./task-control-api";
 import {
   attention,
@@ -28,6 +27,7 @@ import {
   type Status,
   type Task,
 } from "./task-control-model";
+import { cardRefresh, mergeCards } from "./task-control-refresh";
 import { renderMarkdownSource } from "./markdown-source";
 
 type SDK = {
@@ -82,14 +82,14 @@ export function createTaskControlTower(
         : h("p", { className: "tower-muted" }, tr("未提供详情", "No details recorded")),
     );
   }
+  const MemoCard = sdk.React.memo(({ render }: { render: () => unknown }) => render(),
+    (a: any, b: any) => a.task === b.task && a.runtime === b.runtime && a.compact === b.compact
+      && a.archived === b.archived && a.busy === b.busy && a.checked === b.checked);
   function TaskControlTower({ profile }: { profile: string }) {
     const [tasks, setTasks] = useState([] as Task[]),
       [config, setConfig] = useState(null as FleetConfig | null);
-    const [workers, setWorkers] = useState([] as Worker[]),
-      [lastSuccess, setLastSuccess] = useState(""),
-      [connectionError, setConnectionError] = useState(""),
-      [refreshing, setRefreshing] = useState(false),
-      [truncated, setTruncated] = useState(false);
+    const [archiveVersion, setArchiveVersion] = useState(0),
+      [connectionError, setConnectionError] = useState("");
     const [query, setQuery] = useState(""), [searchOpen, setSearchOpen] = useState(false),
       [searchRows, setSearchRows] = useState([] as Task[]),
       [searchError, setSearchError] = useState(""), [searchBusy, setSearchBusy] = useState(false),
@@ -129,7 +129,7 @@ export function createTaskControlTower(
       return () => { clearTimeout(timer); controller.abort(); ++searchVersion.current; };
     }, [query, searchOpen]);
     useEffect(() => {
-      const timer = setInterval(() => setNow(Date.now()), 30000);
+      const timer = setInterval(() => { if (!document.hidden) setNow(Date.now()); }, 30000);
       return () => clearInterval(timer);
     }, []);
     useEffect(() => {
@@ -144,7 +144,7 @@ export function createTaskControlTower(
         if (!cancelled) setArchivedBusy(false);
       });
       return () => { cancelled = true; };
-    }, [showArchived, lastSuccess]);
+    }, [showArchived, archiveVersion]);
     useEffect(() => {
       const focusSearch = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement | null;
@@ -163,30 +163,6 @@ export function createTaskControlTower(
       document.addEventListener("keydown", focusSearch, true);
       return () => document.removeEventListener("keydown", focusSearch, true);
     }, [searchOpen]);
-    const refreshLock = useRef(false);
-    useEffect(() => {
-      let cancelled = false;
-      const queue = [...new Set([...tasks, ...searchRows, ...archivedTasks].filter(t => t.read_only || !Array.isArray(t.attempts)).map(t => t.id))];
-      const worker = async () => {
-        while (queue.length && !cancelled) {
-          const id = queue.shift()!;
-          try {
-            const detail = await api.detail(id);
-            const task = detail.task;
-            if (!task || task.id !== id) continue;
-            const attempts = (Array.isArray(task.attempts) && task.attempts.length ? task.attempts : detail.attempts) as Task["attempts"];
-            if (!cancelled) {
-              const merge = (previous: Task[]) => previous.map(t => t.id === id ? {
-                ...t, ...task, attempts,
-              } : t);
-              setTasks(merge); setSearchRows(merge); setArchivedTasks(merge);
-            }
-          } catch { /* Missing metadata stays explicitly unrecorded; board remains usable. */ }
-        }
-      };
-      void Promise.all(Array.from({ length: Math.min(4, queue.length) }, worker));
-      return () => { cancelled = true; };
-    }, [lastSuccess, searchRows.map(t => t.id).join(","), archivedTasks.map(t => t.id).join(",")]);
     const [detail, setDetail] = useState(null as Detail | null),
       [selected, setSelected] = useState("");
     const [error, setError] = useState(""),
@@ -205,60 +181,56 @@ export function createTaskControlTower(
       dialog = useRef(null as HTMLElement | null),
       opener = useRef(null as HTMLElement | null),
       order = useRef([] as string[]);
+    const refresher = useRef(null as ReturnType<typeof cardRefresh> | null);
     const refresh = async () => {
-      const snapshot = await api.snapshot();
-      const rows = snapshot.tasks;
-      if (!alive.current) return;
-      const index = new Map<string, number>(
-        order.current.map((id: string, i: number) => [id, i]),
-      );
-      setTasks(
-        [...rows].sort(
-          (a, b) => (index.get(a.id) ?? 1e6) - (index.get(b.id) ?? 1e6),
-        ),
-      );
-      setWorkers(snapshot.workers);
-      setTruncated(snapshot.truncated);
-      setLastSuccess(new Date().toISOString());
-      setConnectionError("");
+      await refresher.current?.refresh();
       const id = selection.current;
       if (id) {
-        try {
-          const data = await api.detail(id);
-          if (alive.current && id === selection.current) setDetail(data);
-        } catch {
-          if (alive.current) setError(tr("详情已过期，请重新打开重试", "Details are stale. Reopen to retry."));
-        }
+        const data = await api.detail(id);
+        if (alive.current && selection.current === id) setDetail(data);
       }
     };
-    const load = async () => {
-      if (refreshLock.current) return;
-      refreshLock.current = true;
-      setRefreshing(true);
-      try {
-        const cfg = await api.config();
-        if (!alive.current) return;
-        setConfig(cfg);
-        if (cfg.mode !== "unconfigured") await refresh();
-      } catch (e) {
-        if (alive.current) setConnectionError(e instanceof Error ? e.message : tr("连接失败，请重试", "Connection failed. Retry."));
-      } finally {
-        refreshLock.current = false;
-        if (alive.current) { setLoading(false); setRefreshing(false); }
-      }
-    };
+    const load = refresh;
     useEffect(() => {
       alive.current = true;
-      void load();
-      const visibleLoad = () => { if (!document.hidden) void load(); };
-      const timer = setInterval(visibleLoad, 15000);
-      document.addEventListener("visibilitychange", visibleLoad);
-      window.addEventListener("focus", visibleLoad);
+      let configured = false;
+      const controller = cardRefresh({
+        fetch: async (lane, cursor, signal) => {
+          if (!configured) {
+            const cfg = await api.config();
+            if (signal.aborted) throw new DOMException("Aborted", "AbortError");
+            setConfig(cfg);
+            configured = cfg.mode !== "unconfigured";
+            if (!configured) return { tasks: [], removed: [], cursors: {}, full: true };
+          }
+          return api.sync(lane, cursor, signal);
+        },
+        apply: delta => {
+          setTasks(previous => {
+            const merged = mergeCards(previous, delta);
+            if (previous.length || !order.current.length) return merged;
+            const index = new Map(order.current.map((id, i) => [id, i]));
+            return [...merged].sort((a, b) => (index.get(a.id) ?? 1e6) - (index.get(b.id) ?? 1e6));
+          });
+          setConnectionError(""); setLoading(false);
+          if (delta.full) setArchiveVersion(value => value + 1);
+        },
+        error: e => {
+          setLoading(false);
+          setConnectionError(e instanceof Error ? e.message : tr("连接失败，请重试", "Connection failed. Retry."));
+        },
+      });
+      refresher.current = controller;
+      controller.start();
+      const visibility = () => controller.visibility();
+      document.addEventListener("visibilitychange", visibility);
+      window.addEventListener("focus", controller.focus);
       return () => {
         alive.current = false;
-        clearInterval(timer);
-        document.removeEventListener("visibilitychange", visibleLoad);
-        window.removeEventListener("focus", visibleLoad);
+        controller.stop();
+        refresher.current = null;
+        document.removeEventListener("visibilitychange", visibility);
+        window.removeEventListener("focus", controller.focus);
       };
     }, []);
     useEffect(() => {
@@ -409,7 +381,7 @@ export function createTaskControlTower(
       }
     };
     const move = (task: Task, to: Status, before?: string) => {
-      const reason = canMove(task, to);
+      const reason = task.status === to ? canMove(task, to) : "";
       if (reason) {
         setError(reason);
         return;
@@ -431,7 +403,8 @@ export function createTaskControlTower(
         return;
       }
       void run(async () => {
-        await api.move(task, to, !!config?.extended_workflow);
+        const current = (await api.detail(task.id)).task;
+        await api.move(current, to, !!config?.extended_workflow);
         if (before) {
           order.current = reordered(
             tasks.map((t) => (t.id === task.id ? { ...t, status: to } : t)),
@@ -489,7 +462,9 @@ export function createTaskControlTower(
       );
       return hours < 24 ? `${hours}h` : `${Math.floor(hours / 24)}d`;
     };
-    const card = (t: Task, compact = false, archived = false) => {
+    const actions = useRef({ open, dropProps, setChecked });
+    actions.current = { open, dropProps, setChecked };
+    const renderCard = (t: Task, compact = false, archived = false) => {
       const runtime = runtimeLine(t, now);
       const duration = hasStarted(t) ? durationMinutes(t, now) : "";
       const values = duration ? runtime.slice(0, -duration.length).trim() : runtime;
@@ -504,13 +479,16 @@ export function createTaskControlTower(
           "data-archived": archived ? "true" : undefined,
           "data-runtime": runtime,
           "data-active-attempt": activeAttempt(t) ? "true" : "false",
-          onClick: (e: MouseEvent) => { if (!(e.target as Element).closest("button, a, input, label")) void open(t.id); },
+          onClick: (e: MouseEvent) => { if (!(e.target as Element).closest("button, a, input, label")) void actions.current.open(t.id); },
           draggable: !archived && !busy && !t.read_only && t.status !== "done",
           onDragStart: (e: DragEvent) => {
             e.dataTransfer?.setData("text/workbench-task", t.id);
             if (e.dataTransfer) e.dataTransfer.effectAllowed = "move";
           },
-          ...(archived ? {} : dropProps(t.status, t.id)),
+          ...(archived ? {} : {
+            onDragOver: (e: DragEvent) => actions.current.dropProps(t.status, t.id).onDragOver(e),
+            onDrop: (e: DragEvent) => actions.current.dropProps(t.status, t.id).onDrop(e),
+          }),
         },
         h("div", { className: "tower-card-heading" },
           t.status === "done" && !archived ? h("label", { className: "tower-select" }, h("input", {
@@ -518,7 +496,7 @@ export function createTaskControlTower(
             "aria-label": tr("选择任务", "Select task"),
             onChange: () => setChecked(previous => previous.includes(t.id) ? previous.filter(id => id !== t.id) : [...previous, t.id]),
           })) : null,
-          btn(t.title, () => void open(t.id), { className: "tower-card-title", title: t.title }),
+          btn(t.title, () => void actions.current.open(t.id), { className: "tower-card-title", title: t.title }),
           archived ? h("span", { className: "tower-archived-tag" }, tr("已归档", "Archived")) : null,
           stale ? h("span", { className: "tower-stale-tag", title: tr("最新执行已结束或没有负责人，计时已停止", "The latest attempt ended or has no assignee; the timer is stopped") }, tr("等待/异常", "Waiting / stale")) : null,
         ),
@@ -530,6 +508,10 @@ export function createTaskControlTower(
         ),
       ));
     };
+    const card = (t: Task, compact = false, archived = false) => h(MemoCard, {
+      key: t.id, task: t, compact, archived, busy, checked: checked.includes(t.id),
+      runtime: runtimeLine(t, now), render: () => renderCard(t, compact, archived),
+    });
     const group = (status: Status) => {
       const rows =
         status === "done"
