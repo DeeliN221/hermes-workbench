@@ -1,0 +1,26 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "headerHeight": 230.984375,
+    "bodyHeight": 386.359375
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "headerHeight": 230.984375,
+    "bodyHeight": 386.359375
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "headerHeight": 386.96875,
+    "bodyHeight": 221.609375
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "headerHeight": 386.96875,
+    "bodyHeight": 221.609375
+  }
+]
