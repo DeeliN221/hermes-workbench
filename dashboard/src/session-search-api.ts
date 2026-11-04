@@ -3,6 +3,7 @@
  * Every request is bounded and shares one abort scope so changing or closing the
  * search cannot leave stale work running against the sidecar.
  */
+import type { Task } from './task-control-model';
 import type { FetchJSON } from './workbench-api';
 import { searchCodexSessions, type CodexSessionSearchHit } from './codex-api';
 import { searchSessions } from './session-api';
@@ -12,9 +13,10 @@ import type { SessionOrganizationMap } from './session-organization';
 import { uiText as text } from './ui-locale';
 
 export interface SearchResult {
-  id: string; profile: string; kind: 'session' | 'hermes' | 'archived';
+  id: string; profile: string; kind: 'session' | 'hermes' | 'archived' | 'task';
   title: string; snippet?: string; groupName?: string; updatedAt?: string | number;
   session?: any;
+  task?: Task;
 }
 
 export interface SearchSnapshot {
@@ -219,7 +221,7 @@ async function searchProfile(
 }
 
 function sortResults(results: SearchResult[], current: string): SearchResult[] {
-  const kindOrder = { session: 0, hermes: 1, archived: 2 };
+  const kindOrder = { session: 0, hermes: 1, archived: 2, task: 3 };
   return results.sort((a, b) => Number(b.profile === current) - Number(a.profile === current)
     || a.profile.localeCompare(b.profile) || kindOrder[a.kind] - kindOrder[b.kind] || a.id.localeCompare(b.id));
 }

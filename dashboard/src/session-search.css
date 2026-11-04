@@ -1,17 +1,36 @@
-.codex-session-search-dialog.session-search-workspace { width: min(1120px, 100%); max-width: 1120px; height: min(800px, 88dvh); max-height: 88dvh; }
+.codex-session-search-dialog.session-search-workspace { width: min(1120px, 100%); max-width: 1120px; height: min(800px, 88dvh); max-height: 88dvh; gap: 8px; padding: 12px; }
 .session-search-workspace small { color: var(--codex-search-muted); }
-.session-search-columns { display: grid; grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.2fr); flex: 1; min-height: 0; gap: 16px; }
+.session-search-columns { display: grid; grid-template-columns: minmax(260px, 0.9fr) minmax(0, 1.2fr); flex: 1; min-height: 0; gap: 10px; }
 .session-search-columns .codex-session-search-results { max-height: none; overflow: auto; min-height: 0; padding: 2px; align-content: start; }
-.session-search-columns .codex-session-search-result { width: 100%; gap: 7px; padding: 14px; flex-shrink: 0; }
-.session-search-columns .codex-session-search-result-title { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-.session-search-columns .codex-session-search-result-meta { white-space: normal; overflow-wrap: anywhere; font-size: 12px; }
-.session-search-columns .codex-session-search-result-snippet { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; white-space: normal; }
+/* Override the host's compact button height and grid tracks at every width. */
+.session-search-columns .codex-session-search-result {
+  display: flex; flex-direction: column; align-items: stretch; justify-content: start;
+  width: 100%; height: auto !important; min-height: 0; gap: 4px; padding: 9px 10px;
+  line-height: 1.4; flex-shrink: 0;
+}
+.session-search-result-heading { display: flex; align-items: baseline; gap: 6px; min-width: 0; }
+.session-search-kind { flex: none; font-size: 11px; line-height: 1.5; color: var(--codex-search-muted); border: 1px solid var(--codex-search-border); border-radius: 4px; padding: 0 4px; }
+.session-search-columns .codex-session-search-result-title { flex: 1; min-width: 0; display: block; line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.session-search-columns .codex-session-search-result-meta { line-height: 1.4; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 12px; }
+.session-search-columns .codex-session-search-result-snippet { flex: none; line-height: 1.45; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; white-space: normal; }
+.session-search-workspace > [role="status"] { font-size: 12px; line-height: 1.4; }
+.session-search-workspace .codex-session-search-error { display: flex; flex: none; align-items: center; gap: 8px; margin: 0; font-size: 12px; line-height: 1.4; overflow-wrap: anywhere; }
+.session-search-workspace .codex-session-search-error > span { flex: 1; min-width: 0; max-height: 6em; overflow: auto; }
+.session-search-workspace .codex-session-search-error > button { flex: none; white-space: nowrap; min-height: 32px; }
+.session-search-workspace .codex-session-search-header { flex: none; }
+.session-search-workspace .codex-session-search-header > div { display: flex; align-items: baseline; gap: 10px; min-width: 0; }
+.session-search-workspace .codex-session-search-header small { font-size: 12px; }
 .session-search-preview { display: flex; flex-direction: column; min-width: 0; min-height: 0; border: 1px solid var(--codex-search-border); border-radius: 8px; overflow: hidden; }
-.session-search-preview > header { display: flex; flex-direction: column; align-items: start; gap: 8px; padding: 16px; border-bottom: 1px solid var(--codex-search-border); overflow-wrap: anywhere; }
-.session-search-open { background: var(--codex-search-accent); color: var(--mc-on-accent, white); border: 0; border-radius: 6px; padding: 9px 16px; cursor: pointer; }
-.session-search-transcript { overflow: auto; padding: 16px; min-height: 0; overflow-wrap: anywhere; }
+.session-search-preview > header { display: flex; flex: none; flex-direction: column; gap: 4px; padding: 10px; border-bottom: 1px solid var(--codex-search-border); min-width: 0; }
+.session-search-preview-heading, .session-search-preview-meta { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.session-search-preview-heading > strong { flex: 1; min-width: 0; line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.session-search-preview-meta > small { flex: 1; min-width: 0; font-size: 12px; line-height: 1.4; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-search-open { flex: none; white-space: nowrap; font: inherit; font-size: 12px; line-height: 1.4; min-height: 36px; background: var(--codex-search-accent); color: var(--mc-on-accent, white); border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer; }
+.session-search-open:disabled { opacity: .6; cursor: wait; }
+.session-search-transcript { overflow: auto; padding: 10px; min-height: 0; overflow-wrap: anywhere; }
+.session-search-task-summary { margin: 0; white-space: pre-wrap; line-height: 1.6; }
 /* Keep the real message styles; constrain only the containing viewport. */
-.session-search-transcript { display: flex; flex-direction: column; gap: 18px; flex: 1; }
+.session-search-transcript { display: flex; flex-direction: column; gap: 12px; flex: 1; }
 .session-search-transcript > *, .session-search-transcript .codex-message-body,
 .session-search-transcript .hti-rich-markdown { min-width: 0; max-width: 100%; }
 .session-search-transcript .codex-hermes-history-transcript { padding: 0; }
@@ -21,8 +40,8 @@
 .session-search-placeholder { margin: auto; padding: 32px; text-align: center; color: var(--codex-search-muted); }
 .session-search-back { display: none; }
 @media (max-width: 700px) {
-  .codex-session-search-dialog.session-search-workspace { width: 100%; height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); padding: 12px; }
+  .codex-session-search-dialog.session-search-workspace { width: 100%; height: calc(100dvh - 24px); max-height: calc(100dvh - 24px); padding: 10px; }
   .session-search-columns { grid-template-columns: minmax(0, 1fr); }
   .session-search-columns:not(.has-preview) .session-search-preview, .session-search-columns.has-preview .codex-session-search-results { display: none; }
-  .session-search-back { display: inline-block; border: 0; padding: 4px 0; color: var(--codex-search-accent); background: transparent; cursor: pointer; }
+  .session-search-back { display: inline-block; flex: none; white-space: nowrap; font-size: 12px; line-height: 1.4; border: 0; padding: 4px 0; color: var(--codex-search-accent); background: transparent; cursor: pointer; }
 }
