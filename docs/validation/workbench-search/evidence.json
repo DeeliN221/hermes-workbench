@@ -1,0 +1,170 @@
+[
+  {
+    "width": 1440,
+    "theme": "light",
+    "origin": "http://localhost:33982",
+    "rows": [
+      {
+        "titleBottom": 252.296875,
+        "metaTop": 256.296875,
+        "metaBottom": 273.09375,
+        "snippetTop": 277.09375,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 361.375,
+        "metaTop": 365.375,
+        "metaBottom": 382.171875,
+        "snippetTop": 386.171875,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 470.453125,
+        "metaTop": 474.453125,
+        "metaBottom": 491.25,
+        "snippetTop": 495.25,
+        "overflow": 0
+      }
+    ],
+    "title": {
+      "top": 228.796875,
+      "bottom": 273.578125,
+      "right": 1147.703125
+    },
+    "action": {
+      "top": 233.1875,
+      "bottom": 269.1875,
+      "left": 1155.703125
+    },
+    "headerHeight": 86.578125,
+    "bodyHeight": 560.625,
+    "overflow": 0,
+    "errors": []
+  },
+  {
+    "width": 1440,
+    "theme": "dark",
+    "origin": "http://localhost:33982",
+    "rows": [
+      {
+        "titleBottom": 252.296875,
+        "metaTop": 256.296875,
+        "metaBottom": 273.09375,
+        "snippetTop": 277.09375,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 361.375,
+        "metaTop": 365.375,
+        "metaBottom": 382.171875,
+        "snippetTop": 386.171875,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 470.453125,
+        "metaTop": 474.453125,
+        "metaBottom": 491.25,
+        "snippetTop": 495.25,
+        "overflow": 0
+      }
+    ],
+    "title": {
+      "top": 228.796875,
+      "bottom": 273.578125,
+      "right": 1147.703125
+    },
+    "action": {
+      "top": 233.1875,
+      "bottom": 269.1875,
+      "left": 1155.703125
+    },
+    "headerHeight": 86.578125,
+    "bodyHeight": 560.625,
+    "overflow": 0,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "light",
+    "origin": "http://localhost:33982",
+    "rows": [
+      {
+        "titleBottom": 190.296875,
+        "metaTop": 194.296875,
+        "metaBottom": 211.09375,
+        "snippetTop": 215.09375,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 299.375,
+        "metaTop": 303.375,
+        "metaBottom": 320.171875,
+        "snippetTop": 324.171875,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 408.453125,
+        "metaTop": 412.453125,
+        "metaBottom": 429.25,
+        "snippetTop": 433.25,
+        "overflow": 0
+      }
+    ],
+    "title": {
+      "top": 166.796875,
+      "bottom": 211.578125,
+      "right": 243.703125
+    },
+    "action": {
+      "top": 171.1875,
+      "bottom": 207.1875,
+      "left": 251.703125
+    },
+    "headerHeight": 94.578125,
+    "bodyHeight": 572.625,
+    "overflow": 0,
+    "errors": []
+  },
+  {
+    "width": 390,
+    "theme": "dark",
+    "origin": "http://localhost:33982",
+    "rows": [
+      {
+        "titleBottom": 190.296875,
+        "metaTop": 194.296875,
+        "metaBottom": 211.09375,
+        "snippetTop": 215.09375,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 299.375,
+        "metaTop": 303.375,
+        "metaBottom": 320.171875,
+        "snippetTop": 324.171875,
+        "overflow": 0
+      },
+      {
+        "titleBottom": 408.453125,
+        "metaTop": 412.453125,
+        "metaBottom": 429.25,
+        "snippetTop": 433.25,
+        "overflow": 0
+      }
+    ],
+    "title": {
+      "top": 166.796875,
+      "bottom": 211.578125,
+      "right": 243.703125
+    },
+    "action": {
+      "top": 171.1875,
+      "bottom": 207.1875,
+      "left": 251.703125
+    },
+    "headerHeight": 94.578125,
+    "bodyHeight": 572.625,
+    "overflow": 0,
+    "errors": []
+  }
+]

@@ -48,7 +48,7 @@ try {
     const shot = async suffix => { if (shots) await page.screenshot({ path: `${shots}/${prefix}-${suffix}.png` }); };
     await shot('sidebar');
     assert.equal(await page.locator('.project-temporary .project-section-heading button').count(), 1);
-    assert.equal(await page.locator('.project-navigation .project-section-heading .project-create').count(), 0);
+    assert.equal(await page.locator('.project-navigation .project-section-heading .project-create').count(), 1);
     assert.equal(await page.getByRole('menuitem').count(), 0); // Closed popovers are hidden from accessibility tree.
     assert.equal(await page.locator('.project-actions > button').count(), 3);
     assert.equal(await page.locator('.project-actions > button').first().textContent(), '');
@@ -64,29 +64,10 @@ try {
       await page.waitForTimeout(650);
       assert.equal(await nameInput.count(), 0, end);
     }
-    // A real pointer hold opens once, and release doesn't submit or open another dialog.
-    if (mobile) {
-      const client = await page.context().newCDPSession(page);
-      const box = await heading.boundingBox();
-      await client.send('Input.dispatchTouchEvent', { type: 'touchStart', touchPoints: [{ x: box.x + 8, y: box.y + 8 }] });
-      await page.waitForTimeout(300);
-      await heading.evaluate(node => node.dispatchEvent(new PointerEvent('contextmenu', { bubbles: true, cancelable: true, pointerType: 'touch' })));
-      assert.equal(await nameInput.count(), 0, 'Native touch contextmenu must not bypass the hold threshold');
-      await page.waitForTimeout(400);
-      await client.send('Input.dispatchTouchEvent', { type: 'touchEnd', touchPoints: [] });
-      await client.detach();
-    } else await heading.click({ delay: 700 });
-    await nameInput.waitFor();
-    await shot('create');
-    await page.keyboard.press('Escape');
+    await heading.click({ delay: 700 });
     await heading.click({ button: 'right' });
-    await nameInput.waitFor();
-    await page.keyboard.press('Escape');
-    await heading.focus();
-    await heading.press('Shift+F10');
-    await nameInput.waitFor();
-    await page.keyboard.press('Escape');
-    await page.getByRole('button', { name: 'History and archive', exact: true }).click();
+    assert.equal(await nameInput.count(), 0);
+    assert.equal(await page.locator('.project-create-hint').count(), 0);
     await page.getByRole('button', { name: 'New project', exact: true }).click();
     await nameInput.fill('New research');
     await nameInput.press('Enter');
@@ -135,6 +116,19 @@ try {
     await page.getByRole('menuitem', { name: 'Delete project', exact: true }).click();
     await renamed.waitFor({ state: 'detached' });
     assert.equal(writes.at(-1).method, 'DELETE');
+    groups.splice(0);
+    await page.reload();
+    await page.locator('.codex-pane-slot').first().waitFor();
+    if (mobile) await page.locator('.dashboard-mobile-toggle').first().click();
+    await expect(page.locator('.project-folder-row')).toHaveCount(0);
+    await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
+    await expect(page.getByRole('button', { name: 'New project', exact: true })).toHaveCount(0);
+    await page.locator('.project-heading-label').click({ delay: 700 });
+    await page.locator('.project-heading-label').click({ button: 'right' });
+    await page.getByRole('button', { name: 'History and archive', exact: true }).click();
+    await expect(nameInput).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'New project', exact: true })).toHaveCount(0);
+    await shot('empty');
     assert.deepEqual(errors, []);
     await page.close();
     console.log(`PASS: project navigation ${prefix}`);

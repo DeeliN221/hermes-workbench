@@ -52,11 +52,11 @@ try {
     assert.equal(await menu.locator(':scope > *').count(), 1);
     const items = menu.locator('a, button');
     assert.equal(await items.count(), 9);
-    assert.deepEqual(await items.evaluateAll(nodes => nodes.map(node => node.textContent.trim())), ['Home', 'Search sessions', 'Settings', 'Kanban', 'Scheduled jobs', 'Terminal', 'Files', 'Theme', 'Achievements']);
+    assert.deepEqual(await items.evaluateAll(nodes => nodes.map(node => node.textContent.trim())), ['Home', 'Search', 'Settings', 'Kanban', 'Scheduled jobs', 'Terminal', 'Files', 'Theme', 'Achievements']);
     const bounds = await menu.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= page.viewportSize().width);
     assert.ok(bounds.y >= 0 && bounds.y + bounds.height <= page.viewportSize().height);
-    assert.match(await items.nth(1).textContent(), /Search sessions/);
+    assert.match(await items.nth(1).textContent(), /Search/);
     assert.equal(await items.first().evaluate(node => node === document.activeElement), true);
     await page.keyboard.press('Shift+Tab');
     assert.equal(await items.last().evaluate(node => node === document.activeElement), true);

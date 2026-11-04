@@ -2835,8 +2835,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         B = v === "dark" ? runtimeText("切换到亮色主题", "Switch to light theme") : runtimeText("切换到暗色主题", "Switch to dark theme"),
         Y = _?.toolbar ?? l("div", { className: "codex-navigation-create-actions" },
-          l("button", { type: "button", disabled: true, "aria-label": runtimeText("搜索会话", "Search sessions") },
-            craftingIcon(t, "search"), l("span", null, runtimeText("搜索会话", "Search sessions")))),
+          l("button", { type: "button", disabled: true, "aria-label": runtimeText("搜索", "Search") },
+            craftingIcon(t, "search"), l("span", null, runtimeText("搜索", "Search")))),
         te = Bc(window.innerWidth),
         X = (z, G = !1) => {
           const ae = em(z, window.innerWidth);
@@ -11995,11 +11995,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               className: "codex-session-search-trigger",
               ref: Fd,
               onClick: kM,
-              "aria-label": runtimeText("搜索会话", "Search sessions"),
-              title: runtimeText("搜索会话", "Search sessions"),
+              "aria-label": runtimeText("搜索", "Search"),
+              title: runtimeText("搜索", "Search"),
             },
             craftingIcon(e, "search"),
-            W(e, "span", null, runtimeText("搜索会话", "Search sessions")),
+            W(e, "span", null, runtimeText("搜索", "Search")),
           ),
         ),
         rc = p

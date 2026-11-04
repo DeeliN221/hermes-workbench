@@ -1,0 +1,457 @@
+{
+  "before": {
+    "desktop-light-default-codex": {
+      "url": "http://localhost:54850/chat?session=codex-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:54850/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-light-default-hermes": {
+      "url": "http://localhost:54850/chat?hermesSession=hermes-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:54850/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-light-writer-codex": {
+      "url": "http://localhost:54850/?profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/?profile=writer"
+        },
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/sessions"
+        },
+        {
+          "method": "replaceState",
+          "url": "/"
+        },
+        {
+          "method": "replaceState",
+          "url": "/sessions"
+        },
+        {
+          "method": "replaceState",
+          "url": "/?profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    }
+  },
+  "after": {
+    "desktop-dark-default-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-dark-default-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-dark-writer-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-dark-writer-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-light-default-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-light-default-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-light-writer-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "desktop-light-writer-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-dark-default-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-dark-default-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-dark-writer-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-dark-writer-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-light-default-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?session=codex-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-light-default-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=default"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=default"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-light-writer-codex": {
+      "url": "http://localhost:55306/chat?session=codex-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?session=codex-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    },
+    "mobile-light-writer-hermes": {
+      "url": "http://localhost:55306/chat?hermesSession=hermes-preview&profile=writer",
+      "routes": [
+        {
+          "method": "pushState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview"
+        },
+        {
+          "method": "replaceState",
+          "url": "/chat?hermesSession=hermes-preview&profile=writer"
+        }
+      ],
+      "api_statuses": [
+        200
+      ],
+      "errors": []
+    }
+  }
+}

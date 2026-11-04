@@ -116,7 +116,7 @@ try {
   assert.doesNotMatch(await page.locator('.codex-session-search-dialog').innerText(), /Path:|private native search/);
   if (shots) await page.screenshot({ path: `${shots}/attachments-search.png` });
   await page.locator('input[name="session-search"]').fill('.workbench-attachments');
-  await page.locator('.codex-session-search-results').getByText('No matching sessions', { exact: true }).waitFor();
+  await page.locator('.codex-session-search-results').getByText('No matching sessions or tasks', { exact: true }).waitFor();
   await page.locator('.codex-session-search-close').click();
   await openSecondSession(page);
   await page.waitForFunction(() => [...document.querySelectorAll('.codex-message.is-user .codex-message-body')].some(node => node.textContent === 'Original legacy message.'));

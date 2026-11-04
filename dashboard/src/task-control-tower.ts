@@ -288,6 +288,11 @@ export function createTaskControlTower(
       })();
     }, [tasks, config?.mode]);
     const close = () => {
+      const url = new URL(window.location.href);
+      if (url.searchParams.get("task") === selection.current) {
+        url.searchParams.delete("task");
+        window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+      }
       selection.current = "";
       setSelected("");
       setDetail(null);
@@ -366,6 +371,17 @@ export function createTaskControlTower(
           setError(e instanceof Error ? e.message : tr("详情加载失败，请关闭后重试", "Details failed to load. Close and retry."));
       }
     };
+    // Search links can target older tasks outside the board's recent snapshot.
+    useEffect(() => {
+      if (!config) return;
+      const selectFromURL = () => {
+        const id = new URLSearchParams(window.location.search).get("task");
+        if (id && id !== selection.current) void open(id);
+      };
+      selectFromURL();
+      window.addEventListener("popstate", selectFromURL);
+      return () => window.removeEventListener("popstate", selectFromURL);
+    }, [config?.mode]);
     const review = async (task: Task, action: "approve" | "request_changes") => {
       if (writing.current) return;
       writing.current = true;
