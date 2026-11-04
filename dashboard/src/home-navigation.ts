@@ -1,14 +1,21 @@
 import { uiText as sourceText } from './ui-locale';
 import { currentProfile, switchProfile } from './profile-scope';
-/** Let the host commit profile state before changing pathname to the selected chat. */
+import { isNewSessionRoute } from './codex-pane-route';
+/** Open existing home conversations atomically; preserve new-pane/profile synchronization. */
 export function openHomeConversation(path: string, profile: string, navigate: (path: string, profile: string) => void): void {
-  if (currentProfile() === profile) { navigate(path, profile); return; }
   const openedFromHome = ['/', '/home', '/sessions'].includes(window.location.pathname);
+  if (openedFromHome && !isNewSessionRoute(path)) {
+    // Staging a profile switch on the custom home route remounts the host's
+    // fallback route. Its pending redirect can overwrite the subsequent chat.
+    // The destination already carries the profile; commit both in one navigation.
+    navigate(path, profile);
+    return;
+  }
+  if (currentProfile() === profile) { navigate(path, profile); return; }
   if (!switchProfile(profile)) return;
   const pending = window.location.href;
   const finish = () => { if (window.location.href === pending) navigate(path, profile); };
-  // The custom recent-sessions page does not always render the native profile
-  // switcher. Let the URL/profile state commit before opening the chat route.
+  // New-session actions still need the profile pane to mount before consuming new=1.
   if (openedFromHome) {
     requestAnimationFrame(() => requestAnimationFrame(finish));
     return;

@@ -1,3 +1,6 @@
+packages:
+  - '.'
+  - 'tests/fixtures/hermes-host'
 allowBuilds:
   esbuild: true
 onlyBuiltDependencies:

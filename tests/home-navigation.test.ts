@@ -30,16 +30,19 @@ describe('persistent chat home links', () => {
     expect(select.codex).toHaveBeenCalledWith('one');
   });
 
-  it('opens a cross-profile recent card after the custom home route switches scope', async () => {
-    history.replaceState(null, '', '/sessions?profile=default');
+  it.each(['/', '/home', '/sessions'])('opens the first home card atomically from %s', async home => {
+    history.replaceState(null, '', `${home}?profile=default`);
     const navigate = vi.fn();
-    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation(callback => {
-      callback(0);
-      return 0;
-    });
+    const push = vi.spyOn(history, 'pushState');
+    const frame = vi.spyOn(window, 'requestAnimationFrame');
     const { openHomeConversation } = await import('../dashboard/src/home-navigation');
-    openHomeConversation('/chat?session=one', 'writer', navigate);
-    expect(navigate).toHaveBeenCalledWith('/chat?session=one', 'writer');
-    raf.mockRestore();
+    try {
+      openHomeConversation('/chat?session=one&profile=writer', 'writer', navigate);
+      expect(navigate).toHaveBeenCalledExactlyOnceWith('/chat?session=one&profile=writer', 'writer');
+      // A staged home/profile route can trigger the host's fallback redirect.
+      expect(push).not.toHaveBeenCalled();
+      expect(frame).not.toHaveBeenCalled();
+      expect(location.pathname + location.search).toBe(`${home}?profile=default`);
+    } finally { push.mockRestore(); frame.mockRestore(); }
   });
 });
