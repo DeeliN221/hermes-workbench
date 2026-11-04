@@ -4,7 +4,7 @@ import { mkdir } from 'node:fs/promises';
 import { chromium } from 'playwright';
 import { createMockHost } from './mock-host.mjs';
 
-const shots = process.env.SHOT_DIR || 'artifacts/mobile-action-rail-20261104';
+const shots = process.env.SHOT_DIR || 'node_modules/.cache/mobile-action-rail';
 await mkdir(shots, { recursive: true });
 const host = await createMockHost({ host: 'localhost' });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
