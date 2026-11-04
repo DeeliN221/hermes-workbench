@@ -118,3 +118,27 @@ it("renders compact runtime values, omits empty drawer blocks and hides archived
   expect(drawer.querySelector(".tower-markdown h1")?.textContent).toBe("Plan");
   expect(drawer.querySelector(".tower-markdown a")?.getAttribute("href")).toBe("https://example.com/");
 });
+
+it("keeps the done-card checkbox in the title row and labels bulk actions compactly", async () => {
+  const task = {
+    id: "T-done", title: "A completed task with a deliberately long title that may wrap", status: "done",
+    risk: "R1", priority: "P1", revision: 0, created_at: new Date().toISOString(), completed_at: new Date().toISOString(),
+    acceptance: [{ label: "Pass", checked: true }], read_only: true,
+  };
+  const fetchJSON: FetchJSON = async <T>(url: string) => {
+    if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
+    if (url.endsWith("/tasks")) return { tasks: [task] } as T;
+    if (url.endsWith("/decisions")) return { decisions: [] } as T;
+    if (url.endsWith("/workers")) return { workers: [] } as T;
+    return { profiles: [], items: [], sessions: [], groups: [] } as T;
+  };
+  const Component = createTaskControlTower({ React, hooks: React, fetchJSON }, vi.fn());
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  await act(async () => { root.render(React.createElement(Component, { profile: "default" })); await new Promise(r => setTimeout(r, 30)); });
+  const card = host.querySelector('.tower-card[data-task-id="T-done"]') as HTMLElement;
+  const select = card.querySelector(".tower-select") as HTMLElement;
+  expect(select.parentElement?.classList.contains("tower-card-heading")).toBe(true);
+  expect(select.querySelector('input[type="checkbox"]')?.getAttribute("aria-label")).toBe("Select task");
+  expect(Array.from(host.querySelectorAll('.column-done .tower-column-actions button')).map(button => button.textContent)).toEqual(["Select", "Clear", "Archive", "Show archived"]);
+});

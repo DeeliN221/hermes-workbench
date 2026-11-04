@@ -180,6 +180,23 @@
   flex: 1 1 auto;
   min-width: 0;
 }
+.tower-select {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  align-self: flex-start;
+  margin: 2px 0 0;
+  padding: 0;
+  cursor: pointer;
+}
+.tower-select input {
+  flex: 0 0 auto;
+  width: 15px;
+  height: 15px;
+  margin: 0;
+  accent-color: var(--mc-accent, #496b2d);
+  cursor: pointer;
+}
 .tower-archived-tag,
 .tower-stale-tag {
   flex: 0 0 auto;
@@ -203,6 +220,10 @@
   border-color: var(--mc-muted, #70776b);
 }
 .task-tower .tower-card-title {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   padding: 0;
   font-weight: 600;
   font-size: 13px;
@@ -210,6 +231,7 @@
   border: 0;
   background: transparent;
   overflow-wrap: anywhere;
+  text-overflow: ellipsis;
 }
 .tower-card-meta {
   display: flex;
@@ -653,7 +675,6 @@
 }
 
 .tower-column-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 0; }
-.tower-select { display: flex; gap: 6px; align-items: center; margin-top: 8px; }
 .tower-drawer .tower-error { position: static; transform: none; max-width: none; }
 
 /* One compact search affordance; results stay inside the board pane. */
