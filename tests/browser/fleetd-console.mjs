@@ -127,13 +127,13 @@ try {
   const board = page.locator('.tower-board');
   await board.locator('[data-task-id="T-review"] input[type="checkbox"]').check();
   assert.equal(await board.locator('input:checked').count(), 1);
-  await board.getByRole('button',{name:'Select all',exact:true}).click();
+  await board.getByRole('button',{name:'Select',exact:true}).click();
   await page.route('**/fleetd/tasks/T-review/archive', route => route.fulfill({status:409,json:{detail:'Task changed'}}));
-  await board.getByRole('button',{name:'Archive selected',exact:true}).click();
+  await board.getByRole('button',{name:'Archive',exact:true}).click();
   await page.getByRole('alert').filter({hasText:'Selection retained'}).waitFor();
   assert.equal(await board.locator('input:checked').count(),1);
   await page.unroute('**/fleetd/tasks/T-review/archive');
-  await board.getByRole('button',{name:'Archive selected',exact:true}).click();
+  await board.getByRole('button',{name:'Archive',exact:true}).click();
   await page.waitForFunction(()=>!document.querySelector('.tower-board .column-done .tower-card'));
   await board.getByRole('button',{name:/Show archived/}).click();
   await board.getByRole('button',{name:'Sample archived task',exact:true}).waitFor();
