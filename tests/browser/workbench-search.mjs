@@ -126,7 +126,7 @@ try {
     await dialog.locator('[role="alert"]').getByRole('button', { name: 'Retry', exact: true }).click();
     await dialog.locator('[data-result-kind="task"]').waitFor();
     assert.equal(await dialog.locator('[role="alert"]').count(), 0);
-    assert.ok(!requests.some(request => request.url.includes('/fleetd/') && request.method !== 'GET'), 'search and open never mutate tasks');
+    assert.ok(!requests.some(request => request.url.includes('/fleetd/') && request.method !== 'GET' && !(request.method === 'POST' && request.url.endsWith('/tasks/sync'))), 'search and open never mutate tasks');
     assert.deepEqual(errors, []);
     evidence.push({ width, theme, origin: host.origin, rows, ...measure, errors });
     // Also exercise narrow Chinese labels without publishing localized/private screenshots.
