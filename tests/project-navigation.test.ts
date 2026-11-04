@@ -174,7 +174,7 @@ describe('project and temporary session split', () => {
   });
 });
 
-it('keeps a project heading for creation when empty, without a splitter', () => {
+it('blocks manual project creation when empty, without a splitter', () => {
   const onCreate = vi.fn(), onNewSession = vi.fn();
   const sdk = {
     React: { Fragment: 'fragment', useId: () => 'empty-projects',
@@ -192,11 +192,10 @@ it('keeps a project heading for creation when empty, without a splitter', () => 
   const create = nodes.find(node => node.props['aria-label'] === '新建临时会话' || node.props['aria-label'] === 'New temporary session');
   create.props.onClick();
   expect(onNewSession).toHaveBeenCalledOnce();
-  const trigger = {} as HTMLElement;
   const heading = nodes.find(node => node.props.className === 'project-heading-label');
-  expect(create.props.onContextMenu).toBeUndefined();
-  heading.props.onContextMenu({ preventDefault: vi.fn(), currentTarget: trigger });
-  heading.props.onKeyDown({ key: 'F10', shiftKey: true, preventDefault: vi.fn(), currentTarget: trigger });
-  expect(onCreate).toHaveBeenCalledTimes(2);
-  expect(onCreate).toHaveBeenCalledWith(trigger);
+  expect(heading.props.onContextMenu).toBeUndefined();
+  expect(heading.props.onPointerDown).toBeUndefined();
+  expect(nodes.some(node => ['New project', '新建项目'].includes(node.props['aria-label']))).toBe(false);
+  expect(nodes.some(node => node.props.className === 'project-menu-create')).toBe(false);
+  expect(onCreate).not.toHaveBeenCalled();
 });
