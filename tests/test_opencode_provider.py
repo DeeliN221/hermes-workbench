@@ -27,6 +27,45 @@ def test_normalize_models_dedupes_and_prefixes():
     assert models[0]['isDefault'] is False
 
 
+def test_default_models_url_is_the_official_catalog():
+    assert provider.MODELS_URL == 'https://opencode.ai/inference/go/v1/models'
+
+
+@pytest.mark.parametrize('variable', ['OPENCODE_API_KEY', 'OPENCODE_GO_API_KEY'])
+def test_auth_headers_accepts_environment_without_file(monkeypatch, variable):
+    monkeypatch.delenv('WORKBENCH_OPENCODE_AUTH_FILE', raising=False)
+    monkeypatch.setenv('XDG_DATA_HOME', '/nonexistent-opencode-home')
+    monkeypatch.delenv('OPENCODE_API_KEY', raising=False)
+    monkeypatch.delenv('OPENCODE_GO_API_KEY', raising=False)
+    assert provider._auth_headers() == {}
+    monkeypatch.setenv(variable, 'oc_sk_env-key')
+    assert provider._auth_headers() == {'Authorization': 'Bearer oc_sk_env-key'}
+
+
+def test_auth_headers_rejects_multiline_environment_key(monkeypatch):
+    monkeypatch.delenv('OPENCODE_GO_API_KEY', raising=False)
+    monkeypatch.setenv('OPENCODE_API_KEY', 'oc_sk_bad\nX-Injected: 1')
+    monkeypatch.setattr(provider.live_allowances, 'opencode_headers', lambda: {})
+    assert provider._auth_headers() == {}
+
+
+def test_normalize_models_uses_official_schema_fields():
+    payload = {'data': [{
+        'id': 'qwen3.8-max', 'name': 'Qwen3.8 Max', 'description': 'Qwen flagship',
+        'capabilities': {'reasoning': {'supported': True, 'effort': ['low', 'high', 'max']}},
+        'limit': {'context': 262144, 'output': 131072},
+        'modalities': {'input': ['text', 'image/png']},
+    }]}
+    model = provider._normalize_models(payload)[0]
+    assert model['id'] == 'opencode-go/qwen3.8-max'
+    assert model['displayName'] == 'Qwen3.8 Max'
+    assert model['description'] == 'Qwen flagship'
+    assert [e['reasoningEffort'] for e in model['supportedReasoningEfforts']] == ['low', 'high', 'max']
+    assert model['defaultReasoningEffort'] == 'low'
+    assert model['contextWindow'] == 262144
+    assert model['inputModalities'] == ['text', 'image']
+
+
 def test_normalize_models_rejects_non_array_data():
     assert provider._normalize_models({'data': {'id': 'x'}}) == []
     assert provider._normalize_models({'models': []}) == []
@@ -59,7 +98,8 @@ def test_model_options_lists_models(monkeypatch, tmp_path):
 
     class Opener:
         def open(self, req, timeout):
-            assert req.get_header('Authorization') == 'Bearer SECRET'
+            assert req.get_header('Authorization') is None
+            assert req.get_header('Cookie') is None
             assert req.get_header('User-agent') == 'Hermes-Workbench/1.0'
             assert req.get_header('Accept') == 'application/json'
             assert req.full_url == provider.MODELS_URL

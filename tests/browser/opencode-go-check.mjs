@@ -45,19 +45,44 @@ try {
     const select = page.locator('.workbench-profile-editor select').first();
     await select.waitFor({ state: 'visible', timeout: 10000 });
     const options = await select.locator('option').evaluateAll(nodes => nodes.map(node => node.value));
+    assert.ok(options.includes('openai'), 'GPT provider stays available');
+    assert.ok(options.includes('deepseek'), 'DeepSeek API provider stays available');
     assert.ok(options.includes('opencode-go'), `OpenCode Go provider missing: ${options.join(',')}`);
     await select.selectOption('opencode-go');
     await page.locator('.workbench-profile-editor datalist option[value="opencode-go/kimi-k3"]').waitFor({ state: 'attached', timeout: 5000 });
     const models = await page.locator('.workbench-profile-editor datalist option').evaluateAll(nodes => nodes.map(node => node.value));
     assert.ok(models.includes('opencode-go/kimi-k3'), `OpenCode Go model missing: ${models.join(',')}`);
-    await page.screenshot({ path: `/tmp/opencode-go-${mobile ? 'mobile' : 'desktop'}-${theme}.png`, fullPage: false });
+    await page.screenshot({ path: `${process.env.WORKBENCH_TEST_ARTIFACTS || "/tmp"}/opencode-go-${mobile ? 'mobile' : 'desktop'}-${theme}.png`, fullPage: false });
     await page.locator('.workbench-profile-editor').getByRole('button', { name: 'Save', exact: true }).click();
     await page.locator('.workbench-profile-editor').waitFor({ state: 'hidden' });
     assert.deepEqual(saved, { provider: 'opencode-go', model: 'opencode-go/kimi-k3' });
+    await page.goto(host.origin + '/config?workbench=models&profile=default');
+    for (const id of provider.models) {
+      const checkbox = page.locator(`input[type="checkbox"][value="${id}"]`);
+      await checkbox.waitFor({ state: 'visible' });
+      await checkbox.check();
+      await page.waitForFunction(id => {
+        const box = Array.from(document.querySelectorAll('input[type="checkbox"]')).find(node => node.value === id);
+        return box?.checked && !box.disabled;
+      }, id);
+    }
+    await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
+    await page.locator('.codex-option-toggle').first().waitFor({ state: 'visible', timeout: 10000 });
+    await page.evaluate(() => document.getElementById('preview-banner')?.remove());
+    await page.locator('.codex-option-toggle').first().click();
+    await page.locator('.codex-setting-row').first().click();
+    const choices = page.locator('.codex-setting-choice');
+    await choices.filter({ hasText: 'Kimi K3' }).waitFor({ state: 'visible' });
+    const titles = await choices.locator('span[title]').evaluateAll(nodes => nodes.map(node => node.title));
+    assert.ok(titles.some(id => id.startsWith('gpt-')), 'GPT remains in the chat picker');
+    assert.ok(titles.includes('deepseek/deepseek-flash'), 'Direct DeepSeek remains in the chat picker');
+    assert.ok(titles.includes('opencode-go/deepseek-v4.1-flash'), 'Go DeepSeek has a distinct namespace');
+    await choices.filter({ hasText: 'Kimi K3' }).click();
+    await page.waitForFunction(() => document.querySelector('.codex-model-summary')?.textContent?.includes('Kimi K3'));
     assert.deepEqual(errors, [], 'no console/page errors');
     await page.close();
   }
-  console.log('PASS: OpenCode Go provider and models visible in profile editor, desktop/mobile x light/dark, no console errors');
+  console.log('PASS: OpenCode Go provider saved and chat model selected alongside GPT/DeepSeek, desktop/mobile x light/dark, no console errors');
 } finally {
   await browser.close();
   await host.close();
