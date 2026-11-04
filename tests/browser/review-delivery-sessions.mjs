@@ -85,6 +85,7 @@ await page.route('**/api/plugins/workbench/fleetd/**', async route => {
   const suffix = url.pathname.split('/fleetd')[1] || '/';
   const json = body => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
   if (suffix === '/config') return json({ mode: 'live', extended_workflow: false });
+  if (suffix === '/tasks/sync') return json({ tasks, removed: [], cursors: {}, full: true });
   if (suffix === '/tasks') return json({ tasks, possibly_truncated: false });
   if (suffix === '/decisions') return json({ decisions: [] });
   if (suffix === '/workers') return json({ workers: [] });
