@@ -34,6 +34,33 @@ export type Attempt = {
   ended_at?: string;
   duration_ms?: number;
   evidence_json?: string;
+  workbench_url?: string;
+};
+export type DeliverableInput = {
+  id?: string;
+  label?: string;
+  title?: string;
+  name?: string;
+  kind?: string;
+  url?: string;
+  href?: string;
+  artifact_id?: string;
+  format?: string;
+};
+export type StageReportInput = {
+  summary?: string;
+  status?: string;
+  progress?: string;
+  blocker?: string;
+  blocked?: string;
+  next?: string;
+  next_step?: string;
+  conclusions?: string[] | string;
+  points?: string[] | string;
+  diagram?: string;
+  mermaid?: string;
+  plantuml?: string;
+  format?: string;
 };
 export type Task = {
   id: string;
@@ -58,6 +85,18 @@ export type Task = {
   conversation_kind?: string;
   conversation_local?: boolean;
   source_local?: boolean;
+  conversation_machine?: string;
+  source_machine?: string;
+  workbench_url?: string;
+  remote_workbench_url?: string;
+  machine_workbench_url?: string;
+  conversation_workbench_url?: string;
+  source_workbench_url?: string;
+  final_deliverable?: DeliverableInput | DeliverableInput[] | string;
+  final_deliverables?: DeliverableInput[] | string;
+  deliverables?: DeliverableInput[] | string;
+  delivery?: DeliverableInput | DeliverableInput[] | string;
+  stage_report?: StageReportInput | string;
   blocked_reason?: string;
   error?: string;
   assignee?: string;
@@ -79,6 +118,13 @@ export type Task = {
     raw?: string;
     model?: string;
     reasoning_effort?: string;
+    final_deliverable?: DeliverableInput | DeliverableInput[] | string;
+    final_deliverables?: DeliverableInput[] | string;
+    deliverables?: DeliverableInput[] | string;
+    delivery?: DeliverableInput | DeliverableInput[] | string;
+    stage_report?: StageReportInput | string;
+    workbench_url?: string;
+    remote_workbench_url?: string;
     [key: string]: unknown;
   };
   attempts?: Attempt[];
@@ -97,6 +143,18 @@ export type Artifact = {
   content_type: string;
   download_url?: string;
   external_url?: string;
+};
+export type FinalDeliverable = {
+  id: string;
+  kind: "pr" | "merge" | "commit" | "demo" | "screenshot" | "report" | "artifact" | "link";
+  label: string;
+  url?: string;
+  artifact?: Artifact;
+};
+export type StageReport = {
+  conclusions: string[];
+  diagram: string;
+  format: "mermaid" | "plantuml";
 };
 export type Detail = {
   task: Task;
@@ -318,24 +376,225 @@ export function latestAttemptEnded(task: Task): boolean {
   return !!latest && attemptTime(latest, "ended_at") !== null;
 }
 
+const SENSITIVE_QUERY = /^(?:access[_-]?token|auth|authorization|key|password|secret|signature|sig|token)$/i;
+const DELIVERABLE_KINDS: FinalDeliverable["kind"][] = ["pr", "merge", "commit", "demo", "screenshot", "report", "artifact", "link"];
+
+function safeAbsoluteUrl(value: unknown): string {
+  if (typeof value !== "string" || !value.trim()) return "";
+  try {
+    const url = new URL(value.trim());
+    if (!["https:", "http:"].includes(url.protocol) || url.username || url.password) return "";
+    if ([...url.searchParams.keys()].some(key => SENSITIVE_QUERY.test(key))) return "";
+    return url.href;
+  } catch { return ""; }
+}
+
+/** A recorded MagicDNS/Tailscale hostname is a usable Workbench base; bare names are not. */
+function machineWorkbenchUrl(machine: string): string {
+  const direct = safeAbsoluteUrl(machine);
+  if (direct) return direct;
+  if (/^(?=.{3,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(machine)) {
+    return safeAbsoluteUrl(`https://${machine}`);
+  }
+  return "";
+}
+
+function deliverableKind(value: unknown, label = ""): FinalDeliverable["kind"] {
+  const valueText = (typeof value === "string" ? value : "").toLowerCase();
+  if (/^(?:pr|pull.?request)$/.test(valueText)) return "pr";
+  if (/^(?:merge|merged)$/.test(valueText)) return "merge";
+  if (/^(?:commit|sha)$/.test(valueText)) return "commit";
+  if (/^(?:screenshot|image)$/.test(valueText)) return "screenshot";
+  if (/^(?:demo|preview)$/.test(valueText)) return "demo";
+  if (/^(?:report|summary)$/.test(valueText)) return "report";
+  if (/^(?:artifact|asset|file)$/.test(valueText)) return "artifact";
+  const text = `${valueText} ${label}`.toLowerCase();
+  if (/pull.?request|\bpr\b/.test(text)) return "pr";
+  if (/merge|merged|合并/.test(text)) return "merge";
+  if (/commit|提交/.test(text)) return "commit";
+  if (/screenshot|screen shot|截图/.test(text)) return "screenshot";
+  if (/demo|preview|演示|预览/.test(text)) return "demo";
+  if (/report|summary|验收|报告/.test(text)) return "report";
+  if (/artifact|asset|产物/.test(text)) return "artifact";
+  return "link";
+}
+
+function deliverableLabel(row: DeliverableInput, kind: FinalDeliverable["kind"]): string {
+  const given = firstText(row.label, row.title, row.name);
+  if (given) return given;
+  return {
+    pr: uiText("拉取请求", "Pull request"),
+    merge: uiText("合并结果", "Merge result"),
+    commit: uiText("提交", "Commit"),
+    demo: uiText("最终演示", "Final demo"),
+    screenshot: uiText("最终截图", "Final screenshot"),
+    report: uiText("交付报告", "Delivery report"),
+    artifact: uiText("交付产物", "Delivery artifact"),
+    link: uiText("交付链接", "Delivery link"),
+  }[kind];
+}
+
+function addDeliverable(rows: FinalDeliverable[], seen: Set<string>, row: FinalDeliverable) {
+  const key = row.url || row.artifact?.id || row.id;
+  if (!key || seen.has(key)) return;
+  seen.add(key);
+  rows.push(row);
+}
+
+function publicArtifact(artifact: Artifact): Artifact {
+  return {
+    id: artifact.id, task_id: artifact.task_id, kind: artifact.kind, name: artifact.name,
+    sha: artifact.sha, size: artifact.size, content_type: artifact.content_type,
+    download_url: artifact.download_url, external_url: artifact.external_url,
+  };
+}
+
+/** Prefer explicit final links, then final artifacts/links; never expose file refs. */
+export function finalDeliverables(task: Task, artifacts: Artifact[] = [], links: { label: string; url: string }[] = []): FinalDeliverable[] {
+  const rows: FinalDeliverable[] = [], seen = new Set<string>();
+  const spec = task.spec_json || {};
+  const sources: unknown[] = [
+    task.final_deliverable, task.final_deliverables, task.delivery, task.deliverables,
+    spec.final_deliverable, spec.final_deliverables, spec.delivery, spec.deliverables,
+  ];
+  let sequence = 0;
+  const consume = (value: unknown) => {
+    for (const entry of Array.isArray(value) ? value : [value]) {
+      if (typeof entry === "string") {
+        const url = safeAbsoluteUrl(entry);
+        if (url) addDeliverable(rows, seen, { id: `link-${sequence++}`, kind: deliverableKind(url), label: deliverableLabel({ url }, deliverableKind(url)), url });
+        continue;
+      }
+      if (!entry || typeof entry !== "object") continue;
+      const row = entry as DeliverableInput;
+      const url = safeAbsoluteUrl(row.url || row.href);
+      const artifact = row.artifact_id ? artifacts.find(a => a.id === row.artifact_id) : undefined;
+      if (!url && !artifact) continue;
+      const kind = deliverableKind(row.kind || row.format, firstText(row.label, row.title, row.name));
+      addDeliverable(rows, seen, {
+        id: firstText(row.id) || url || artifact!.id,
+        kind,
+        label: deliverableLabel(row, kind),
+        ...(url ? { url } : {}),
+        ...(artifact ? { artifact: publicArtifact(artifact) } : {}),
+      });
+    }
+  };
+  sources.forEach(consume);
+  for (const link of links) {
+    const kind = deliverableKind(link.label);
+    if (kind === "link" && !/pr|commit|merge|demo|screenshot|report|artifact/i.test(link.label)) continue;
+    const url = safeAbsoluteUrl(link.url);
+    if (url) addDeliverable(rows, seen, { id: `link-${sequence++}`, kind, label: link.label || deliverableLabel({}, kind), url });
+  }
+  const order = new Map(DELIVERABLE_KINDS.map((kind, index) => [kind, index]));
+  for (const artifact of artifacts) {
+    const external = safeAbsoluteUrl(artifact.external_url);
+    const kind = deliverableKind(artifact.kind, artifact.name);
+    if (!external && kind === "link") continue;
+    addDeliverable(rows, seen, {
+      id: artifact.id,
+      kind,
+      label: artifact.name || deliverableLabel({}, kind),
+      ...(external ? { url: external } : { artifact: publicArtifact(artifact) }),
+    });
+  }
+  return rows.sort((a, b) => (order.get(a.kind) ?? 99) - (order.get(b.kind) ?? 99)).slice(0, 4);
+}
+
+function shortConclusion(value: string): string {
+  const clean = value.replace(/\s+/g, " ").replace(/^[-*•]\s*/, "").trim();
+  return clean.length > 112 ? `${clean.slice(0, 109).trimEnd()}…` : clean;
+}
+
+function stringList(value: unknown): string[] {
+  if (Array.isArray(value)) return value.filter((item): item is string => typeof item === "string").map(shortConclusion).filter(Boolean);
+  if (typeof value === "string") return value.split(/\r?\n|;|(?:^|\s)[-*•]\s+/).map(shortConclusion).filter(Boolean);
+  return [];
+}
+
+function reportSource(task: Task): StageReportInput | string | undefined {
+  const spec = task.spec_json || {};
+  return task.stage_report ?? spec.stage_report;
+}
+
+/** Structured short report; Markdown string is accepted and reduced to at most five bullets. */
+export function stageReport(task: Task): StageReport | null {
+  const source = reportSource(task);
+  if (!source) return null;
+  let row: StageReportInput = {};
+  let explicit: string[] = [];
+  if (typeof source === "string") {
+    const diagram = source.match(/```(?:mermaid|plantuml|puml)\s*([\s\S]*?)```/i);
+    const body = source.replace(/```(?:mermaid|plantuml|puml)\s*[\s\S]*?```/gi, "").trim();
+    explicit = lineConclusions(body);
+    row = { ...(diagram ? { diagram: diagram[1].trim(), format: /^```plantuml|^```puml/i.test(diagram[0]) ? "plantuml" : "mermaid" } : {}), summary: body.split(/\r?\n/)[0] };
+  } else if (typeof source === "object") {
+    row = source;
+  }
+  const status = firstText(row.status, row.progress, row.summary);
+  const blocker = firstText(row.blocker, row.blocked);
+  const next = firstText(row.next, row.next_step);
+  const given = stringList(row.conclusions).concat(stringList(row.points), explicit);
+  const conclusions = [...new Set((given.length ? given : [status, blocker, next].filter(Boolean).map(shortConclusion)))].slice(0, 5);
+  if (!conclusions.length) return null;
+  const rawDiagram = firstText(row.diagram, row.mermaid, row.plantuml);
+  const format: StageReport["format"] = /@startuml/i.test(rawDiagram) || /plantuml|puml/i.test(String(row.format || "")) ? "plantuml" : "mermaid";
+  const nodes = [status || conclusions[0], blocker || conclusions[1] || uiText("无阻塞", "No blocker"), next || conclusions[2] || conclusions.at(-1) || uiText("等待更新", "Awaiting update")]
+    .map(value => value.replace(/["\r\n]/g, "' ").slice(0, 48));
+  const generated = `flowchart TB\n  P["${uiText("进度", "Progress")} · ${nodes[0]}"] --> B["${uiText("阻塞", "Blocker")} · ${nodes[1]}"]\n  B --> N["${uiText("下一步", "Next")} · ${nodes[2]}"]`;
+  return { conclusions, diagram: rawDiagram || generated, format: rawDiagram ? format : "mermaid" };
+}
+
+function lineConclusions(body: string): string[] {
+  return body.split(/\r?\n/).map(shortConclusion).filter(line => !!line && !/^#{1,6}\s/.test(line) && !/^```/.test(line));
+}
+
 export function sessionEntries(task: Task): {
   label: "source" | "conversation";
   id: string;
   profile: string;
   kind: "hermes" | "codex" | "";
   canOpen: boolean;
+  local: boolean;
+  remote: boolean;
+  device: string;
+  remoteUrl: string;
 }[] {
   const validKind = (kind: string | undefined): kind is "hermes" | "codex" => kind === "hermes" || kind === "codex";
   const finished = task.status === "done" || task.status === "archived";
+  const latest = latestAttempt(task);
+  const evidence = latest ? attemptEvidence(latest) : {};
+  const defaultDevice = firstText(task.machine, latest?.machine);
+  const defaultWorkbench = firstText(task.remote_workbench_url, task.machine_workbench_url, task.workbench_url,
+    task.spec_json?.remote_workbench_url, task.spec_json?.workbench_url, latest?.workbench_url,
+    evidence.workbench_url, evidence.remote_workbench_url, machineWorkbenchUrl(defaultDevice));
   return [
-    { label: "source" as const, id: task.source_session_id || "", profile: task.source_profile || "", kind: validKind(task.source_session_kind) ? task.source_session_kind : "" as const },
-    { label: "conversation" as const, id: task.conversation_id || "", profile: task.conversation_profile || "", kind: validKind(task.conversation_kind) ? task.conversation_kind : "" as const },
-  ].filter((row) => !!row.id).map((row) => ({
-    ...row,
-    canOpen: !!row.kind && (
-      (row.label === "source" ? task.source_local !== false : task.conversation_local === true) || finished
-    ),
-  }));
+    { label: "source" as const, id: task.source_session_id || "", profile: task.source_profile || "", kind: validKind(task.source_session_kind) ? task.source_session_kind : "" as const,
+      device: firstText(task.source_machine, defaultDevice), remoteBase: firstText(task.source_workbench_url, defaultWorkbench) },
+    { label: "conversation" as const, id: task.conversation_id || "", profile: task.conversation_profile || "", kind: validKind(task.conversation_kind) ? task.conversation_kind : "" as const,
+      device: firstText(task.conversation_machine, defaultDevice), remoteBase: firstText(task.conversation_workbench_url, defaultWorkbench, latest?.workbench_url) },
+  ].filter((row) => !!row.id).map((row) => {
+    const local = !!row.kind && (row.label === "source" ? task.source_local !== false : task.conversation_local === true);
+    const remote = row.label === "source" ? task.source_local === false : task.conversation_local === false;
+    const remoteUrl = sessionUrl(row.remoteBase, row.kind, row.id, row.profile);
+    return { ...row, local, remote, remoteUrl, canOpen: !!row.kind && (local || finished || !!remoteUrl) };
+  });
+}
+
+function sessionUrl(base: string, kind: "hermes" | "codex" | "", id: string, profile: string): string {
+  if (!base || !kind || !id) return "";
+  const safe = safeAbsoluteUrl(base);
+  if (!safe) return "";
+  try {
+    const origin = new URL(safe);
+    let path = (origin.pathname || "/").replace(/\/+$/, "") || "/";
+    if (!path.endsWith("/chat")) path = `${path === "/" ? "" : path}/chat`;
+    const url = new URL(path, origin.origin);
+    url.searchParams.set(kind === "hermes" ? "hermesSession" : "session", id);
+    if (profile) url.searchParams.set("profile", profile);
+    return safeAbsoluteUrl(url.href);
+  } catch { return ""; }
 }
 export function decisionOptions(d: Decision, readOnly = false): Decision["options"] {
   if (readOnly) return d.options.filter(o => !!o.label);

@@ -25,6 +25,7 @@ Task console
   +-- Needs you --> choose A/B/C, accept delivery, or resolve a human blocker
   |
   +-- Task card --> next action + acceptance checklist
+  |                  +-- review focus: final deliverable, else stage report
   |                  +-- artifacts: filename / type / size / Download
   |                  +-- collapsed brief / timeline / linked sessions and PRs
   |
@@ -38,6 +39,21 @@ quiet right rail. R0/R1 default to automatic verification; R2/R3 default to huma
 verification. An explicit `verify_mode` overrides the risk default. Automatic
 verification never enters the human review column or the review attention count.
 An open decision remains actionable irrespective of verification mode.
+
+The review drawer puts up to four compact final-deliverable links (PR, merge,
+commit, demo, screenshot, report or downloadable artifact) above Summary. When no
+final deliverable exists, it renders a stage report diagram locally and limits
+conclusions to five. With neither, it states “No final deliverable or stage
+report” and keeps the explicit Approve / Request changes controls; the summary no
+longer implies the delivery is ready to confirm.
+
+Execution sessions always have an entry point. A same-instance session opens the
+Chat route directly; a remote session uses its recorded absolute Workbench base
+(Tailscale/MagicDNS or another remote entry) to build a session URL, with Copy
+link and the named device. If no reachable URL is recorded, the drawer names the
+device and offers Copy session ID plus Open Workbench + session ID rather than a
+passive “available later” message. Credentials, token/auth query parameters and
+local paths are never rendered as links.
 
 Decisions contain 2–4 distinct options with a label, impact/tradeoff and exactly
 one recommendation. The recommended option appears first, with A/B/C/D buttons.
