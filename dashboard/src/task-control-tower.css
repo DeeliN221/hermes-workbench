@@ -925,3 +925,18 @@
   .tower-session-heading { display: grid; gap: 2px; }
   .tower-session-remote-row > * { min-width: 0; }
 }
+
+/* Pending blockers retain their full-card tint through all interaction states. */
+.tower-card.is-pending-blocked {
+  background: var(--mc-danger-soft, #fae9e4);
+}
+.tower-blocked-label {
+  color: var(--mc-danger, #a5342d);
+  margin-inline-end: 6px;
+  flex: 0 0 auto;
+}
+.tower-card:focus-within,
+.tower-card.is-selected {
+  border-color: var(--mc-accent, #496b2d);
+  box-shadow: inset 0 0 0 1px var(--mc-accent, #496b2d);
+}
