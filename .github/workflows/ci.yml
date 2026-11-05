@@ -42,6 +42,13 @@ jobs:
           path: /tmp/kanban-refresh-evidence/
           if-no-files-found: ignore
           retention-days: 14
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: kanban-floating-evidence
+          path: /tmp/kanban-floating-evidence/
+          if-no-files-found: ignore
+          retention-days: 14
       - run: pnpm test:quotas:e2e
       - run: pnpm history:check
       - run: pnpm privacy:check

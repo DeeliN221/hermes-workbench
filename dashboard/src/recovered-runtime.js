@@ -37,6 +37,7 @@ installModelAliasSync();
 import { createProfileOverview } from './profile-overview-page';
 import { overviewRoute } from './profile-overview';
 import { createTaskControlTower } from './task-control-tower';
+import { createKanbanFloatingBoard } from './kanban-floating';
 import { installHomeChatNavigation, openHomeConversation } from './home-navigation';
 import { renderPlantUMLBlocks, isPlantUMLLanguage } from './plantuml-renderer';
 import { currentProfile, rememberProfile, rememberChat, profileDrafts, profileAttachments } from './profile-scope';
@@ -2584,6 +2585,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       QuotaSettings = createQuotaSettings(i),
       ProfileOverview = createProfileOverview(i, Kp),
       TaskControlTower = createTaskControlTower(i, Kp),
+      KanbanFloatingBoard = createKanbanFloatingBoard(i, Kp),
       l = t.createElement;
     return function () {
       const [u, h] = s(() => Ws(window.location.href)),
@@ -2890,7 +2892,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }
         const key = (event) => {
           if (event.key !== "Escape" || event.defaultPrevented) return;
-          if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
+          if (document.querySelector('dialog[open], [aria-modal="true"], .hti-kanban-float-panel')) return;
           event.preventDefault();
           closeAccessory();
         };
@@ -2961,6 +2963,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 title: runtimeText("关闭", "Close"), onClick: closeAccessory,
               }, zc(t, "close")) : null)
           : null,
+        l(KanbanFloatingBoard, { profile: F }),
         l(
           "aside",
           {
