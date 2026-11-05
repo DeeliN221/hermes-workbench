@@ -1,18 +1,18 @@
 /**
- * Persist and restore the Codex multi-pane layout inside one profile.
+ * Persist and restore the Codex multi-pane layout owned by one profile.
  *
  * The layout lives in browser storage only: the backend never learns which
- * sessions a person placed side by side. Panes stay inside a single profile
- * (PR #49), so the profile name is part of the storage key instead of being
- * mixed into one shared record.
+ * sessions a person placed side by side. Existing layouts retain their profile
+ * storage key. Home selections may attach an explicit profile to each pane;
+ * the layout owner stays stable while those panes load their own data.
  */
 import { listCodexSessions } from './codex-api';
 import type { FetchJSON } from './workbench-api';
 
-export type PaneTarget = { sessionId: string; hermesSessionId: string };
+export type PaneTarget = { sessionId: string; hermesSessionId: string; profile?: string };
 
 /** Pane identity handed to the pane component; drafts key off the same id. */
-export type PaneSpec = { id: string; initialSessionId: string; initialHermesSessionId: string };
+export type PaneSpec = { id: string; initialSessionId: string; initialHermesSessionId: string; profile?: string };
 
 export type PaneLayoutState = {
   panes: PaneSpec[];
@@ -23,7 +23,7 @@ export type PaneLayoutState = {
   restored: boolean;
 };
 
-export type StoredPane = { id: string; sessionId: string; hermesSessionId: string };
+export type StoredPane = { id: string; sessionId: string; hermesSessionId: string; profile?: string };
 export type StoredPaneLayout = { version: 1; panes: StoredPane[]; activePaneId: string };
 
 export type LayoutStorage = {
@@ -40,7 +40,7 @@ const PANE_ID_PATTERN = /^pane-(\d+)$/;
 const HERMES_SESSION_PAGE = 100;
 const EMPTY_TARGET: PaneTarget = { sessionId: '', hermesSessionId: '' };
 
-/** Storage key scoped to one profile so layouts can never cross profiles. */
+/** Storage key scoped to the workspace owner; individual panes may name another profile. */
 export function paneLayoutStorageKey(profile: string): string {
   return `${STORAGE_PREFIX}${profile || 'default'}`;
 }
@@ -63,10 +63,11 @@ function normalizeTarget(target: PaneTarget | null | undefined): PaneTarget {
   const sessionId = text(target?.sessionId);
   const hermesSessionId = text(target?.hermesSessionId);
   // A pane loads a Codex session or a Hermes history, never both at once.
-  return sessionId ? { sessionId, hermesSessionId: '' } : { sessionId: '', hermesSessionId };
+  return { ...(sessionId ? { sessionId, hermesSessionId: '' } : { sessionId: '', hermesSessionId }), ...(target?.profile ? { profile: target.profile } : {}) };
 }
 
 function sameTarget(pane: StoredPane, target: PaneTarget): boolean {
+  if (pane.profile && target.profile && pane.profile !== target.profile) return false;
   return Boolean(
     (target.sessionId && pane.sessionId === target.sessionId) ||
     (target.hermesSessionId && pane.hermesSessionId === target.hermesSessionId),
@@ -116,7 +117,8 @@ export function normalizePaneLayout(value: unknown): StoredPaneLayout | null {
       sessionId: typeof pane.sessionId === 'string' ? pane.sessionId : '',
       hermesSessionId: typeof pane.hermesSessionId === 'string' ? pane.hermesSessionId : '',
     });
-    panes.push({ id, sessionId: target.sessionId, hermesSessionId: target.hermesSessionId });
+    panes.push({ id, sessionId: target.sessionId, hermesSessionId: target.hermesSessionId,
+      ...(text(pane.profile) ? { profile: text(pane.profile) } : {}) });
   }
   if (new Set(panes.map(pane => pane.id)).size !== panes.length) return null;
   const requestedActive = text(record.activePaneId);
@@ -158,7 +160,8 @@ export function paneLayoutSnapshot(
         sessionId: pane.initialSessionId,
         hermesSessionId: pane.initialHermesSessionId,
       });
-      return { id: pane.id, sessionId: target.sessionId, hermesSessionId: target.hermesSessionId };
+      return { id: pane.id, sessionId: target.sessionId, hermesSessionId: target.hermesSessionId,
+        ...(pane.profile ? { profile: pane.profile } : {}) };
     }),
     activePaneId,
   });
@@ -180,6 +183,7 @@ function stateFromStored(layout: StoredPaneLayout, activePaneId: string): PaneLa
     id: pane.id,
     initialSessionId: pane.sessionId,
     initialHermesSessionId: pane.hermesSessionId,
+    ...(pane.profile ? { profile: pane.profile } : {}),
   }));
   const targets: Record<string, PaneTarget> = {};
   for (const pane of layout.panes) {

@@ -123,6 +123,7 @@ try {
   const firstSession = page.locator('[data-profile="default"] .profile-session').first();
   const firstSessionHref = await firstSession.getAttribute('href');
   await firstSession.click();
+  await page.getByRole('button', { name: /Open selected/ }).click();
   await page.waitForURL(url => url.pathname === '/chat');
   assert.equal(new URL(page.url()).searchParams.get('session'), new URL(firstSessionHref, host.origin).searchParams.get('session'));
   assert.equal(new URL(page.url()).searchParams.get('profile'), 'default');

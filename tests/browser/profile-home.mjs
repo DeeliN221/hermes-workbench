@@ -145,6 +145,7 @@ try {
   await page.goto(host.origin + '/sessions?view=recent&profile=writer');
   await page.waitForURL(url => url.pathname === '/' && !url.searchParams.has('view'));
   await page.locator('[data-profile="writer"] .profile-session').first().click();
+  if (page.viewportSize().width > 800) await page.getByRole('button', { name: /Open selected/ }).click();
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'writer');
   await page.locator('.codex-pane-slot').first().waitFor();
   await page.setViewportSize({ width: 390, height: 844 });
@@ -179,6 +180,7 @@ try {
   visibleSession.title = originalTitle;
   await page.setViewportSize({ width: 390, height: 844 });
   await page.locator('[data-profile="writer"] .profile-session').first().click();
+  if (page.viewportSize().width > 800) await page.getByRole('button', { name: /Open selected/ }).click();
   await page.waitForURL(url => url.pathname === '/chat' && url.searchParams.get('profile') === 'writer');
   await page.locator('.codex-pane-slot').first().waitFor();
   await page.goto(host.origin + '/'); await columns.nth(3).waitFor();

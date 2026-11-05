@@ -48,7 +48,7 @@ export function installHomeChatNavigation(profile: string, select: {
     const query = new URLSearchParams(location.search);
     // ``new=1`` asks the chat shell to mount an empty pane; selecting the
     // previous session here would immediately resurrect it.
-    if (query.has('workbench') || query.get('new') === '1') return;
+    if (query.has('workbench') || query.get('new') === '1' || query.has('homeOpen') || query.has('paneOwner')) return;
     const hermes = query.get('hermesSession');
     const codex = query.get('session');
     if (hermes) select.hermes(hermes);

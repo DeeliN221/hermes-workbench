@@ -1,3 +1,4 @@
+import { requestedHomeLayout, consumeHomeRequest, paneWorkspaceProfile, rememberHomePaneOwner, revealActiveHomePane } from './home-session-selection';
 import { rememberKanbanReturn } from './kanban-navigation';
 import { useFolderUpload } from './attachment-preferences';
 import { GenerationSpeed, latestGenerationMetrics } from './generation-speed';
@@ -13080,7 +13081,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     }
     return function () {
       const S = new URLSearchParams(window.location.search),
-        paneProfile = currentProfile(S),
+        // The persistent shell also renders on home, where paneOwner is absent.
+        // Keep storage ownership fixed until the parent remounts this workspace.
+        paneProfile = n(() => paneWorkspaceProfile(), []),
         startEmpty = isNewSessionRoute(window.location.href),
         b = startEmpty ? "" : S.get("hermesSession") ? "" : S.get("session") || "",
         p = startEmpty ? "" : S.get("hermesSession") || "",
@@ -13088,15 +13091,16 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         // Resolve once per mount: the profile owns its layout, and a later
         // in-place profile change must never write panes into another scope.
         restoredLayout = n(
-          () => resolvePaneLayout({
+          () => requestedHomeLayout(location.href, layoutStorage) || resolvePaneLayout({
             profile: paneProfile,
             storage: layoutStorage,
             startEmpty,
-            routeTarget: { sessionId: b, hermesSessionId: p },
+            routeTarget: S.has("paneOwner") ? { sessionId: "", hermesSessionId: "" } : { sessionId: b, hermesSessionId: p },
           }),
           [],
         ),
         [m, O] = o(restoredLayout.panes),
+        navigationProfile = m[0]?.profile || paneProfile,
         [g, _] = o(restoredLayout.activePaneId),
         [w, v] = o(restoredLayout.targets),
         x = s(g),
@@ -13117,11 +13121,31 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, [m, w]);
       x.current = g;
       r(() => {
+        const frame = requestAnimationFrame(revealActiveHomePane);
+        return () => cancelAnimationFrame(frame);
+      }, [g, m]);
+      r(() => {
+        const sync = () => {
+          if (location.pathname !== '/chat' || paneWorkspaceProfile() !== paneProfile) return;
+          const layout = requestedHomeLayout(location.href, layoutStorage);
+          if (!layout) return;
+          O(layout.panes); v(layout.targets); _(layout.activePaneId); x.current = layout.activePaneId;
+          consumeHomeRequest();
+        };
+        consumeHomeRequest();
+        window.addEventListener('popstate', sync);
+        return () => window.removeEventListener('popstate', sync);
+      }, []);
+      r(() => {
         if (!startEmpty) return;
         window.history.replaceState(null, "", clearNewSessionRoute(window.location.href));
       }, []);
       r(() => {
         savePaneLayout(paneProfile, m, w, g, layoutStorage);
+        if (location.pathname === "/chat") rememberHomePaneOwner(paneProfile, layoutStorage);
+        if (location.pathname === '/chat' && new URLSearchParams(location.search).has('paneOwner') && w[g]) {
+          history.replaceState(null, '', paneTargetUrl(location.href, { ...w[g], profile: m.find(pane => pane.id === g)?.profile || paneProfile }));
+        }
       }, [paneProfile, layoutStorage, m, w, g]);
       r(() => {
         if (!restoredLayout.restored) return;
@@ -13137,7 +13161,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           .filter((entry) => entry.sessionId || entry.hermesSessionId);
         if (!entries.length) return;
         let active = true;
-        verifyPaneTargets(i.fetchJSON, paneProfile, entries)
+        Promise.all([...new Set(restoredLayout.panes.map(pane => pane.profile || paneProfile))].map(profile => verifyPaneTargets(i.fetchJSON, profile, entries.filter(entry => (restoredLayout.panes.find(pane => pane.id === entry.paneId)?.profile || paneProfile) === profile)))).then(groups => groups.flat())
           .then((missing) => { if (active && missing.length) applyPrune(missing); })
           .catch(() => {});
         return () => { active = false; };
@@ -13188,18 +13212,18 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const target = { sessionId: F, hermesSessionId: "" };
           const activate = (paneId) => ((x.current = paneId), _(paneId));
           for (const [j, Q] of y.current)
-            if (Q.getTarget().sessionId === F) {
+            if ((m.find(pane => pane.id === j)?.profile || paneProfile) === navigationProfile && Q.getTarget().sessionId === F) {
               activate(j);
               return;
             }
           const current = y.current.get(x.current);
-          if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
+          if (current && (m.find(pane => pane.id === x.current)?.profile || paneProfile) === navigationProfile && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectSession(F);
             activate(x.current);
             return;
           }
           // A full workspace swaps its rightmost pane instead of refusing.
-          const pane = { id: p5(m), initialSessionId: F, initialHermesSessionId: "" };
+          const pane = { id: p5(m), profile: navigationProfile, initialSessionId: F, initialHermesSessionId: "" };
           const next = openSessionPane(m, pane);
           O(next.panes);
           v((currentState) => {
@@ -13213,18 +13237,18 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const target = { sessionId: "", hermesSessionId: F };
           const activate = (paneId) => ((x.current = paneId), _(paneId));
           for (const [j, Q] of y.current)
-            if (Q.getTarget().hermesSessionId === F) {
+            if ((m.find(pane => pane.id === j)?.profile || paneProfile) === navigationProfile && Q.getTarget().hermesSessionId === F) {
               activate(j);
               return;
             }
           const current = y.current.get(x.current);
-          if (current && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
+          if (current && (m.find(pane => pane.id === x.current)?.profile || paneProfile) === navigationProfile && !current.getTarget().sessionId && !current.getTarget().hermesSessionId) {
             current.selectHermesHistory(F);
             activate(x.current);
             return;
           }
           // A full workspace swaps its rightmost pane instead of refusing.
-          const pane = { id: p5(m), initialSessionId: "", initialHermesSessionId: F };
+          const pane = { id: p5(m), profile: navigationProfile, initialSessionId: "", initialHermesSessionId: F };
           const next = openSessionPane(m, pane);
           O(next.panes);
           v((currentState) => {
@@ -13244,6 +13268,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 id: p5(m),
                 initialSessionId: F,
                 initialHermesSessionId: "",
+                profile: navigationProfile,
               },
               k = O5(m, Q);
             k.length !== m.length &&
@@ -13314,10 +13339,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         try { ids = [...new Set(JSON.parse(payload).sessionIds)]; } catch { return; }
         let panes = m, targets = {}, active = x.current, opened = 0, skipped = 0;
         for (const sessionId of ids) {
-          const existing = [...y.current].find(([, controller]) => controller.getTarget().sessionId === sessionId);
+          const existing = [...y.current].find(([id, controller]) => (m.find(pane => pane.id === id)?.profile || paneProfile) === navigationProfile && controller.getTarget().sessionId === sessionId);
           if (existing) { active = existing[0]; continue; }
           if (!Xo(panes)) { skipped++; continue; }
-          const pane = { id: p5(panes), initialSessionId: sessionId, initialHermesSessionId: "" };
+          const pane = { id: p5(panes), profile: navigationProfile, initialSessionId: sessionId, initialHermesSessionId: "" };
           panes = O5(panes, pane);
           targets[pane.id] = { sessionId, hermesSessionId: "" };
           active = pane.id; opened++;
@@ -13345,7 +13370,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             e,
             "section",
             {
-              key: F.id,
+              key: `${F.id}:${F.profile || paneProfile}:${F.initialSessionId}:${F.initialHermesSessionId}`,
               className: `codex-pane-slot${F.id === g ? " is-active" : ""}`,
               "data-pane-id": F.id,
               "data-active": F.id === g ? "true" : "false",
@@ -13390,7 +13415,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               navigationSplitSessionIds:
                 j === 0 ? splitSessionIds : void 0,
               onTargetChange: P,
-              profile: paneProfile,
+              profile: F.profile || paneProfile,
             }),
           ),
         ),
@@ -15791,7 +15816,7 @@ ${_e.description}`
           new URLSearchParams(window.location.search).get("workbench") !==
             "terminal",
         [h, d] = s(u),
-        [profile, setProfile] = s(() => currentProfile());
+        [profile, setProfile] = s(() => paneWorkspaceProfile());
       const tabTitle = profileTabName(profile);
       n(() => { document.title = window.location.pathname === "/kanban" ? runtimeText("看板", "Kanban") : tabTitle; }, [tabTitle, h]);
       return (
@@ -15799,8 +15824,8 @@ ${_e.description}`
           const f = () => {
             d(u());
             document.title = window.location.pathname === "/kanban" ? runtimeText("看板", "Kanban") : profileTabName(currentProfile());
-            const selected = currentProfile();
-            rememberProfile(selected); rememberChat();
+            const selected = paneWorkspaceProfile();
+            rememberProfile(currentProfile()); rememberChat();
             setProfile(selected);
           };
           window.addEventListener("popstate", f);
