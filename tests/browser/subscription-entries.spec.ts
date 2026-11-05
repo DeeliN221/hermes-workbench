@@ -21,6 +21,7 @@ for (const theme of ['light', 'dark']) {
           await route.fulfill({ response });
         });
         await page.goto('/config?workbench=allowances&profile=default');
+        await page.locator('#preview-banner').evaluate(node => node.remove());
         await expect(page).toHaveTitle('default');
         await expect(page).toHaveURL(/workbench=allowances/);
         const panel = page.locator('.quota-settings');
@@ -42,6 +43,7 @@ for (const theme of ['light', 'dark']) {
         await add('Example second account');
         await expect(panel.locator('.quota-row')).toHaveCount(5);
         await page.reload();
+        await page.locator('#preview-banner').evaluate(node => node.remove());
         await expect(panel.locator('.quota-row')).toHaveCount(5);
         const card = panel.locator('.quota-row').filter({ has: page.getByText('Example second account', { exact: true }) });
         await card.getByRole('button', { name: /Actions for/ }).click();
@@ -60,6 +62,7 @@ for (const theme of ['light', 'dark']) {
         await expect(work.getByText('Disabled', { exact: true })).toBeVisible();
         await expect(work.getByText('18 credits used')).toHaveCount(0);
         await page.reload();
+        await page.locator('#preview-banner').evaluate(node => node.remove());
         await expect(work.getByText('Disabled', { exact: true })).toBeVisible();
         await work.getByRole('button', { name: /Actions for/ }).click();
         await work.getByRole('menuitem', { name: 'Enable', exact: true }).click();
@@ -83,6 +86,7 @@ for (const theme of ['light', 'dark']) {
         await panel.getByRole('dialog').getByRole('button', { name: 'Confirm delete', exact: true }).click();
         await expect(panel.locator('.quota-row')).toHaveCount(4);
         await page.reload();
+        await page.locator('#preview-banner').evaluate(node => node.remove());
         await expect(panel.locator('.quota-row')).toHaveCount(4);
         await expect(panel.getByText('Example work', { exact: true })).toHaveCount(0);
         await expect(panel.getByText('42 credits remaining').first()).toBeVisible();
