@@ -1,4 +1,4 @@
-export type PaneTarget = { sessionId: string; hermesSessionId: string };
+export type PaneTarget = { sessionId: string; hermesSessionId: string; profile?: string };
 
 /** Keep an explicit empty pane empty; only fall back to the route for an unspecified pane. */
 export function paneInitialSession(
@@ -38,6 +38,7 @@ export function clearNewSessionRoute(href: string): string {
 /** Keep the URL on a live pane so remounting cannot resurrect a closed pane. */
 export function paneTargetUrl(href: string, target: PaneTarget): string {
   const url = new URL(href);
+  if (target.profile) url.searchParams.set('profile', target.profile);
   if (target.sessionId) {
     url.searchParams.set('session', target.sessionId);
     url.searchParams.delete('hermesSession');

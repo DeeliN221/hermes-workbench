@@ -46,3 +46,8 @@
   .profile-session strong { flex-basis: 100%; }
   .profile-session-project { flex: 1; }
 }
+
+.home-selection-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; padding: 0 20px 12px; }
+.profile-overview .home-open-selected { color: var(--mc-accent); border-color: var(--mc-accent); }
+.profile-session.is-selected { box-shadow: inset 0 0 0 2px var(--mc-accent); background-color: color-mix(in srgb, var(--mc-accent) 18%, var(--mc-surface)); }
+@media (max-width: 800px) { .home-selection-actions { padding: 0 12px 12px; } }

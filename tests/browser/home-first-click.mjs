@@ -48,7 +48,12 @@ try {
       await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); window.__routeLog = []; }, theme);
       const name = `${mobile ? 'mobile' : 'desktop'}-${theme}-${profile}-${source}`;
       if (profile === 'writer' && source === 'codex') await page.screenshot({ path: `${output}/${name}-home.png` });
-      await link.click(); // Deliberately exactly one click, with no retry or recovery navigation.
+      await link.click();
+      if (!mobile) {
+        assert.equal(new URL(page.url()).pathname, '/');
+        await expect(link).toHaveAttribute('aria-pressed', 'true');
+        await page.getByRole('button', { name: /Open selected|打开选中/ }).click();
+      }
       // Observe past the first chat paint: the regression redirects after that paint.
       await page.waitForTimeout(800);
       const routes = await page.evaluate(() => window.__routeLog);
