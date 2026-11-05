@@ -10744,3 +10744,14 @@ html.dark .hti-rich-text {
   overflow-wrap: anywhere;
 }
 .codex-message-file small { opacity: .7; white-space: nowrap; }
+
+/* Diagram canvases share the Markdown surface in both themes. */
+.hti-rich-mermaid,
+.hti-rich-mermaid-header,
+.hti-file-preview-body .hti-mermaid {
+  background: transparent;
+}
+.hti-rich-mermaid-svg > svg,
+.hti-file-preview-body .hti-mermaid > svg {
+  background: transparent !important;
+}

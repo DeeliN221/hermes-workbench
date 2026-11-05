@@ -22,7 +22,7 @@ import { displayCommand } from './command-display';
 import { createShortcutSettings, useSendShortcut, shouldSendMessage, sendShortcutHint } from './send-shortcut';
 import { createChatDisplaySettings } from './chat-display-settings';
 import { createModelVisibilitySettings, createVersionSettings } from './workbench-version-settings';
-import { createCodexUserInput, pendingAsyncQuestions, formatQuestionAnswers } from './codex-user-input';
+import { createCodexUserInput, pendingAsyncQuestions, formatQuestionAnswers, questionTranscript } from './codex-user-input';
 import { collectAttachmentDrop, folderBatchFromFileList, isAttachmentDrag } from './workbench-attachment-drop';
 import './codex-user-input.css';
 import { createLanguageControl } from './language-control';
@@ -9677,7 +9677,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         && before.hasFollowingBody === after.hasFollowingBody
         && before.messages.length === after.messages.length
         && before.messages.every((message, index) => message === after.messages[index])),
-      Transcript = e.memo(({ messages, detail }) => W(e, e.Fragment, null, ...P5(e, messages, MemoProcess, MemoMessage, detail)));
+      Transcript = e.memo(({ messages, detail }) => W(e, e.Fragment, null, ...P5(e, questionTranscript(messages), MemoProcess, MemoMessage, detail)));
     return Transcript;
   }
   function A5(i) {
