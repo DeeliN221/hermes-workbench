@@ -127,7 +127,14 @@ try {
   await columns.first().locator('h2').click();
   await page.bringToFront();
   await page.keyboard.press('w');
-  await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Kanban', exact: true }).click();
+  const homeUrl = page.url();
+  await page.locator('.workbench-actions-dialog[open]').getByRole('button', { name: 'Kanban', exact: true }).click();
+  await page.locator('.hti-kanban-float-panel .task-tower').waitFor();
+  assert.equal(page.url(), homeUrl);
+  assert.equal(await page.locator('.profile-overview').count(), 1);
+  await page.keyboard.press('Escape');
+  await page.locator('.hti-kanban-float-panel').waitFor({ state: 'hidden' });
+  await page.goto(host.origin + '/kanban');
   await page.waitForURL(url => url.pathname === '/kanban');
   await page.locator('.task-tower').waitFor();
   assert.equal(await page.locator('.profile-overview').count(), 0);

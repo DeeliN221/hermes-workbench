@@ -199,7 +199,7 @@ try {
   await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Home', exact: true }).click();
   await page.locator('.profile-overview').waitFor();
   await page.keyboard.press('w');
-  await page.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Kanban', exact: true }).click();
+  await page.locator('.workbench-actions-dialog[open]').getByRole('button', { name: 'Kanban', exact: true }).click();
   await page.locator('.task-tower').waitFor();
   assert.ok(!responses.join("").includes("mock-fleet-token"));
   assert.ok(!responses.join("").includes("RAW LOG"));
