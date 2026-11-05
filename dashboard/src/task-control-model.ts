@@ -389,16 +389,6 @@ function safeAbsoluteUrl(value: unknown): string {
   } catch { return ""; }
 }
 
-/** A recorded MagicDNS/Tailscale hostname is a usable Workbench base; bare names are not. */
-function machineWorkbenchUrl(machine: string): string {
-  const direct = safeAbsoluteUrl(machine);
-  if (direct) return direct;
-  if (/^(?=.{3,253}$)[a-z0-9](?:[a-z0-9.-]*[a-z0-9])?\.[a-z]{2,}$/i.test(machine)) {
-    return safeAbsoluteUrl(`https://${machine}`);
-  }
-  return "";
-}
-
 function deliverableKind(value: unknown, label = ""): FinalDeliverable["kind"] {
   const valueText = (typeof value === "string" ? value : "").toLowerCase();
   if (/^(?:pr|pull.?request)$/.test(valueText)) return "pr";
@@ -449,6 +439,15 @@ function publicArtifact(artifact: Artifact): Artifact {
   };
 }
 
+/** A requirement is not proof that a deliverable was submitted. */
+export function declaredDeliverables(task: Task): boolean {
+  const spec = task.spec_json || {};
+  return [task.deliverables, task.final_deliverable, task.final_deliverables, task.delivery,
+    spec.deliverables, spec.final_deliverable, spec.final_deliverables, spec.delivery]
+    .some(value => typeof value === "string" ? !!value.trim() : Array.isArray(value) ? value.length > 0 : !!value)
+    || /交付物|deliverables?\s*[:：]/i.test([specMarkdown(task), ...task.acceptance.map(row => row.label)].join("\n"));
+}
+
 /** Prefer explicit final links, then final artifacts/links; never expose file refs. */
 export function finalDeliverables(task: Task, artifacts: Artifact[] = [], links: { label: string; url: string }[] = []): FinalDeliverable[] {
   const rows: FinalDeliverable[] = [], seen = new Set<string>();
@@ -483,7 +482,6 @@ export function finalDeliverables(task: Task, artifacts: Artifact[] = [], links:
   sources.forEach(consume);
   for (const link of links) {
     const kind = deliverableKind(link.label);
-    if (kind === "link" && !/pr|commit|merge|demo|screenshot|report|artifact/i.test(link.label)) continue;
     const url = safeAbsoluteUrl(link.url);
     if (url) addDeliverable(rows, seen, { id: `link-${sequence++}`, kind, label: link.label || deliverableLabel({}, kind), url });
   }
@@ -491,15 +489,14 @@ export function finalDeliverables(task: Task, artifacts: Artifact[] = [], links:
   for (const artifact of artifacts) {
     const external = safeAbsoluteUrl(artifact.external_url);
     const kind = deliverableKind(artifact.kind, artifact.name);
-    if (!external && kind === "link") continue;
     addDeliverable(rows, seen, {
       id: artifact.id,
       kind,
-      label: artifact.name || deliverableLabel({}, kind),
+      label: artifact.name || artifact.sha || deliverableLabel({}, kind),
       ...(external ? { url: external } : { artifact: publicArtifact(artifact) }),
     });
   }
-  return rows.sort((a, b) => (order.get(a.kind) ?? 99) - (order.get(b.kind) ?? 99)).slice(0, 4);
+  return rows.sort((a, b) => (order.get(a.kind) ?? 99) - (order.get(b.kind) ?? 99));
 }
 
 function shortConclusion(value: string): string {
@@ -562,40 +559,21 @@ export function sessionEntries(task: Task): {
   remoteUrl: string;
 }[] {
   const validKind = (kind: string | undefined): kind is "hermes" | "codex" => kind === "hermes" || kind === "codex";
-  const finished = task.status === "done" || task.status === "archived";
   const latest = latestAttempt(task);
-  const evidence = latest ? attemptEvidence(latest) : {};
   const defaultDevice = firstText(task.machine, latest?.machine);
-  const defaultWorkbench = firstText(task.remote_workbench_url, task.machine_workbench_url, task.workbench_url,
-    task.spec_json?.remote_workbench_url, task.spec_json?.workbench_url, latest?.workbench_url,
-    evidence.workbench_url, evidence.remote_workbench_url, machineWorkbenchUrl(defaultDevice));
   return [
     { label: "source" as const, id: task.source_session_id || "", profile: task.source_profile || "", kind: validKind(task.source_session_kind) ? task.source_session_kind : "" as const,
-      device: firstText(task.source_machine, defaultDevice), remoteBase: firstText(task.source_workbench_url, defaultWorkbench) },
+      device: firstText(task.source_machine, defaultDevice) },
     { label: "conversation" as const, id: task.conversation_id || "", profile: task.conversation_profile || "", kind: validKind(task.conversation_kind) ? task.conversation_kind : "" as const,
-      device: firstText(task.conversation_machine, defaultDevice), remoteBase: firstText(task.conversation_workbench_url, defaultWorkbench, latest?.workbench_url) },
+      device: firstText(task.conversation_machine, defaultDevice) },
   ].filter((row) => !!row.id).map((row) => {
     const local = !!row.kind && (row.label === "source" ? task.source_local !== false : task.conversation_local === true);
     const remote = row.label === "source" ? task.source_local === false : task.conversation_local === false;
-    const remoteUrl = sessionUrl(row.remoteBase, row.kind, row.id, row.profile);
-    return { ...row, local, remote, remoteUrl, canOpen: !!row.kind && (local || finished || !!remoteUrl) };
+    const remoteUrl = "";
+    return { ...row, local, remote, remoteUrl, canOpen: false };
   });
 }
 
-function sessionUrl(base: string, kind: "hermes" | "codex" | "", id: string, profile: string): string {
-  if (!base || !kind || !id) return "";
-  const safe = safeAbsoluteUrl(base);
-  if (!safe) return "";
-  try {
-    const origin = new URL(safe);
-    let path = (origin.pathname || "/").replace(/\/+$/, "") || "/";
-    if (!path.endsWith("/chat")) path = `${path === "/" ? "" : path}/chat`;
-    const url = new URL(path, origin.origin);
-    url.searchParams.set(kind === "hermes" ? "hermesSession" : "session", id);
-    if (profile) url.searchParams.set("profile", profile);
-    return safeAbsoluteUrl(url.href);
-  } catch { return ""; }
-}
 export function decisionOptions(d: Decision, readOnly = false): Decision["options"] {
   if (readOnly) return d.options.filter(o => !!o.label);
   if (

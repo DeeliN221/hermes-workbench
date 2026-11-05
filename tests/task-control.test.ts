@@ -285,13 +285,13 @@ describe("card runtime metadata", () => {
     expect(runtimeLine(sparse, now)).toBe("medium");
     expect(runtimeLine(sparse, now)).not.toMatch(/未提供|Not recorded|未知/);
   });
-  it("opens local sessions immediately and remote sessions only after the run ends", () => {
+  it("requires resolution for both local and completed remote sessions", () => {
     const local = { ...started, status: "running" as const, source_session_id: "s", source_profile: "default", source_session_kind: "hermes" as const,
       conversation_id: "c", conversation_profile: "writer", conversation_kind: "codex" as const, conversation_local: true };
-    expect(sessionEntries(local).filter((row) => row.canOpen)).toHaveLength(2);
+    expect(sessionEntries(local).filter((row) => row.canOpen)).toHaveLength(0);
     const remote = { ...local, conversation_local: false, attempts: [{ ...started.attempts[0], ended_at: undefined }] };
     expect(sessionEntries(remote).find((row) => row.label === "conversation")?.canOpen).toBe(false);
-    expect(sessionEntries({ ...remote, status: "done" as const }).find((row) => row.label === "conversation")?.canOpen).toBe(true);
+    expect(sessionEntries({ ...remote, status: "done" as const }).find((row) => row.label === "conversation")?.canOpen).toBe(false);
   });
   it("renders spec prompt Markdown and never exposes the JSON wrapper", () => {
     expect(specMarkdown({ ...base, spec_json: { prompt: "# Title\n- one", model: "x" } })).toBe("# Title\n- one");

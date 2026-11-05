@@ -22,7 +22,7 @@ const tasks = [
   {
     id: 'review-local', title: 'Review the merged export flow', status: 'review', revision: 1,
     risk: 'R2', priority: 'P1', verify_mode: 'human', created_at: now, review_actions: true,
-    machine: 'studio', conversation_id: 'codex-preview', conversation_profile: 'default',
+    machine: 'studio', conversation_id: 'native-local', conversation_profile: 'default',
     conversation_kind: 'codex', conversation_local: true,
     acceptance: [{ label: 'Keyboard and contrast checks pass', checked: true }],
     spec_json: { summary: 'A final pull request and commit are ready for human review.' }, attempts: [],
@@ -30,7 +30,7 @@ const tasks = [
   {
     id: 'review-remote', title: 'Review the NAS deployment', status: 'review', revision: 1,
     risk: 'R2', priority: 'P1', verify_mode: 'human', created_at: now, review_actions: true,
-    machine: 'nas', conversation_id: 'codex-preview', conversation_profile: 'writer',
+    machine: 'nas', conversation_id: 'native-nas', conversation_profile: 'writer',
     conversation_kind: 'codex', conversation_local: false, conversation_machine: 'nas',
     conversation_workbench_url: host.origin + '/',
     deliverables: [{ kind: 'demo', label: 'Merged deployment demo', url: host.origin + '/demo/result' }],
@@ -40,7 +40,7 @@ const tasks = [
   {
     id: 'review-stage', title: 'Review progress on the mobile drawer', status: 'review', revision: 1,
     risk: 'R2', priority: 'P2', verify_mode: 'human', created_at: now, review_actions: true,
-    machine: 'studio', conversation_id: 'codex-preview', conversation_profile: 'default',
+    machine: 'studio', conversation_id: 'native-local', conversation_profile: 'default',
     conversation_kind: 'codex', conversation_local: true,
     stage_report: {
       status: 'UI implementation complete',
@@ -60,12 +60,17 @@ const tasks = [
   {
     id: 'review-empty', title: 'Review a task without delivery details', status: 'review', revision: 1,
     risk: 'R2', priority: 'P2', verify_mode: 'human', created_at: now, review_actions: true,
-    machine: 'studio', conversation_id: 'codex-preview', conversation_profile: 'default',
+    machine: 'studio', conversation_id: 'native-local', conversation_profile: 'default',
     conversation_kind: 'codex', conversation_local: true,
     acceptance: [{ label: 'Delivery details requested from the worker', checked: false }],
     spec_json: { summary: 'This task intentionally has no delivery or stage-report data.' }, attempts: [],
   },
 ];
+for (const [id, title] of [['missing', 'Missing execution session'], ['archived', 'Archived execution session'], ['cross-profile', 'Cross profile execution session'], ['untrusted', 'Untrusted device URL']]) {
+  tasks.push({ ...tasks[3], id: `review-${id}`, title, conversation_id: id,
+    conversation_profile: id === 'cross-profile' ? 'other' : 'default',
+    conversation_workbench_url: 'https://evil.example/chat', deliverables: 'PR/commit + screenshots required' });
+}
 const byId = new Map(tasks.map(task => [task.id, task]));
 const details = {
   'review-local': {
@@ -73,7 +78,12 @@ const details = {
       { label: 'Pull request #128', url: 'https://github.com/example/workbench/pull/128' },
       { label: 'Commit 4f2c1a9', url: 'https://github.com/example/workbench/commit/4f2c1a9' },
     ],
-    artifacts: [],
+    artifacts: [
+      { id: 'pr-artifact', kind: 'pr', name: 'Artifact PR #129', external_url: 'https://github.com/example/workbench/pull/129' },
+      { id: 'commit-artifact', kind: 'commit', name: 'Artifact commit', sha: 'abc123', external_url: 'https://github.com/example/workbench/commit/abc123' },
+      { id: 'url-artifact', kind: 'url', name: 'Deployment URL', external_url: 'https://example.com/deployment' },
+      { id: 'report-artifact', kind: 'report', name: 'Uploaded report' },
+    ],
   },
   'review-remote': { links: [], artifacts: [] },
   'review-stage': { links: [], artifacts: [] },
@@ -84,6 +94,14 @@ await page.route('**/api/plugins/workbench/fleetd/**', async route => {
   const url = new URL(route.request().url());
   const suffix = url.pathname.split('/fleetd')[1] || '/';
   const json = body => route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) });
+  if (suffix === '/session-target') {
+    const id = url.searchParams.get('conversation_id');
+    const profile = url.searchParams.get('profile');
+    if (id === 'archived') return json({ state: 'archived' });
+    if (!['native-local', 'native-nas'].includes(id) || !['default', 'writer'].includes(profile)) return json({ state: 'unavailable' });
+    return json({ state: 'available', id: 'codex-preview', kind: 'codex', profile,
+      ...(url.searchParams.get('device') === 'nas' ? { remoteUrl: host.origin + '/chat?session=codex-preview&profile=writer' } : {}) });
+  }
   if (suffix === '/config') return json({ mode: 'live', extended_workflow: false });
   if (suffix === '/tasks/sync') return json({ tasks, removed: [], cursors: {}, full: true });
   if (suffix === '/tasks') return json({ tasks, possibly_truncated: false });
@@ -92,7 +110,7 @@ await page.route('**/api/plugins/workbench/fleetd/**', async route => {
   const match = /^\/tasks\/([^/]+)$/.exec(suffix);
   if (match && byId.has(match[1])) {
     const task = byId.get(match[1]);
-    return json({ task, artifacts: details[task.id].artifacts, links: details[task.id].links, review_notes: [], attempts: [] });
+    return json({ task, artifacts: details[task.id]?.artifacts || [], links: details[task.id]?.links || [], review_notes: [], attempts: [] });
   }
   return route.fulfill({ status: 404, contentType: 'application/json', body: '{"detail":"Not found"}' });
 });
@@ -103,7 +121,7 @@ const openTask = async id => {
   await page.locator('.tower-delivery').waitFor();
 };
 const closeTask = async () => { await page.keyboard.press('Escape'); await page.locator('.tower-drawer').waitFor({ state: 'detached' }); };
-const gotoBoard = async () => { await page.goto(host.origin + '/kanban'); await page.locator('.tower-card:visible').first().waitFor(); };
+const gotoBoard = async () => { await page.goto(host.origin + '/kanban?profile=default'); await page.locator('.tower-card:visible').first().waitFor(); };
 
 try {
   await gotoBoard();
@@ -112,8 +130,10 @@ try {
   await openTask('review-local');
   const delivery = page.locator('.tower-delivery');
   assert.equal((await delivery.locator('h3').textContent()).trim(), 'Final deliverable');
-  assert.equal(await delivery.locator('.tower-delivery-row').count(), 2);
+  assert.equal(await delivery.locator('.tower-delivery-row').count(), 6);
   assert.equal(await delivery.locator('a.tower-delivery-row').first().getAttribute('href'), 'https://github.com/example/workbench/pull/128');
+  assert.equal(await delivery.getByRole('link', { name: /Deployment URL/ }).getAttribute('href'), 'https://example.com/deployment');
+  assert.equal(await delivery.getByRole('button', { name: /Uploaded report/ }).isDisabled(), true);
   assert.ok((await delivery.boundingBox()).y < (await page.locator('.tower-next').boundingBox()).y, 'Deliverable is above the summary');
   assert.equal(await page.getByRole('button', { name: 'Approve', exact: true }).count(), 1);
   assert.equal(await page.getByRole('button', { name: 'Request changes', exact: true }).count(), 1);
@@ -136,8 +156,6 @@ try {
   const remoteLink = remote.getByRole('link', { name: 'Open remote Workbench →', exact: true });
   const remoteUrl = await remoteLink.getAttribute('href');
   assert.equal(remoteUrl, host.origin + '/chat?session=codex-preview&profile=writer');
-  await remote.getByRole('button', { name: 'Copy remote session link', exact: true }).click();
-  assert.equal(await page.evaluate(() => navigator.clipboard.readText()), remoteUrl);
   const [remotePage] = await Promise.all([context.waitForEvent('page'), remoteLink.click()]);
   await remotePage.locator('.codex-pane-slot').waitFor();
   await remotePage.locator('textarea:visible').first().waitFor();
@@ -165,12 +183,26 @@ try {
   assert.equal(await page.getByRole('button', { name: 'Request changes', exact: true }).count(), 1);
   assert.equal(await page.getByText('Available after the run finishes', { exact: true }).count(), 0);
 
+  // Invalid mappings never offer an action or untrusted fallback URL.
+  for (const id of ['missing', 'archived', 'cross-profile', 'untrusted']) {
+    await gotoBoard();
+    await openTask(`review-${id}`);
+    const session = page.locator('.tower-session-entry[data-session="conversation"]');
+    await session.getByRole('button', { name: id === 'archived' ? 'Session archived' : 'Session unavailable', exact: true }).waitFor();
+    assert.equal(await session.locator('a').count(), 0);
+    assert.equal(await session.locator('button:enabled').count(), 0);
+    assert.match(await page.locator('.tower-review-empty').textContent(), /Deliverables declared; evidence not uploaded/);
+  }
+
   // Evidence: four states at desktop/mobile and light/dark.
   const states = [
     ['final-local', 'review-local'],
     ['final-remote', 'review-remote'],
     ['stage-report', 'review-stage'],
     ['no-material', 'review-empty'],
+    ['missing', 'review-missing'],
+    ['archived', 'review-archived'],
+    ['cross-profile', 'review-cross-profile'],
   ];
   for (const width of [1440, 390]) {
     for (const theme of ['light', 'dark']) {
@@ -179,6 +211,8 @@ try {
         await gotoBoard();
         await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; }, theme);
         await openTask(id);
+        await page.locator('.tower-session-entry button, .tower-session-entry a').first().waitFor();
+        await page.waitForFunction(() => !document.querySelector('.tower-sessions')?.textContent.includes('Checking session'));
         if (state === 'stage-report') await page.locator('.tower-stage-report .hti-mermaid svg').waitFor();
         await page.addStyleTag({ content: '#preview-banner { display: none !important; }' });
         await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
@@ -191,6 +225,10 @@ try {
 
   assert.deepEqual(errors, []);
   console.log(`PASS: local/remote sessions and deliverable/stage-report/empty states; evidence ${shotDir}`);
+} catch (error) {
+  await page.screenshot({ path: path.join(shotDir, 'failure.png') });
+  console.error('Page:', page.url(), (await page.locator('body').innerText()).slice(0, 5000), errors);
+  throw error;
 } finally {
   await browser.close();
   await host.close();
