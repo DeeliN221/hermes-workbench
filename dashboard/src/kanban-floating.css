@@ -12,7 +12,7 @@
   box-sizing: border-box;
   min-width: 0;
   min-height: 0;
-  overflow: auto;
+  overflow: visible;
   border: 2px solid var(--mc-line-soft, #68685e);
   border-radius: 12px;
   color: var(--dashboard-ink, var(--mc-ink, #30352c));
@@ -23,3 +23,15 @@
 @media (max-width: 800px) {
   .hti-kanban-float-backdrop { display: none; }
 }
+
+.hti-kanban-float-content { height: 100%; overflow: auto; border-radius: 10px; }
+.hti-kanban-resize { position: absolute; z-index: 5; touch-action: none; }
+.hti-kanban-resize-n, .hti-kanban-resize-s { left: 12px; right: 12px; height: 10px; cursor: ns-resize; }
+.hti-kanban-resize-n { top: -5px; } .hti-kanban-resize-s { bottom: -5px; }
+.hti-kanban-resize-e, .hti-kanban-resize-w { top: 12px; bottom: 12px; width: 10px; cursor: ew-resize; }
+.hti-kanban-resize-e { right: -5px; } .hti-kanban-resize-w { left: -5px; }
+.hti-kanban-resize-nw, .hti-kanban-resize-ne, .hti-kanban-resize-sw, .hti-kanban-resize-se { width: 16px; height: 16px; }
+.hti-kanban-resize-nw { top: -5px; left: -5px; cursor: nwse-resize; }
+.hti-kanban-resize-ne { top: -5px; right: -5px; cursor: nesw-resize; }
+.hti-kanban-resize-sw { bottom: -5px; left: -5px; cursor: nesw-resize; }
+.hti-kanban-resize-se { bottom: -5px; right: -5px; cursor: nwse-resize; }
