@@ -170,3 +170,36 @@ it("does not render unchanged cards when another card changes", async () => {
   expect(renders.running).toBeGreaterThan(before.running);
   expect(host.textContent).toContain("Changed");
 });
+
+it("tints only pending blockers, labels their status and retains the tint when selected", async () => {
+  const tasks = [
+    { id: "blocked", status: "blocked" },
+    { id: "fleet-blocked", status: "triage", fleet_status: "blocked" },
+    { id: "ready", status: "ready" },
+    { id: "triage", status: "triage" },
+  ].map(t => ({ ...t, title: `Task ${t.id}`, revision: 1, created_at: new Date().toISOString(), acceptance: [], read_only: true }));
+  const fetchJSON: FetchJSON = async <T>(url: string) => {
+    if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
+    if (url.endsWith("/tasks/sync")) return { removed: [], cursors: {}, full: true, tasks } as T;
+    const task = tasks.find(t => url.endsWith(`/tasks/${t.id}`));
+    if (task) return { task, artifacts: [], review_notes: [], attempts: [] } as T;
+    return { decisions: [], workers: [], profiles: [], items: [], sessions: [], groups: [] } as T;
+  };
+  const Component = createTaskControlTower({ React, hooks: React, fetchJSON }, vi.fn());
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  await act(async () => { root.render(React.createElement(Component, { profile: "default" })); await new Promise(r => setTimeout(r, 20)); });
+  for (const layout of [".tower-board", ".tower-list"]) {
+    for (const id of ["blocked", "fleet-blocked", "ready", "triage"]) {
+      const card = host.querySelector(`${layout} [data-task-id="${id}"]`)!;
+      expect(card.classList.contains("is-pending-blocked")).toBe(id.includes("blocked"));
+      if (id.includes("blocked")) {
+        expect(card.getAttribute("aria-label")).toContain("Blocked");
+        expect(card.querySelector(".tower-blocked-label")?.textContent).toBe("Blocked");
+      }
+    }
+  }
+  await act(async () => { host.querySelector<HTMLButtonElement>('.tower-board [data-task-id="blocked"] .tower-card-title')!.click(); await new Promise(r => setTimeout(r, 20)); });
+  expect(host.querySelector('.tower-board [data-task-id="blocked"]')?.classList.contains("is-selected")).toBe(true);
+  expect(host.querySelector('.tower-board [data-task-id="blocked"]')?.classList.contains("is-pending-blocked")).toBe(true);
+});

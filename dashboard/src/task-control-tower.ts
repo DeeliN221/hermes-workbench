@@ -207,7 +207,7 @@ export function createTaskControlTower(
   }
   const MemoCard = sdk.React.memo(({ render }: { render: () => unknown }) => render(),
     (a: any, b: any) => a.task === b.task && a.runtime === b.runtime && a.compact === b.compact
-      && a.archived === b.archived && a.busy === b.busy && a.checked === b.checked);
+      && a.archived === b.archived && a.busy === b.busy && a.checked === b.checked && a.selected === b.selected);
   function TaskControlTower({ profile }: { profile: string }) {
     const [tasks, setTasks] = useState([] as Task[]),
       [config, setConfig] = useState(null as FleetConfig | null);
@@ -592,13 +592,16 @@ export function createTaskControlTower(
       const duration = hasStarted(t) ? durationMinutes(t, now) : "";
       const values = duration ? runtime.slice(0, -duration.length).trim() : runtime;
       const stale = isZombieRunning(t);
+      const pendingBlocked = columns.find(c => c.id === "pending")!.statuses.includes(t.status)
+        && (t.status === "blocked" || t.fleet_status === "blocked");
       return (
       h(
         "article",
         {
           key: t.id,
-          className: `tower-card ${compact ? "is-row" : ""}${archived ? " is-archived-card" : ""}`,
+          className: `tower-card ${compact ? "is-row" : ""}${archived ? " is-archived-card" : ""}${pendingBlocked ? " is-pending-blocked" : ""}${selected === t.id ? " is-selected" : ""}`,
           "data-task-id": t.id,
+          "aria-label": pendingBlocked ? `${t.title} — ${tr("阻塞", "Blocked")}` : undefined,
           "data-archived": archived ? "true" : undefined,
           "data-runtime": runtime,
           "data-active-attempt": activeAttempt(t) ? "true" : "false",
@@ -626,6 +629,7 @@ export function createTaskControlTower(
         h(
           "div",
           { className: "tower-card-meta", title: runtime || undefined },
+          pendingBlocked ? h("span", { className: "tower-blocked-label" }, tr("阻塞", "Blocked")) : null,
           values ? h("span", { className: "tower-runtime-values" }, values) : null,
           duration ? h("span", { className: "tower-runtime-duration" }, `${values ? " " : ""}${duration}`) : null,
         ),
@@ -633,7 +637,7 @@ export function createTaskControlTower(
     };
     const card = (t: Task, compact = false, archived = false) => h(MemoCard, {
       key: t.id, task: t, compact, archived, busy, checked: checked.includes(t.id),
-      runtime: runtimeLine(t, now), render: () => renderCard(t, compact, archived),
+      selected: selected === t.id, runtime: runtimeLine(t, now), render: () => renderCard(t, compact, archived),
     });
     const group = (status: Status) => {
       const rows =
