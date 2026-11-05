@@ -467,9 +467,9 @@ try {
     title: node.querySelector('strong')?.textContent,
     description: node.querySelector('span')?.textContent,
   }))), [
-    { mode: 'compact', title: 'Compact', description: 'Fold to one summary line; expand into the shortest scroll window.' },
-    { mode: 'standard', title: 'Standard', description: 'Fold to one summary line; expand into a medium-height scroll window.' },
-    { mode: 'detailed', title: 'Detailed', description: 'Fold to one summary line; expand into the tallest scroll window with tool output open.' },
+    { mode: 'compact', title: 'Compact', description: 'The shortest expanded window.' },
+    { mode: 'standard', title: 'Standard', description: 'A medium-height expanded window.' },
+    { mode: 'detailed', title: 'Detailed', description: 'The tallest expanded window, with tool output open.' },
   ]);
   assert.equal(await detailPage.locator('[data-detail-mode="standard"]').getAttribute('aria-checked'), 'true');
   await detailPage.locator('[data-detail-mode="compact"]').click();
