@@ -51,7 +51,7 @@ try {
     await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
     await page.locator('.codex-pane-slot').first().waitFor();
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
-    const launcher = page.locator(mobile ? '.dashboard-action-rail a[aria-label="Home"]' : '.codex-pane-color-trigger:visible').first();
+    const launcher = page.locator(mobile ? '.dashboard-action-rail a[aria-label="Home"]' : '.dashboard-nav-collapse:visible').first();
     const openMenu = async () => { await launcher.focus(); await page.keyboard.press('w'); };
     if (before && mobile) { await page.close(); continue; }
     await openMenu();

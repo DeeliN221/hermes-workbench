@@ -1,4 +1,5 @@
 import { openSessionNavigation } from './navigation-helpers.mjs';
+import { mkdir } from 'node:fs/promises';
 import assert from 'node:assert/strict';
 import { chromium } from 'playwright';
 import { createMockHost } from './mock-host.mjs';
@@ -22,6 +23,11 @@ try {
     }
     return route.fulfill({ json: { items: groups } });
   });
+  await page.route('**/api/plugins/workbench/codex/sessions?*', async route => {
+    const response = await route.fetch(), data = await response.json();
+    for (const session of data.items || []) if (session.id === 'codex-preview') { session.groupId = 'custom'; session.color = '#ff0000'; }
+    await route.fulfill({ response, json: data });
+  });
   await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
   await openSessionNavigation(page);
   await page.locator('.project-temporary').waitFor();
@@ -39,12 +45,28 @@ try {
   await editor.getByLabel('Icon', { exact: true }).selectOption('star');
   await editor.getByRole('button', { name: 'Save', exact: true }).click();
   await editor.waitFor({ state: 'detached' });
+  await page.waitForFunction(() => document.querySelector('.codex-project-color-mark')?.style.color === 'rgb(51, 155, 114)');
+  assert.equal(await page.locator('.codex-center-header button').count(), 1);
+  assert.equal(await page.locator('.codex-center-header input').count(), 0);
   await page.reload();
   await page.locator(".codex-pane-slot").first().waitFor();
   await openSessionNavigation(page);
   await page.locator('.project-folder').waitFor();
   assert.equal(await page.locator('.project-icon-edit .project-appearance-mark').textContent(), '☆');
   assert.equal(await page.locator('.project-icon-edit .project-appearance-mark').evaluate(n => getComputedStyle(n).color), 'rgb(51, 155, 114)');
+  assert.equal(await page.locator('.codex-project-color-mark').evaluate(n => getComputedStyle(n).color), 'rgb(51, 155, 114)');
+  if (process.env.WORKBENCH_SCREENSHOT_DIR) {
+    const output = process.env.WORKBENCH_SCREENSHOT_DIR;
+    await mkdir(output, { recursive: true });
+    const toggle = page.locator('.dashboard-mobile-toggle').first();
+    if (await toggle.getAttribute('aria-expanded') === 'true') await toggle.click();
+    await page.addStyleTag({ content: '#preview-banner { display: none; }' });
+    for (const [name, width, height, theme] of [['project-desktop-light', 1440, 1000, 'light'], ['project-desktop-dark', 1440, 1000, 'dark'], ['project-mobile-light', 390, 844, 'light']]) {
+      await page.setViewportSize({ width, height });
+      await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
+      await page.screenshot({ path: `${output}/${name}.png` });
+    }
+  }
   assert.deepEqual(errors, []);
   console.log('PASS: empty sidebar creation guard, appearance editing, persisted list/title after reload');
 } finally { await browser.close(); await host.close(); }

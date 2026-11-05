@@ -1,6 +1,6 @@
 import { openSessionNavigation } from './navigation-helpers.mjs';
 /**
- * Verify session renaming from the sidebar card menu and the pane header.
+ * Verify session renaming only from the sidebar card menu.
  * Covers instant two-way sync, persistence across reload, the first-message
  * default after clearing, readable errors, and mobile dialog layout.
  */
@@ -50,17 +50,11 @@ async function openFromCard(page, name) {
   await dialogOpen(page).waitFor({ state: 'visible', timeout: 3000 });
 }
 
-/** Open the same dialog from the pane header. */
-async function openFromHeader(page) {
-  await page.locator('.codex-session-rename').first().click();
-  await dialogOpen(page).waitFor({ state: 'visible', timeout: 3000 });
-}
-
-async function saveTitle(page, value) {
+async function saveTitle(page, value, expectSuccess = true) {
   const input = dialogOpen(page).locator('input[name="session-title"]');
   await input.fill(value);
   await dialogOpen(page).locator('.codex-navigation-dialog-actions button.is-primary').click();
-  if (restoreCardNavigation) {
+  if (restoreCardNavigation && expectSuccess) {
     await dialogOpen(page).waitFor({ state: 'detached' });
     await restoreCardNavigation();
     restoreCardNavigation = null;
@@ -96,29 +90,45 @@ try {
   await page.locator(`${HEADER}`).first().waitFor({ state: 'visible', timeout: 8000 });
   await waitForTitle(page, '发布前 检查 Sprint');
 
-  // The pane header opens the same dialog, prefilled, and syncs the card back.
-  await openFromHeader(page);
+  assert.equal(await page.locator('.codex-session-rename').count(), 0);
+  await page.keyboard.press('F2');
+  assert.equal(await dialogOpen(page).count(), 0);
+  // The sidebar remains the only rename entry, with the persisted value.
+  await openFromCard(page, await headerTitle(page));
   assert.equal(await dialogOpen(page).locator('input[name="session-title"]').inputValue(), '发布前 检查 Sprint');
-  await saveTitle(page, '窗格标题重命名');
+  await saveTitle(page, 'A very long session title '.repeat(7));
   await dialogOpen(page).waitFor({ state: 'detached', timeout: 4000 });
-  await waitForTitle(page, '窗格标题重命名');
+  await waitForTitle(page, 'A very long session title '.repeat(7).trim());
+
+  assert.equal(await page.locator(HEADER).first().getAttribute('aria-label'), await headerTitle(page));
+  assert.equal(await page.locator(HEADER).first().evaluate(n => getComputedStyle(n).textOverflow), 'ellipsis');
+  assert.equal(await page.locator(HEADER).first().getAttribute('title'), await headerTitle(page));
+  assert.ok(await page.locator(HEADER).first().evaluate(n => n.scrollWidth > n.clientWidth));
+  if (process.env.WORKBENCH_SCREENSHOT_DIR) {
+    await mkdir(process.env.WORKBENCH_SCREENSHOT_DIR, { recursive: true });
+    await page.addStyleTag({ content: '#preview-banner { display: none; }' });
+    await page.screenshot({ path: `${process.env.WORKBENCH_SCREENSHOT_DIR}/long-title.png` });
+  }
+
 
   // A refused rename explains itself and leaves both titles untouched.
   await page.route('**/codex/sessions/*/title*', route => route.fulfill({
     status: 404, contentType: 'application/json', body: JSON.stringify({ detail: 'Session not found' }),
   }));
-  await openFromHeader(page);
-  await saveTitle(page, '不应该保存');
+  await openFromCard(page, await headerTitle(page));
+  await saveTitle(page, 'Must not save', false);
   const alert = dialogOpen(page).locator('.codex-navigation-dialog-error');
   await alert.waitFor({ state: 'visible', timeout: 4000 });
   assert.match((await alert.textContent()) || '', /no longer exists/i);
   await dialogOpen(page).locator('.codex-navigation-dialog-actions button').first().click();
   await dialogOpen(page).waitFor({ state: 'detached', timeout: 4000 });
-  await waitForTitle(page, '窗格标题重命名');
+  await waitForTitle(page, 'A very long session title '.repeat(7).trim());
+  await restoreCardNavigation();
+  restoreCardNavigation = null;
   await page.unroute('**/codex/sessions/*/title*');
 
   // Clearing the title falls back to the first-message default everywhere.
-  await openFromCard(page, '窗格标题重命名');
+  await openFromCard(page, 'A very long session title '.repeat(7).trim());
   await saveTitle(page, '   ');
   await dialogOpen(page).waitFor({ state: 'detached', timeout: 4000 });
   const derived = 'Please verify that the local preview opens correctly.';
@@ -134,7 +144,8 @@ try {
   phone.on('pageerror', error => errors.push(error.stack || error.message));
   await phone.goto(host.origin + '/chat?session=codex-regression&profile=default', { waitUntil: 'domcontentloaded' });
   await phone.locator(`${HEADER}`).first().waitFor({ state: 'visible', timeout: 8000 });
-  await openFromHeader(phone);
+  await phone.waitForFunction(() => document.querySelector('.codex-center-title')?.textContent === 'Home rendering regression');
+  await openFromCard(phone, await headerTitle(phone));
   const box = await dialogOpen(phone).locator('.codex-navigation-dialog').boundingBox();
   assert.ok(box, 'dialog has a layout box');
   assert.ok(box.x >= 0 && box.x + box.width <= 390.5, `dialog fits the phone width: ${JSON.stringify(box)}`);

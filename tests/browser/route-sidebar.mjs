@@ -34,11 +34,11 @@ try {
      const center = await page.locator('.codex-multi-pane').boundingBox();
      const bounds = await nav.boundingBox();
      assert.ok(Math.abs(center.x - bounds.width) < 2);
-     await page.locator('.codex-pane-color-trigger').first().focus();
+     await page.locator('.dashboard-nav-collapse').first().focus();
      await page.keyboard.press('w');
      await expect(page.locator('.workbench-actions-dialog')).toBeVisible();
      await page.keyboard.press('Escape');
-     await expect(page.locator('.codex-pane-color-trigger').first()).toBeFocused();
+     await expect(page.locator('.dashboard-nav-collapse').first()).toBeFocused();
      await nav.locator('.dashboard-nav-collapse').click();
      await expect(nav).toHaveClass(/is-collapsed/);
      await page.evaluate(() => { history.pushState({}, '', '/chat?session=codex-regression&profile=default'); dispatchEvent(new PopStateEvent('popstate')); });

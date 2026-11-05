@@ -2,7 +2,19 @@
 .codex-generation-speed > summary { list-style: none; cursor: pointer; border: 1px solid currentColor; border-radius: 6px; padding: 1px 6px; opacity: .75; font-variant-numeric: tabular-nums; }
 .codex-generation-speed > summary::-webkit-details-marker { display: none; }
 .codex-generation-tooltip { display: block; width: min(320px, 65vw); padding: 8px; line-height: 1.5; overflow-wrap: anywhere; }
-@media (max-width: 600px) { .codex-generation-speed { display: none; } }
 
-.codex-generation-tooltip { position: absolute; top: 100%; left: 0; z-index: 120; white-space: normal; background: var(--mc-surface, #fff); color: var(--mc-ink, #203345); border: 1px solid var(--mc-line-soft, #ccc); box-shadow: 0 4px 12px #0003; }
+
+.codex-generation-tooltip { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 120; white-space: normal; background: var(--mc-surface, #fff); color: var(--mc-ink, #203345); border: 1px solid var(--mc-line-soft, #ccc); box-shadow: 0 4px 12px #0003; }
 .codex-center-heading-copy { min-width: 0; }
+
+/* Reserve message-free space alongside the pane-local user message ball. */
+.codex-conversation-dock {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  flex: 0 0 72px;
+  min-width: 0;
+  padding: 0 72px 0 12px;
+}
+.codex-center-header > .codex-center-title { flex: 1 1 auto; min-width: 0; }
+.codex-project-color-mark { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: currentColor; margin-right: 8px; color: var(--dashboard-ink, var(--mc-ink)); }
