@@ -13081,7 +13081,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     }
     return function () {
       const S = new URLSearchParams(window.location.search),
-        paneProfile = paneWorkspaceProfile(),
+        // The persistent shell also renders on home, where paneOwner is absent.
+        // Keep storage ownership fixed until the parent remounts this workspace.
+        paneProfile = n(() => paneWorkspaceProfile(), []),
         startEmpty = isNewSessionRoute(window.location.href),
         b = startEmpty ? "" : S.get("hermesSession") ? "" : S.get("session") || "",
         p = startEmpty ? "" : S.get("hermesSession") || "",
