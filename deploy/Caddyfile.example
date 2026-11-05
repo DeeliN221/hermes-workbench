@@ -1,9 +1,13 @@
+# Authelia forward_auth must use: copy_headers Remote-User
+# Clear incoming Remote-User BEFORE forward_auth; import this only AFTER it.
 # Import this snippet INSIDE a route, AFTER authentication has established Remote-User.
 # Your auth layer must replace (never trust) any client-provided Remote-User header.
 (workbench_routes) {
     @workbench path /workbench-sidecar/* /api/plugins/workbench /api/plugins/workbench/*
     handle @workbench {
         reverse_proxy {$WORKBENCH_UPSTREAM} {
+            header_up -X-Workbench-Status-Token
+            header_up Remote-User {http.request.header.Remote-User}
             header_up -Authorization
             header_up -X-Api-Key
             header_up -Cookie
@@ -12,3 +16,14 @@
     }
 }
 # Other routes, including /dashboard-plugins/*, stay with the Hermes host.
+
+# Optional Authelia authentication snippet. Import INSIDE the same route before
+# workbench_routes, replacing AUTHELIA_UPSTREAM with your private auth service.
+# Configure Authelia's authz/forward-auth endpoint for this origin first.
+(workbench_authelia) {
+    request_header -Remote-User
+    forward_auth {$AUTHELIA_UPSTREAM} {
+        uri /api/authz/forward-auth
+        copy_headers Remote-User
+    }
+}

@@ -1,3 +1,4 @@
+import './auth-polling-install';
 /** Build Workbench from readable source instead of relying on read-only release bundles. */
 import './platform-status';
 import './recovered-runtime.css';

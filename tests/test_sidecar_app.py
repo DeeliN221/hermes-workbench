@@ -561,3 +561,55 @@ def test_runtime_version_is_startup_snapshot(tmp_path, monkeypatch):
         result = client.get('/api/plugins/workbench/runtime-version', headers={'X-Hermes-Proxy-Secret': 'test-only', 'Remote-User': 'test'}).json()
         assert result['git_commit'] == 'startup'
         assert result['started_at']
+
+
+@pytest.mark.parametrize('path', ['/versions', '/versions/update-status', '/codex-runtime/status'])
+def test_status_requires_identity_or_scoped_machine_token(sidecar, monkeypatch, path):
+    module, client = sidecar
+    monkeypatch.setenv('HERMES_WORKBENCH_INTERNAL_STATUS_TOKEN', 'machine-only')
+    url = '/api/plugins/workbench' + path
+    for headers in ({}, {'Cookie': 'session=expired'}, {'X-Workbench-Status-Token': 'wrong'},
+                    {'X-Hermes-Proxy-Secret': 'proxy-secret'}):
+        response = client.get(url, headers=headers)
+        assert response.status_code == 401
+        assert response.json()['code'] == 'auth_required'
+        assert response.headers['cache-control'] == 'no-store'
+    # Isolate authentication from release/runtime availability.
+    gate = module.TrustedProxyGate(None)
+    scope = {'type': 'http', 'method': 'GET', 'path': url,
+             'headers': [(b'x-workbench-status-token', b'machine-only')]}
+    assert gate._internal_authorized(scope)
+    assert not gate._internal_authorized({**scope, 'method': 'POST'})
+    assert not gate._internal_authorized({**scope, 'path': '/api/plugins/workbench/workspace'})
+    response = client.get(url, headers={'X-Workbench-Status-Token': 'machine-only'})
+    assert response.status_code != 401
+    response = client.get(url, headers={'X-Hermes-Proxy-Secret': 'proxy-secret', 'Remote-User': 'alice'})
+    assert response.status_code != 401
+
+
+def test_navigation_expiry_is_html_without_redirect_loop(sidecar):
+    _, client = sidecar
+    response = client.get('/api/plugins/workbench/versions', headers={'Sec-Fetch-Mode': 'navigate'})
+    assert response.status_code == 401
+    assert response.headers['content-type'].startswith('text/html')
+    assert 'href="/"' in response.text
+    assert not response.history
+
+
+def test_missing_identity_diagnostic_does_not_log_credentials(sidecar, caplog):
+    _, client = sidecar
+    response = client.get('/api/plugins/workbench/versions/update-status',
+                          headers={'X-Hermes-Proxy-Secret': 'proxy-secret'})
+    assert response.status_code == 401
+    assert 'reason=missing_remote_user' in caplog.text
+    assert 'proxy-secret' not in caplog.text
+
+
+@pytest.mark.parametrize('peer', ['127.0.0.1', '192.168.32.1', '203.0.113.8'])
+def test_peer_address_never_grants_authentication(sidecar, peer):
+    module, _ = sidecar
+    gate = module.TrustedProxyGate(None)
+    scope = {'type': 'http', 'method': 'GET', 'path': '/api/plugins/workbench/versions',
+             'client': (peer, 12345), 'headers': []}
+    assert not gate._authorized(scope)
+    assert not gate._internal_authorized(scope)

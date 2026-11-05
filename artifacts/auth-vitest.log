@@ -1,0 +1,16 @@
+$ vitest run --config vitest.config.ts
+(!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
+  - ESM syntax in a file loaded as CommonJS (vitest.config.ts:2:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
+Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
+
+ RUN  v5.0.5 /tmp/fleet-T-25ad041c
+
+
+ Test Files  111 passed (111)
+      Tests  602 passed (602)
+   Start at  10:04:56
+   Duration  73.65s (environment 54%, import 18%, transform 14%, tests 12%, worker 2%)
+
+    Isolate  111 workers spawned · ~1.33s startup each (spawn + environment, per file)
+             at least ~47.86s faster with isolate: false — reuses workers across files instead of one per file
+

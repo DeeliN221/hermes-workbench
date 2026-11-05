@@ -1,0 +1,56 @@
+INFO:     Started server process [27909]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:60262 (Press CTRL+C to quit)
+INFO:     127.0.0.1:41804 - "GET /healthz HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41806 - "GET /health HTTP/1.1" 200 OK
+workbench_auth_required path=/api/plugins/workbench/versions/update-status peer=127.0.0.1 reason=missing_proxy_secret_and_remote_user
+INFO:     127.0.0.1:41808 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 401 Unauthorized
+workbench_auth_required path=/api/plugins/workbench/versions/update-status peer=127.0.0.1 reason=missing_proxy_secret_and_remote_user
+INFO:     127.0.0.1:41810 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 401 Unauthorized
+workbench_auth_required path=/api/plugins/workbench/versions/update-status peer=127.0.0.1 reason=missing_proxy_secret_and_remote_user
+INFO:     127.0.0.1:41812 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 401 Unauthorized
+INFO:     127.0.0.1:41814 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41816 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41818 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41820 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41822 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41824 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41826 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41828 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41830 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41832 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41834 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41836 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41838 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41840 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41842 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41844 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41846 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41848 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41850 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41852 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41854 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41856 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41858 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41862 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41864 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41866 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41868 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41870 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41872 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41874 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41876 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41878 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41880 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41882 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41884 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41886 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41888 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41890 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41892 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:41894 - "GET /api/plugins/workbench/versions/update-status HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [27909]
