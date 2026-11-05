@@ -84,7 +84,7 @@ it("renders compact runtime values, omits empty drawer blocks and hides archived
     conversation_id: "c1", conversation_profile: "default", conversation_kind: "codex", conversation_local: true,
     source_session_id: "s1", source_profile: "default", source_session_kind: "hermes",
     attempts: [{ id: "a1", status: "ok", started_at: "2026-11-03T10:48:00Z", ended_at: "2026-11-03T11:00:00Z", model_used: "gpt-5.2", evidence_json: JSON.stringify({ duration_ms: 720000 }) }],
-    spec_json: { prompt: "# Plan\n\n- first\n\n```ts\nconst ok = true;\n```\n\n[link](https://example.com)" },
+    spec_json: { prompt: "# Plan\n\n" + String.raw`- first\n- second` + "\n\n```ts\nconst ok = true;\n```\n\n[link](https://example.com)" },
   };
   const archived = { ...task, id: "T-archived", title: "Archived task", status: "archived" };
   const fetchJSON: FetchJSON = async <T>(url: string) => {
@@ -118,7 +118,14 @@ it("renders compact runtime values, omits empty drawer blocks and hides archived
   expect(drawer.textContent).toContain("Runtime task");
   await act(async () => { (drawer.querySelector("summary") as HTMLElement).click(); await new Promise(r => setTimeout(r, 10)); });
   expect(drawer.querySelector(".tower-markdown h1")?.textContent).toBe("Plan");
+  expect(drawer.querySelectorAll(".tower-markdown li")).toHaveLength(2);
   expect(drawer.querySelector(".tower-markdown a")?.getAttribute("href")).toBe("https://example.com/");
+  const toggle = Array.from(drawer.querySelectorAll("button")).find(button => button.textContent === "Show source")!;
+  await act(async () => { toggle.click(); });
+  expect(drawer.querySelector(".tower-spec-raw")?.textContent).toBe(task.spec_json.prompt);
+  expect(drawer.querySelector(".tower-spec-raw")?.textContent).toContain(String.raw`- first\n- second`);
+  await act(async () => { toggle.click(); });
+  expect(drawer.querySelectorAll(".tower-markdown li")).toHaveLength(2);
 });
 
 it("keeps the done-card checkbox in the title row and labels bulk actions compactly", async () => {
