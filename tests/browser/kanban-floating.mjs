@@ -1,4 +1,4 @@
-/** Browser plugin not available; localhost Phase 1 regression. */
+/** Browser plugin not available; localhost resize and Phase 1 regression. */
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -79,7 +79,7 @@ const browser = await chromium.launch({ headless: true, executablePath: process.
 try {
   console.log('Localhost:', host.origin);
   for (const theme of ['light', 'dark']) {
-    const { page, errors } = await preparePage(browser, host.origin, { profile: 'default', theme });
+    const { page, errors } = await preparePage(browser, host.origin, { profile: `resize-${theme}`, theme });
     assert.match(await page.title(), /./);
     assert.equal(await page.locator('vite-error-overlay').count(), 0);
     if (shotDir) await page.screenshot({ path: path.join(shotDir, `desktop-${theme}-before.png`) });
@@ -97,6 +97,35 @@ try {
     assert.ok(syncs > beforeSync, 'Existing refresh continues inside the window');
     const initial = await boxOf(panel);
     for (const [actual, expected] of [[initial.width, 1152], [initial.height, 720], [initial.x, 144], [initial.y, 90]]) assert.ok(Math.abs(actual - expected) <= 2);
+
+    for (const edge of ['n', 'e', 's', 'w', 'nw', 'ne', 'sw', 'se']) {
+      const before = await boxOf(panel);
+      const handle = await boxOf(panel.locator(`[data-edge="${edge}"]`));
+      await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+      await page.mouse.down();
+      const saved = page.waitForResponse(response => response.url().includes('/kanban-geometry') && response.request().method() === 'PUT');
+      await page.mouse.move(handle.x + handle.width / 2 + (edge.includes('w') ? 18 : -18), handle.y + handle.height / 2 + (edge.includes('n') ? 18 : -18), { steps: 4 });
+      await page.mouse.up(); await saved;
+      const after = await boxOf(panel);
+      assert.ok(Math.abs(after.width - before.width) > 5 || Math.abs(after.height - before.height) > 5, edge);
+    }
+    const handle = await boxOf(panel.locator('[data-edge="se"]'));
+    await page.mouse.move(handle.x + 8, handle.y + 8); await page.mouse.down();
+    const saved = page.waitForResponse(r => r.url().includes('/kanban-geometry') && r.request().method() === 'PUT');
+    await page.mouse.move(0, 0, { steps: 5 }); await page.mouse.up(); await saved;
+    const minimum = await boxOf(panel);
+    assert.ok(Math.abs(minimum.width - 560) < 2 && Math.abs(minimum.height - 320) < 2);
+    await page.keyboard.press('Escape'); await panel.waitFor({ state: 'hidden' });
+    await page.keyboard.press('b'); await panel.waitFor();
+    assert.deepEqual(await boxOf(panel), minimum);
+    await page.reload(); await page.locator('.dashboard-nav-collapse').focus(); await page.keyboard.press('b'); await panel.waitFor();
+    assert.deepEqual(await boxOf(panel), minimum, 'reload restores server geometry');
+    // Enlarge again for the drawer and screenshot checks below.
+    const corner = await boxOf(panel.locator('[data-edge="se"]'));
+    await page.mouse.move(corner.x + 8, corner.y + 8); await page.mouse.down();
+    const enlarged = page.waitForResponse(r => r.url().includes('/kanban-geometry') && r.request().method() === 'PUT');
+    await page.mouse.move(1300, 810, { steps: 5 }); await page.mouse.up(); await enlarged;
+    await page.evaluate(value => { document.documentElement.dataset.workbenchTheme = value; }, theme);
     assert.equal(await panel.getByRole('button', { name: /close|maximize/i }).count(), 0);
     assert.ok(await panel.evaluate(el => el.contains(document.activeElement)));
     await panel.locator('.tower-card').first().click();
@@ -133,6 +162,14 @@ try {
     await page.mouse.click(20, 20);
     await panel.waitFor({ state: 'hidden' });
     assert.ok(await opener.evaluate(el => el === document.activeElement));
+    // A different profile starts at 80%; damaged server state falls back there too.
+    await page.goto(host.origin + '/chat?session=codex-preview&profile=isolated-' + theme);
+    await page.locator('.dashboard-nav-collapse').focus(); await page.keyboard.press('b'); await panel.waitFor();
+    const isolated = await boxOf(panel);
+    assert.ok(Math.abs(isolated.width - 1152) <= 2 && Math.abs(isolated.x - 144) <= 2);
+    await page.request.put(host.origin + '/api/plugins/workbench/kanban-geometry?profile=isolated-' + theme, { data: { x: 9, y: 0, width: .8, height: .8 } });
+    await page.reload(); await page.locator('.dashboard-nav-collapse').focus(); await page.keyboard.press('b'); await panel.waitFor();
+    assert.deepEqual(await boxOf(panel), isolated, 'corrupt geometry falls back to centered 80%');
     assert.deepEqual(errors, []);
     await page.close();
   }

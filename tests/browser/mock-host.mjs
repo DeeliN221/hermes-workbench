@@ -236,6 +236,11 @@ function apiPayload(url, method, body = null, preferences = new Map()) {
 
   if (url.pathname === '/api/plugins/workbench/fleetd/tasks/search') return { tasks: [], has_more: false, next_cursor: '' };
   if (['/api/plugins/workbench/fleet/config', '/api/plugins/workbench/fleetd/config'].includes(url.pathname)) return { mode: 'unconfigured', extended_workflow: false };
+  if (url.pathname === '/api/plugins/workbench/kanban-geometry') {
+    const key = 'geometry:' + (url.searchParams.get('profile') || 'default');
+    if (method === 'PUT') preferences.set(key, body);
+    return { geometry: preferences.get(key) || null };
+  }
   if (url.pathname === '/api/plugins/workbench/attachment-preferences') {
     const key = 'attachments:' + (url.searchParams.get('profile') || 'default');
     if (method === 'PUT') preferences.set(key, { folderUploadEnabled: body.folderUploadEnabled === true });

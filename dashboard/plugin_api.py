@@ -1658,6 +1658,49 @@ def migrate_model_display(request: Request, body: ModelDisplayBody, profile: str
     return _model_display(_model_display_owner(request), profile, body, migrate=True)
 
 
+class KanbanGeometryBody(BaseModel):
+    x: float = Field(ge=0, le=1, strict=True, allow_inf_nan=False)
+    y: float = Field(ge=0, le=1, strict=True, allow_inf_nan=False)
+    width: float = Field(gt=0, le=1, strict=True, allow_inf_nan=False)
+    height: float = Field(gt=0, le=1, strict=True, allow_inf_nan=False)
+
+
+def _kanban_geometry(owner: str, profile: str, body: KanbanGeometryBody | None = None):
+    profile = _clean_identifier(profile, label='Profile', maximum=_MAX_PROFILE_LENGTH)
+    if body and (body.x + body.width > 1.0000001 or body.y + body.height > 1.0000001):
+        raise HTTPException(status_code=422, detail='Geometry exceeds viewport')
+    connection = _open_organization_db()
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        connection.execute('CREATE TABLE IF NOT EXISTS kanban_geometry (owner TEXT NOT NULL, profile TEXT NOT NULL, payload TEXT NOT NULL, PRIMARY KEY(owner, profile))')
+        if body is not None:
+            connection.execute('INSERT INTO kanban_geometry VALUES (?,?,?) ON CONFLICT(owner,profile) DO UPDATE SET payload=excluded.payload', (owner, profile, body.model_dump_json()))
+        row = connection.execute('SELECT payload FROM kanban_geometry WHERE owner=? AND profile=?', (owner, profile)).fetchone()
+        connection.commit()
+        geometry = None
+        if row:
+            try:
+                value = KanbanGeometryBody.model_validate_json(row['payload'])
+                if value.x + value.width <= 1.0000001 and value.y + value.height <= 1.0000001:
+                    geometry = value.model_dump()
+            except (ValueError, TypeError):
+                pass
+        return {'geometry': geometry}
+    finally:
+        connection.close()
+
+
+@router.get('/kanban-geometry')
+def get_kanban_geometry(request: Request, profile: str = 'default'):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(_kanban_geometry(_model_display_owner(request), profile), headers={'Cache-Control': 'no-store'})
+
+
+@router.put('/kanban-geometry')
+def put_kanban_geometry(request: Request, body: KanbanGeometryBody, profile: str = 'default'):
+    return _kanban_geometry(_model_display_owner(request), profile, body)
+
+
 class AttachmentPreferencesBody(BaseModel):
     folderUploadEnabled: bool = False
 
