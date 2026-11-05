@@ -188,29 +188,8 @@ try {
   assert.ok(projectList.scrollWidth <= projectList.clientWidth, 'The project list must not scroll horizontally');
   assert.equal(await panePage.locator('.project-navigation-resizer').count(), 1, 'Each split has one draggable separator');
   await restorePaneNavigation();
-  const headerLayout = await panePage.evaluate(() => {
-    const picker = document.querySelector('.codex-pane-color-picker')?.getBoundingClientRect();
-    const title = document.querySelector('.codex-center-title')?.getBoundingClientRect();
-    const header = document.querySelector('.codex-center-header')?.getBoundingClientRect();
-    if (!picker || !title || !header) throw new Error('Missing center header controls');
-    return { pickerLeft: picker.left, titleLeft: title.left, pickerTop: picker.top, titleTop: title.top, height: header.height };
-  });
-  assert.ok(headerLayout.pickerLeft < headerLayout.titleLeft, 'The color picker must sit left of the title');
-  assert.ok(Math.abs(headerLayout.pickerTop - headerLayout.titleTop) < 16, 'The title and color picker must share one row');
-  assert.ok(headerLayout.height <= 52, `The one-line chat header must stay compact; got ${headerLayout.height}px`);
-  await panePage.locator('.codex-pane-color-trigger').click();
-  const colorMenu = panePage.locator('.codex-pane-color-menu');
-  await colorMenu.waitFor({ state: 'visible', timeout: 5000 });
-  const colorGrid = colorMenu.locator('.codex-session-color-grid');
-  assert.equal(await colorGrid.locator('.codex-session-color-swatch').count(), 8, 'The color picker must keep eight cells');
-  assert.equal(await colorGrid.locator('button.codex-session-color-swatch').count(), 7, 'Seven cells are rainbow presets');
-  assert.equal(await colorGrid.locator('input[type="color"]').count(), 1, 'The last cell must open a custom color input');
-  assert.equal(await colorMenu.getByText('Restore default').count(), 0, 'The reset action must be removed');
-  const colorColumns = await colorGrid.evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length);
-  assert.equal(colorColumns, 4, 'The color picker must keep two rows of four cells');
-  await colorGrid.locator('input[type="color"]').fill('#123456');
-  await panePage.waitForFunction(() => document.querySelector('.codex-pane-color-dot')?.getAttribute('style')?.includes('18, 52, 86'));
-  if (await colorMenu.isVisible()) await panePage.locator('.codex-pane-color-trigger').click();
+  assert.deepEqual(await panePage.locator('.codex-center-header').first().evaluate(node => [...node.children].map(child => child.className)), ['codex-center-title', 'codex-icon-button codex-pane-close']);
+  assert.equal(await panePage.locator('.codex-pane-color-menu').count(), 0);
   await panePage.evaluate(() => {
     window.__copiedSessionId = '';
     Object.defineProperty(navigator, 'clipboard', {
@@ -278,7 +257,7 @@ try {
   await openSecondSession(settingsReturnPage);
   const splitChatUrl = settingsReturnPage.url();
   await settingsReturnPage.locator('.dashboard-action-rail').waitFor({ state: 'detached' });
-  await settingsReturnPage.locator('.codex-pane-color-trigger').first().focus();
+  await settingsReturnPage.locator('.dashboard-nav-collapse').first().focus();
   await settingsReturnPage.keyboard.press('w');
   await settingsReturnPage.locator('.workbench-actions-dialog[open]').getByRole('link', { name: 'Settings', exact: true }).click();
   await settingsReturnPage.waitForFunction(() => location.pathname === '/config' && new URLSearchParams(location.search).get('panel') === '1');

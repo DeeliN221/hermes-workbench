@@ -24,6 +24,7 @@ export function createProjectEditor(sdk: any) {
       setBusy(true); setError('');
       try {
         const saved = project ? await styleCodexGroup(sdk.fetchJSON, profile, project.id, color, icon) : await createCodexGroup(sdk.fetchJSON, profile, name.trim());
+        window.dispatchEvent(new CustomEvent("workbench:project-appearance", { detail: { profile, project: saved } }));
         onSaved(saved); onClose();
       } catch { setError(tr('保存失败，请重试', 'Unable to save. Please retry.')); }
       finally { setBusy(false); }

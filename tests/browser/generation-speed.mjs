@@ -59,17 +59,22 @@ try {
       await page.keyboard.press('Escape');
       const chip = page.getByTestId('codex-generation-speed');
       await expect(chip).toHaveCount(1);
-      await expect(page.locator('.codex-center-heading > .codex-generation-speed')).toHaveCount(1);
-      await expect(page.locator('.codex-message-list .codex-generation-speed')).toHaveCount(0);
-      assert.deepEqual(await page.locator('.codex-center-heading').evaluate(node => [...node.children].map(child => child.className)), ['codex-pane-color-picker', 'codex-generation-speed', 'codex-center-heading-copy']);
-      if (mobile) await expect(chip).toBeHidden();
-      else {
-        await expect(chip.locator('summary')).toHaveText('42.0 tok/s');
-        await chip.locator('summary').click();
-        await expect(chip.getByRole('tooltip')).toContainText('84 output tokens / 2.00 s');
-        await expect(chip.getByRole('tooltip')).toContainText('Includes 24 reasoning');
-        await chip.locator('summary').click();
-      }
+      await expect(page.locator('.codex-center-header .codex-generation-speed')).toHaveCount(0);
+      await expect(page.locator('.codex-conversation-dock > .codex-generation-speed')).toHaveCount(1);
+      assert.deepEqual(await page.locator('.codex-center-header').evaluate(node => [...node.children].map(child => child.className)), ['codex-center-title', 'codex-icon-button codex-pane-close']);
+      await expect(chip).toBeVisible();
+      await expect(chip.locator('summary')).toHaveText('42.0 tok/s');
+      await chip.locator('summary').click();
+      await expect(chip.getByRole('tooltip')).toContainText('84 output tokens / 2.00 s');
+      await expect(chip.getByRole('tooltip')).toContainText('Includes 24 reasoning');
+      await chip.locator('summary').click();
+      const speedBox = await chip.boundingBox();
+      const ballBox = await page.locator('.workbench-user-message-ball:visible').boundingBox();
+      const composerBox = await page.locator('.codex-composer-wrap').boundingBox();
+      const messagesBox = await page.locator('.codex-message-list').boundingBox();
+      assert.ok(speedBox.x + speedBox.width < ballBox.x);
+      assert.ok(speedBox.y >= messagesBox.y + messagesBox.height);
+      assert.ok(speedBox.y + speedBox.height <= composerBox.y);
       async function event(method, params, seq) {
         await page.evaluate(({ method, params, seq }) => {
           const socket = window.__previewSockets.findLast(socket => socket.readyState === 1 && socket.url.includes('codex'));

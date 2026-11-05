@@ -1,6 +1,7 @@
 import { requestedHomeLayout, consumeHomeRequest, paneWorkspaceProfile, rememberHomePaneOwner, revealActiveHomePane } from './home-session-selection';
 import { rememberKanbanReturn } from './kanban-navigation';
 import { useFolderUpload } from './attachment-preferences';
+import { projectColors } from './project-appearance';
 import { GenerationSpeed, latestGenerationMetrics } from './generation-speed';
 import { createSessionSearch } from './session-search';
 import { createWorkbenchTerminal } from './terminal-runtime';
@@ -9826,7 +9827,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         )
       );
     }
-    /** One rename dialog for both the session card menu and the pane header. */
+    /** Session renaming is available only from navigation session items. */
     function SessionTitleDialog({ target, dialogRef, inputRef, value, error, saving, onCancel, onChange, onSubmit }) {
       return (
         r(() => {
@@ -10022,7 +10023,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [Rs, Fl] = o(""),
         [yn, Fr] = o(null),
         [Y0, Pt] = o(""),
-        [paneColorMenu, setPaneColorMenu] = o(!1),
         [, bumpSessionColors] = o(0),
         [renameTarget, setRenameTarget] = o(null),
         [renameDraft, setRenameDraft] = o(""),
@@ -10048,7 +10048,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         Ul = s(new Map()),
         renameDialogRef = s(null),
         renameInputRef = s(null),
-        colorTrigger = s(null),
         Hi = s(!0),
         kr = s(M);
       ((kr.current = M),
@@ -10099,27 +10098,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           };
         }, []),
         r(() => {
-          if (!paneColorMenu) return;
-          const L = (ne) => {
-              (ne.target instanceof Element &&
-                ne.target.closest(".codex-pane-color-picker")) ||
-                setPaneColorMenu(!1);
-            },
-            U = (ne) => {
-              ne.key === "Escape" &&
-                (ne.preventDefault(),
-                setPaneColorMenu(!1),
-                colorTrigger.current?.focus());
-            };
-          return (
-            document.addEventListener("pointerdown", L),
-            document.addEventListener("keydown", U),
-            () => {
-              (document.removeEventListener("pointerdown", L),
-                document.removeEventListener("keydown", U));
-            }
-          );
-        }, [paneColorMenu]));
+          const update = (event) => {
+            if (event.detail.profile === M) V(groups => groups.map(group => group.id === event.detail.project.id ? event.detail.project : group));
+          };
+          window.addEventListener("workbench:project-appearance", update);
+          return () => window.removeEventListener("workbench:project-appearance", update);
+        }, [M]));
       const Hd = t(() => {
         const L = Zd.current;
         (L?.open && L.close(), We(null), kt(""));
@@ -10813,7 +10797,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         sv = Ye,
         ei = q.find((L) => L.id === k),
         PM = Ye.find((L) => L.id === B),
-        paneColor = k && !B ? sessionColor(M, k, ei?.color || "") : "";
+        paneProject = Z.find(project => project.id === ei?.groupId),
+        paneColor = projectColors[paneProject?.color || ""] || "";
       r(() => {
         if (!ei || !k) return;
         const L = k,
@@ -12836,127 +12821,24 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               className: "codex-center-header",
               "data-session-color": paneColor || void 0,
             },
-            paneColor
-              ? W(e, "span", {
-                  className: "codex-pane-color-bar",
-                  style: { background: paneColor },
-                  "aria-hidden": "true",
-                })
-              : null,
-            p
-              ? W(
-                  e,
-                  "button",
-                  {
-                    type: "button",
-                    className: "codex-icon-button codex-mobile-menu",
-                    onClick: () => {
-                      (Es(!0), wr ? w5() : Zr(!0));
-                    },
-                    "aria-label": runtimeText("打开会话列表", "Open sessions"),
-                  },
-                  st(e, "menu"),
-                )
-              : null,
-            W(
-              e,
-              "div",
-              { className: "codex-center-heading" },
-              k && !B
-                ? W(
-                    e,
-                    "div",
-                    { className: "codex-pane-color-picker" },
-                    W(
-                      e,
-                      "button",
-                      {
-                        type: "button",
-                        ref: colorTrigger,
-                        className: "codex-icon-button codex-pane-color-trigger",
-                        onClick: () => setPaneColorMenu((value) => !value),
-                        "aria-label": runtimeText("会话颜色", "Session color"),
-                        "aria-expanded": paneColorMenu,
-                        "aria-haspopup": "menu",
-                        title: runtimeText("会话颜色", "Session color"),
-                      },
-                      W(e, "span", {
-                        className: "codex-pane-color-dot",
-                        style: { background: paneColor },
-                        "aria-hidden": "true",
-                      }),
-                    ),
-                    paneColorMenu
-                      ? W(
-                          e,
-                          "div",
-                          {
-                            className: "codex-session-row-menu codex-pane-color-menu",
-                            role: "menu",
-                            "aria-label": runtimeText("会话颜色", "Session color"),
-                          },
-                          W(
-                            e,
-                            "div",
-                            {
-                              className: "codex-session-color-grid",
-                              role: "group",
-                              "aria-label": runtimeText("会话颜色", "Session color"),
-                            },
-                            ...renderSessionColorChoices(k, ei?.color || "", () =>
-                              setPaneColorMenu(!1),
-                            ),
-                            renderSessionColorCustom(k, ei?.color || "", () =>
-                              setPaneColorMenu(!1),
-                            ),
-                          ),
-                        )
-                      : null,
-                  )
-                : null,
-              !B && headerGenerationMetrics ? W(e, GenerationSpeed, { React: e, metrics: headerGenerationMetrics }) : null,
-              W(e, "div", { className: "codex-center-heading-copy" },
-              W(
-                e,
-                "strong",
-                { className: "codex-center-title", title: kv },
-                kv,
-              ),
-              k && !B
-                ? W(
-                    e,
-                    "button",
-                    {
-                      type: "button",
-                      className: "codex-icon-button codex-session-rename",
-                      onClick: () => openSessionRename(ei || { id: k }),
-                      "aria-label": runtimeText("重命名会话", "Rename session"),
-                      title: runtimeText("重命名会话", "Rename session"),
-                    },
-                    "✎",
-                  )
-                : null,
-              B
-                ? W(
-                    e,
-                    "span",
-                    {
-                      className:
-                        "codex-center-subtitle codex-hermes-history-read-only",
-                      "data-testid": "hermes-history-read-only",
-                    },
-                    runtimeText("Hermes 历史 · 只读", "Hermes history · Read-only"),
-                  )
-                : null,
-              ),
+            W(e, "strong", {
+              className: "codex-center-title", title: kv, "aria-label": kv,
+            },
+              !B ? W(e, "span", {
+                className: "codex-project-color-mark",
+                style: { color: paneColor || void 0 },
+                title: paneProject?.name || runtimeText("未整理", "Unorganized"),
+                "aria-hidden": "true",
+              }) : null,
+              kv,
             ),
-            _
-              ? W(
+            W(
                   e,
                   "button",
                   {
                     type: "button",
                     className: "codex-icon-button codex-pane-close",
+                    disabled: !_,
                     // Closing must not also activate the pane being removed.
                     onClick: (event) => {
                       event.stopPropagation();
@@ -12966,8 +12848,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     title: runtimeText("关闭当前窗格", "Close current pane"),
                   },
                   st(e, "close"),
-                )
-              : null,
+                ),
           ),
           uD,
           Y0
@@ -13009,6 +12890,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               form?.querySelector("input")?.focus({ preventScroll: true });
             },
           }, runtimeText("回答问题", "Answer questions")) : null,
+          !B ? W(e, "div", { className: "codex-conversation-dock" },
+            headerGenerationMetrics ? W(e, GenerationSpeed, { React: e, metrics: headerGenerationMetrics }) : null,
+          ) : null,
           B ? hD : nD,
           B ? null : lD,
         ),
