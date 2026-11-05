@@ -68,10 +68,6 @@ jobs:
           pnpm test
           env -u CODEX_APP_SERVER_ENDPOINT -u CODEX_HOME uv run --no-project --with-requirements requirements-dev.txt pytest -q tests
           pnpm build
-          # The release stamp changes the version embedded in the built bundle.
-          # Amend the release-only commit so packaging sees a clean tracked tree.
-          git add dashboard/dist
-          git diff --cached --quiet || git commit --amend --no-edit
           pnpm exec playwright install --with-deps chromium
           pnpm test:browser:mock
           pnpm history:check
