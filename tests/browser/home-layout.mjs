@@ -6,7 +6,7 @@ import { createMockHost } from './mock-host.mjs';
 
 const host = await createMockHost({ host: 'localhost' });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
-const shotDir = process.env.SHOT_DIR || 'artifacts/home-layout-20261105';
+const shotDir = process.env.SHOT_DIR || '/tmp/home-layout-evidence';
 await mkdir(shotDir, { recursive: true });
 
 const now = Math.floor(Date.now() / 1000);

@@ -16,8 +16,11 @@ Regenerate with:
 
 ```sh
 pnpm build
-pnpm test:browser:home-layout
+SHOT_DIR=artifacts/home-layout-20261105 pnpm test:browser:home-layout
 ```
+
+Without `SHOT_DIR`, test screenshots go to `/tmp/home-layout-evidence` so CI
+does not modify committed evidence before release packaging.
 
 - `settings-home-layout-mobile-390-light.png` and
   `settings-home-layout-mobile-390-dark.png`: settings at phone width.
