@@ -32,6 +32,11 @@ try {
   page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
   await page.route('**/api/plugins/workbench/profile-overview', route => route.fulfill({ json: { profiles } }));
   await page.route('**/api/profiles/sessions?*', route => route.fulfill({ json: { sessions: [], total: 0 } }));
+  // Exercise the gap between the immediate input reset and backend confirmation.
+  await page.route('**/api/plugins/workbench/home-layout?*', async route => {
+    if (route.request().method() === 'PUT') await new Promise(resolve => setTimeout(resolve, 150));
+    await route.continue();
+  });
 
   const columnCount = () => page.locator('.profile-overview-columns').evaluate(node => getComputedStyle(node).gridTemplateColumns.split(' ').length);
   const waitForHome = async () => {
@@ -77,13 +82,15 @@ try {
   await columnsInput.fill('7');
   await columnsInput.press('Tab');
   await page.waitForFunction(() => document.querySelector('[data-testid="home-layout-columns"]')?.value === '3');
+  await page.waitForFunction(() => document.querySelector('.home-layout-status')?.textContent?.includes('Default 3 restored and saved'));
   assert.match(await page.locator('.home-layout-status').innerText(), /Default 3 restored and saved/);
 
   await columnsInput.fill('4');
   await columnsInput.press('Tab');
+  await page.waitForFunction(() => document.querySelector('.home-layout-status')?.textContent?.includes('Saved') && !document.querySelector('[data-testid="home-layout-columns"]')?.disabled);
   await sessionsInput.fill('5');
   await sessionsInput.press('Tab');
-  await page.waitForFunction(() => document.querySelector('.home-layout-status')?.textContent?.includes('Saved'));
+  await page.waitForFunction(() => document.querySelector('.home-layout-status')?.textContent?.includes('Saved') && !document.querySelector('[data-testid="home-layout-sessions"]')?.disabled);
   assert.equal(await page.evaluate(() => localStorage.getItem('hermes.workbench.home-layout')), null,
     'Layout settings must not be stored in localStorage');
   const stored = await page.evaluate(async () => (await fetch('/api/plugins/workbench/home-layout?profile=default')).json());

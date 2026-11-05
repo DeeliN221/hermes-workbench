@@ -107,7 +107,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
     });
 
     for (const color of ['light', 'dark'] as const) {
-      test(`${color}: cached first paint, structured loading, compact rows and evidence`, async ({ page }) => {
+      test(`${color}: cached first paint, structured loading, compact rows and evidence`, async ({ page }, info) => {
         await page.addInitScript(theme => localStorage.setItem('hermes-dashboard-theme', `workbench-${theme}`), color);
         let release!: () => void;
         let request = 0;
@@ -121,11 +121,11 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
         const panel = page.locator('.quota-settings');
         await expect(panel.locator('.quota-skeleton-row')).toHaveCount(3);
         await expect(panel.getByRole('status')).toHaveText('Loading subscriptions…');
-        await page.screenshot({ path: `artifacts/subscription-allowances-compact/${label}-${color}-loading.png`, fullPage: true });
+        await page.screenshot({ path: info.outputPath(`${label}-${color}-loading.png`), fullPage: true });
         release();
         await expect(panel.locator('.quota-row')).toHaveCount(3);
         await expect(panel.locator('.quota-updated')).toHaveText(/^Updated /);
-        await page.screenshot({ path: `artifacts/subscription-allowances-compact/${label}-${color}-list.png`, fullPage: true });
+        await page.screenshot({ path: info.outputPath(`${label}-${color}-list.png`), fullPage: true });
 
         // A reload paints the persisted profile cache before the delayed request resolves.
         await page.reload({ waitUntil: 'domcontentloaded' });
@@ -133,7 +133,7 @@ for (const viewport of [{ width: 1440, height: 1000 }, { width: 390, height: 844
         await expect(page.locator('.quota-updated')).toHaveText(/^Updated /);
         await expect(page.locator('.quota-statusline')).toContainText('Refreshing in background');
         await expect(page.locator('.quota-statusline')).toContainText('Refresh complete');
-        await page.screenshot({ path: `artifacts/subscription-allowances-compact/${label}-${color}-cached.png`, fullPage: true });
+        await page.screenshot({ path: info.outputPath(`${label}-${color}-cached.png`), fullPage: true });
       });
     }
 
