@@ -605,7 +605,7 @@ def test_missing_identity_diagnostic_does_not_log_credentials(sidecar, caplog):
     assert 'proxy-secret' not in caplog.text
 
 
-@pytest.mark.parametrize('peer', ['127.0.0.1', '192.168.32.1', '203.0.113.8'])
+@pytest.mark.parametrize('peer', ['127.0.0.1', '192.0.2.1', '203.0.113.8'])
 def test_peer_address_never_grants_authentication(sidecar, peer):
     module, _ = sidecar
     gate = module.TrustedProxyGate(None)
