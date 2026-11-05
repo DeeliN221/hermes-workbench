@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   finalDeliverables,
+  declaredDeliverables,
   sessionEntries,
   stageReport,
   type Artifact,
@@ -87,56 +88,22 @@ describe("review focus material", () => {
   });
 });
 
-describe("execution session entry points", () => {
-  it("opens same-instance sessions locally and builds a safe remote chat link", () => {
-    const local = sessionEntries({
-      ...base,
-      conversation_id: "local-1", conversation_profile: "writer", conversation_kind: "codex", conversation_local: true,
-      machine: "dev-box",
-    });
-    expect(local[0]).toMatchObject({ canOpen: true, local: true, device: "dev-box", remoteUrl: "" });
-
-    const remote = sessionEntries({
-      ...base,
-      machine: "nas",
-      conversation_id: "remote-1", conversation_profile: "default", conversation_kind: "codex", conversation_local: false,
-      conversation_machine: "nas",
-      conversation_workbench_url: "https://nas.example-tailnet.ts.net/",
-    });
-    expect(remote[0]).toMatchObject({
-      canOpen: true,
-      local: false,
-      device: "nas",
-      remoteUrl: "https://nas.example-tailnet.ts.net/chat?session=remote-1&profile=default",
-    });
-  });
-
-  it("never emits remote links with credentials, tokens or unresolved local paths", () => {
-    const unsafe = [
-      "https://user:pass@nas.example/chat",
-      "https://nas.example/chat?token=secret",
-      "/home/user/workbench",
-      "nas.local:3000",
-    ];
-    for (const conversation_workbench_url of unsafe) {
-      const [entry] = sessionEntries({
-        ...base,
-        machine: "nas",
-        conversation_id: "remote-1", conversation_profile: "default", conversation_kind: "codex", conversation_local: false,
-        conversation_workbench_url,
-      });
-      expect(entry.remoteUrl).toBe("");
-      expect(entry.canOpen).toBe(false);
+describe("execution session metadata is never authorization", () => {
+  it("never opens from local flags, done status, or task-provided URLs", () => {
+    for (const status of ["review", "done", "archived"] as const) {
+      for (const local of [true, false]) {
+        const [entry] = sessionEntries({ ...base, status, conversation_id: "thread", conversation_kind: "codex",
+          conversation_local: local, machine: "nas", conversation_workbench_url: "https://evil.example" });
+        expect(entry).toMatchObject({ id: "thread", device: "nas", canOpen: false, remoteUrl: "" });
+      }
     }
   });
-
-  it("uses a recorded MagicDNS machine name as the remote Workbench base", () => {
-    const [entry] = sessionEntries({
-      ...base,
-      machine: "nas.tailnet-example.ts.net",
-      conversation_id: "remote-1", conversation_profile: "default", conversation_kind: "codex", conversation_local: false,
-    });
-    expect(entry.device).toBe("nas.tailnet-example.ts.net");
-    expect(entry.remoteUrl).toBe("https://nas.tailnet-example.ts.net/chat?session=remote-1&profile=default");
+  it("distinguishes a deliverable requirement from evidence and retains all artifact URLs", () => {
+    const task = { ...base, deliverables: "PR/commit and screenshots required" };
+    expect(declaredDeliverables(task)).toBe(true);
+    expect(finalDeliverables(task)).toEqual([]);
+    const rows = finalDeliverables(task, Array.from({ length: 6 }, (_, i) => ({ id: `a${i}`, task_id: task.id,
+      kind: "url", name: `URL ${i}`, external_url: `https://example.com/${i}`, size: 0, content_type: "text/plain" })));
+    expect(rows).toHaveLength(6);
   });
 });

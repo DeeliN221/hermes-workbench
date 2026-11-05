@@ -14,6 +14,7 @@ import {
   delivered,
   durationMinutes,
   finalDeliverables,
+  declaredDeliverables,
   hasStarted,
   expired,
   isZombieRunning,
@@ -115,9 +116,9 @@ export function createTaskControlTower(
           return row.url
             ? h("a", { key: row.id, className: "tower-delivery-row", href: row.url, target: "_blank", rel: "noopener noreferrer" }, body, h("span", { "aria-hidden": "true" }, "↗"))
             : h("button", {
-                key: row.id, type: "button", className: "tower-delivery-row", disabled: busy || !row.artifact,
+                key: row.id, type: "button", className: "tower-delivery-row", disabled: busy || !row.artifact?.download_url,
                 onClick: () => row.artifact && onDownload(row.artifact),
-              }, body, h("span", { "aria-hidden": "true" }, "↓"));
+              }, body, h("span", { "aria-hidden": "true" }, row.artifact?.download_url ? "↓" : "—"));
         })));
     }
     const report = stageReport(task);
@@ -129,52 +130,42 @@ export function createTaskControlTower(
     }
     return h("section", { className: "tower-delivery tower-review-empty", "data-review-material": "empty", role: "status" },
       h("h3", null, tr("审核重点", "Review focus")),
-      h("p", { className: "tower-review-warning" }, tr("暂无交付物/阶段报告", "No final deliverable or stage report")),
+      h("p", { className: "tower-review-warning" }, declaredDeliverables(task) ? tr("已声明交付物、未上传证据", "Deliverables declared; evidence not uploaded") : tr("暂无交付物/阶段报告", "No final deliverable or stage report")),
       h("p", { className: "tower-muted" }, tr("请通过执行会话核对，或要求执行者补充后再确认。", "Check the execution session or ask the worker to add delivery details before approving.")));
   }
 
   function SessionLinks({ task, profile, navigate }: { task: Task; profile: string; navigate: (path: string, profile: string) => void }) {
-    const [copied, setCopied] = useState("");
     const entries = sessionEntries(task);
-    const copy = async (key: string, value: string) => {
-      try { await navigator.clipboard.writeText(value); setCopied(key); }
-      catch { setCopied(`${key}:error`); }
-    };
-    const openLocal = (entry: ReturnType<typeof sessionEntries>[number]) =>
-      navigate(`/chat?${entry.kind === "hermes" ? "hermesSession" : "session"}=${encodeURIComponent(entry.id)}`, entry.profile || profile);
+    type Target = { state: string; id?: string; profile?: string; kind?: string; remoteUrl?: string };
+    const [resolved, setResolved] = useState({} as Record<string, Target>);
+    const signature = JSON.stringify(entries.map(e => [e.label, e.id, e.profile || profile, e.device, e.kind]));
+    useEffect(() => {
+      let disposed = false;
+      setResolved({});
+      void Promise.all(entries.map(async entry => {
+        const key = `${entry.label}:${entry.id}:${entry.profile || profile}:${entry.device}:${entry.kind}`;
+        const query = new URLSearchParams({ conversation_id: entry.id, profile: entry.profile || profile, device: entry.device, kind: entry.kind });
+        let target: Target;
+        try { target = await sdk.fetchJSON<Target>(`/api/plugins/workbench/fleetd/session-target?${query}`, { cache: "no-store", signal: AbortSignal.timeout(8000) }); }
+        catch { target = { state: "unavailable" }; }
+        if (!disposed) setResolved(previous => ({ ...previous, [key]: target }));
+      }));
+      return () => { disposed = true; };
+    }, [signature]);
     if (!entries.length) return h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")), h("p", { className: "tower-muted" }, tr("未记录执行会话", "No execution session recorded")));
     return h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
-      ...entries.map((entry) => {
-        const key = `${entry.label}:${entry.id}`;
-        const title = entry.label === "source" ? tr("来源会话", "Source conversation") : tr("执行会话", "Execution conversation");
-        const fallback = () => {
-          const query = entry.kind === "hermes" ? "hermesSession" : "session";
-          const profileQuery = entry.profile ? `&profile=${encodeURIComponent(entry.profile)}` : "";
-          return h("div", { className: "tower-session-fallback" },
-            h("p", null, tr(`会话位于设备 ${entry.device || "未记录"}；此入口未配置可访问的远程地址。`, `This session is on ${entry.device || "an unrecorded device"}; no reachable remote address is configured.`)),
-            h("div", { className: "tower-session-fallback-actions" },
-              btn(copied === key ? tr("已复制", "Copied") : copied === `${key}:error` ? tr("复制失败", "Copy failed") : tr("复制会话 ID", "Copy session ID"), () => void copy(key, entry.id)),
-              h("a", { href: `/chat?${query}=${encodeURIComponent(entry.id)}${profileQuery}`, target: "_blank", rel: "noopener noreferrer" }, tr("打开 Workbench + 会话 ID", "Open Workbench + session ID"))));
-        };
-        let action: any;
-        if (entry.local) {
-          action = btn(tr("继续执行会话 →", "Continue execution session →"), () => openLocal(entry), { className: "tower-session-open" });
-        } else if (entry.remoteUrl) {
-          action = h("div", { className: "tower-session-remote-row" },
-            h("a", { href: entry.remoteUrl, target: "_blank", rel: "noopener noreferrer", className: "tower-session-remote" }, tr("打开远程 Workbench →", "Open remote Workbench →")),
-            btn(copied === key ? tr("已复制", "Copied") : copied === `${key}:error` ? tr("复制失败", "Copy failed") : tr("复制链接", "Copy link"), () => void copy(key, entry.remoteUrl), { "aria-label": tr("复制远程会话链接", "Copy remote session link") }));
-        } else if (entry.canOpen) {
-          action = h(sdk.React.Fragment, null,
-            entry.remote ? fallback() : null,
-            btn(tr("打开执行会话 →", "Open execution session →"), () => openLocal(entry), { className: "tower-session-open" }));
-        } else {
-          action = fallback();
-        }
+      ...entries.map(entry => {
+        const key = `${entry.label}:${entry.id}:${entry.profile || profile}:${entry.device}:${entry.kind}`;
+        const target = resolved[key];
+        const available = target?.state === "available" && target.kind === "codex" && target.profile === (entry.profile || profile) && !!target.id;
         return h("div", { className: "tower-session-entry", key, "data-session": entry.label },
-          h("div", { className: "tower-session-heading" }, h("h4", null, title),
+          h("div", { className: "tower-session-heading" }, h("h4", null, entry.label === "source" ? tr("来源会话", "Source conversation") : tr("执行会话", "Execution conversation")),
             h("span", { className: "tower-session-device" }, `${tr("设备", "Device")} · ${entry.device || tr("未记录", "Not recorded")}`)),
           h("small", { className: "tower-session-id" }, `ID ${entry.id}`),
-          action);
+          available ? target.remoteUrl
+            ? h("a", { href: target.remoteUrl, target: "_blank", rel: "noopener noreferrer", className: "tower-session-remote" }, tr("打开远程 Workbench →", "Open remote Workbench →"))
+            : btn(tr("继续执行会话 →", "Continue execution session →"), () => navigate(`/chat?session=${encodeURIComponent(target.id!)}`, target.profile!), { className: "tower-session-open" })
+            : btn(!target ? tr("正在验证会话…", "Checking session…") : target.state === "archived" ? tr("会话已归档", "Session archived") : tr("会话不可用", "Session unavailable"), () => {}, { disabled: true, className: "tower-session-open" }));
       }));
   }
   function SpecDetails({ task }: { task: Task }) {
@@ -1145,7 +1136,8 @@ export function createTaskControlTower(
                             h(
                               "div",
                               { key: a.id },
-                              h("strong", null, a.name),
+                              h("strong", null, a.name || a.sha || a.id),
+                              a.sha ? h("code", null, a.sha) : null,
                               h(
                                 "span",
                                 { className: "tower-muted" },
@@ -1175,7 +1167,7 @@ export function createTaskControlTower(
                                               })),
                                         ),
                                       ),
-                                    { disabled: busy || !!t?.read_only },
+                                    { disabled: busy || !!t?.read_only || !a.download_url },
                                   ),
                             ),
                           ),
