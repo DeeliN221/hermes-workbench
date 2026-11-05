@@ -23,7 +23,9 @@ const MAX_IIFE_BYTES = 2 * 1024 * 1024;
 // Accessible project menus and guarded long-press creation add <1 KiB gzip.
 // Final-deliverable/stage-report UI and status-scoped cursor polling share the
 // unchanged raw 2 MiB cap and SDK boundary. Polling adds <1 KiB gzip.
-const MAX_IIFE_GZIP_BYTES = 643 * 1024;
+// Profile-scoped allowance snapshots and the compact row/drawer controls add
+// another small block; keep the raw cap and one-chunk/SDK checks fixed.
+const MAX_IIFE_GZIP_BYTES = 645 * 1024;
 const FORBIDDEN_REACT_IMPORT = /^(?:react(?:\/.*)?|react-dom(?:\/.*)?)$/;
 const EMBEDDED_REACT_FINGERPRINTS = [
   '__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED',

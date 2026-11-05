@@ -1,76 +1,169 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, test, vi } from 'vitest';
 import { mountQuotaDashboard } from '../dashboard/src/quota-dashboard';
-const payload = { providers: ['opencode', 'gemini', 'openai'].map(id => ({
-  id, description: 'Plan unverified', name: id, service: id, plan: 'Test plan', adapter: id === 'openai' ? 'codex' : 'unsupported', enabled: true, status: id === 'openai' ? 'available' : 'unavailable', reason: 'Verified fixture',
-  windows: id === 'openai' ? [{ minutes: 300, remainingPercent: 75, resetsAt: '2030-01-01T00:00:00Z' }] : [],
-  updatedAt: id === 'openai' ? '2030-01-01T00:00:00Z' : null, checkedAt: '2030-01-01T00:00:00Z',
-})) };
-afterEach(() => { document.body.replaceChildren(); vi.useRealTimers(); });
-test('shows three providers, actual windows, missing weekly data and refresh status', async () => {
-  const fetcher = vi.fn().mockResolvedValue(new Response(JSON.stringify(payload)));
+
+const entry = (id: string, name: string) => ({
+  id, name, service: name.split(' ')[0], plan: 'Test plan', adapter: 'unsupported' as const, preset: null,
+  enabled: true, minutes: 300, resetsAt: null, amount: null, limit: null, mode: 'remaining' as const, unit: 'credits', observedAt: null,
+});
+const provider = (id: string, name: string, windows: { minutes: number; remainingPercent: number; resetsAt: string | null }[], status = 'available') => ({
+  id, name, service: name.split(' ')[0], plan: 'Test plan', adapter: 'unsupported' as const, enabled: true, status, reason: 'Fixture reason', source: 'Provider fixture',
+  windows, updatedAt: '2030-01-01T00:00:00Z', checkedAt: '2030-01-01T00:00:00Z',
+});
+const payload = {
+  providers: [
+    provider('gemini', 'Gemini AI Pro', [{ minutes: 300, remainingPercent: 88, resetsAt: '2030-01-01T00:00:00Z' },
+      { minutes: 10080, remainingPercent: 69, resetsAt: '2030-01-07T00:00:00Z' }]),
+    provider('zero', 'Zero balance', [{ minutes: 300, remainingPercent: 0, resetsAt: null }]),
+    provider('opencode', 'OpenCode Go', [], 'unavailable'),
+  ],
+  entries: [entry('gemini', 'Gemini AI Pro'), entry('zero', 'Zero balance'), entry('opencode', 'OpenCode Go')],
+  revision: 1,
+  presets: [],
+};
+const snapshot = (profile: string, name = 'Cached service') => ({
+  profile,
+  providers: [provider(`cached-${profile}`, name, [{ minutes: 300, remainingPercent: 42, resetsAt: null }])],
+  entries: [entry(`cached-${profile}`, name)], revision: 3, configured: true, presets: [],
+  savedAt: new Date().toISOString(),
+});
+const cacheKey = (profile: string) => `hermes.workbench.quota-cache.v1:${profile}`;
+const json = (value: object) => new Response(JSON.stringify(value));
+
+afterEach(() => { document.body.replaceChildren(); window.localStorage.clear(); vi.useRealTimers(); });
+
+test('renders the last successful cache immediately and refreshes in the background', async () => {
+  window.localStorage.setItem(cacheKey('default'), JSON.stringify(snapshot('default')));
+  const fetcher = vi.fn(() => new Promise<Response>(() => {}));
   const root = document.createElement('div'); document.body.append(root);
   const dispose = mountQuotaDashboard(root, fetcher);
-  await vi.waitFor(() => expect(root.textContent).toContain('1 of 3 providers available'));
-  expect(root.querySelectorAll('article')).toHaveLength(3);
-  expect(root.textContent).toContain('75% remaining');
-  expect(root.textContent).toContain('Weekly windowUnavailable');
-  expect(root.textContent).toContain('Plan unverified');
-  dispose();
-});
-test('coalesces clicks and sends explicit refresh after completion', async () => {
-  let resolve!: (value: Response) => void;
-  const fetcher = vi.fn().mockImplementation(() => new Promise(r => { resolve = r; }));
-  const root = document.createElement('div');
-  const dispose = mountQuotaDashboard(root, fetcher);
-  const button = root.querySelector('button')!;
-  button.click(); button.click();
+  expect(root.querySelector('.quota-row-name')?.textContent).toBe('Cached service');
+  expect(root.querySelector('.quota-row-summary')?.textContent).toBe('5h 42%');
+  expect(root.querySelector('.quota-updated')?.textContent).toMatch(/^Updated /);
+  expect(root.textContent).toContain('Refreshing in background');
   expect(fetcher).toHaveBeenCalledTimes(1);
-  resolve(new Response(JSON.stringify(payload)));
-  await vi.waitFor(() => expect(button.disabled).toBe(false));
-  button.click();
-  expect(fetcher.mock.calls[1][0]).toContain('refresh=true');
-  resolve(new Response(JSON.stringify(payload)));
-  await vi.waitFor(() => expect(button.disabled).toBe(false));
-  dispose();
-});
-test('failed refresh removes stale numbers and exposes retry without upstream secrets', async () => {
-  const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify(payload))).mockRejectedValueOnce(new Error('PRIVATE'));
-  const root = document.createElement('div');
-  const dispose = mountQuotaDashboard(root, fetcher);
-  await vi.waitFor(() => expect(root.textContent).toContain('75% remaining'));
-  root.querySelector('button')!.click();
-  await vi.waitFor(() => expect(root.textContent).toContain('Refresh failed'));
-  expect(root.textContent).not.toContain('75% remaining');
-  expect(root.textContent).not.toContain('PRIVATE');
-  expect(root.querySelector('button')!.disabled).toBe(false);
   dispose();
 });
 
-test('arbitrary providers and an empty list need no built-in IDs', async () => {
-  const root = document.createElement('div');
-  const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ providers: [{
-    id: 'independent-account', name: 'Fourth service', service: 'Example', plan: 'Team', adapter: 'manual', enabled: true,
-    status: 'available', reason: 'Manual', windows: [], updatedAt: null, checkedAt: null,
-    manual: { amount: 8, limit: null, unit: 'requests', mode: 'used', minutes: 43200, resetsAt: null },
-  }], entries: [], revision: 0 }))).mockResolvedValueOnce(new Response(JSON.stringify({ providers: [], entries: [], revision: 1 })));
-  const dispose = mountQuotaDashboard(root, fetcher);
-  await vi.waitFor(() => expect(root.textContent).toContain('1 of 1 providers available'));
-  expect(root.textContent).toContain('Fourth service');
-  expect(root.textContent).toContain('8 requests used');
-  root.querySelector('button')!.click();
-  await vi.waitFor(() => expect(root.textContent).toContain('0 of 0 providers available'));
-  expect(root.textContent).toContain('No subscriptions');
-  expect(root.querySelectorAll('article')).toHaveLength(0);
-  dispose();
-});
-
-test('save conflicts keep the editor and do not claim a successful write', async () => {
+test('shows structured skeleton rows immediately when there is no cache', () => {
+  const fetcher = vi.fn(() => new Promise<Response>(() => {}));
   const root = document.createElement('div'); document.body.append(root);
-  const fetcher = vi.fn().mockResolvedValueOnce(new Response(JSON.stringify({ providers: [], entries: [], revision: 7 })))
+  const dispose = mountQuotaDashboard(root, fetcher);
+  expect(root.querySelectorAll('.quota-skeleton-row')).toHaveLength(3);
+  expect(root.textContent).toContain('Loading subscriptions');
+  expect(root.querySelector('.quota-statusline')?.textContent).not.toBe('Refreshing…');
+  dispose();
+});
+
+test('failed refresh keeps cached rows and offers an inline retry', async () => {
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(json(payload))
+    .mockRejectedValueOnce(new Error('PRIVATE network error'))
+    .mockResolvedValueOnce(json(payload));
+  const root = document.createElement('div'); document.body.append(root);
+  const dispose = mountQuotaDashboard(root, fetcher);
+  await vi.waitFor(() => expect(root.querySelector('.quota-row-summary')?.textContent).toContain('5h 88%'));
+  (root.querySelector('.quota-toolbar button') as HTMLButtonElement).click();
+  await vi.waitFor(() => expect(root.textContent).toContain('Refresh failed'));
+  expect(root.querySelector('.quota-row-summary')?.textContent).toContain('5h 88%');
+  expect(root.textContent).not.toContain('PRIVATE');
+  const retry = [...root.querySelectorAll<HTMLButtonElement>('.quota-error button')][0];
+  expect(retry.textContent).toBe('Retry');
+  retry.click();
+  await vi.waitFor(() => expect(root.textContent).toContain('Refresh complete'));
+  expect(root.querySelector('.quota-row-summary')?.textContent).toContain('5h 88%');
+  dispose();
+});
+
+test('cache is scoped by profile and never shows another profile data', async () => {
+  window.localStorage.setItem(cacheKey('alpha'), JSON.stringify(snapshot('alpha', 'Alpha service')));
+  const fetcher = vi.fn().mockResolvedValue(json({
+    providers: [provider('beta', 'Beta service', [{ minutes: 300, remainingPercent: 33, resetsAt: null }])],
+    entries: [entry('beta', 'Beta service')], revision: 2, presets: [],
+  }));
+  const root = document.createElement('div'); document.body.append(root);
+  const dispose = mountQuotaDashboard(root, fetcher, { profile: 'beta' });
+  expect(root.textContent).not.toContain('Alpha service');
+  await vi.waitFor(() => expect(root.querySelector('.quota-row-name')?.textContent).toBe('Beta service'));
+  expect(fetcher.mock.calls[0][0]).toContain('profile=beta');
+  expect(window.localStorage.getItem(cacheKey('alpha'))).toContain('Alpha service');
+  expect(window.localStorage.getItem(cacheKey('beta'))).toContain('Beta service');
+  dispose();
+});
+
+test('renders one compact text row per subscription and keeps truthful zero and unknown values', async () => {
+  const root = document.createElement('div'); document.body.append(root);
+  const dispose = mountQuotaDashboard(root, vi.fn().mockResolvedValue(json(payload)));
+  await vi.waitFor(() => expect(root.querySelectorAll('.quota-row')).toHaveLength(3));
+  const rows = [...root.querySelectorAll('.quota-row')];
+  expect(rows.map(row => row.querySelector('.quota-row-name')?.textContent)).toEqual(['Gemini AI Pro', 'Zero balance', 'OpenCode Go']);
+  expect(rows[0].querySelector('.quota-row-summary')?.textContent).toBe('5h 88% · Weekly 69%');
+  expect(rows[1].querySelector('.quota-row-summary')?.textContent).toBe('5h 0%');
+  expect(rows[2].querySelector('.quota-row-summary')?.textContent).toBe('Unavailable');
+  expect(root.querySelectorAll('meter, progress')).toHaveLength(0);
+  expect(root.querySelector('.quota-card')).toBeNull();
+  expect(root.textContent).not.toContain('Source:');
+  expect(root.textContent).not.toContain('Available');
+  expect(root.textContent).not.toContain('Edit');
+  expect(root.textContent).not.toContain('Move up');
+  expect(root.textContent).not.toContain('Last checked');
+  expect(root.querySelectorAll('.quota-updated')).toHaveLength(1);
+  dispose();
+});
+
+test('row menu and detail drawer hold edit, disable, delete and ordering actions', async () => {
+  const root = document.createElement('div'); document.body.append(root);
+  const dispose = mountQuotaDashboard(root, vi.fn().mockResolvedValue(json(payload)));
+  await vi.waitFor(() => expect(root.querySelectorAll('.quota-row')).toHaveLength(3));
+  const firstRow = root.querySelector('.quota-row') as HTMLElement;
+  (firstRow.querySelector('.quota-row-menu-button') as HTMLButtonElement).click();
+  const menu = firstRow.querySelector('.quota-menu') as HTMLElement;
+  expect(menu.hidden).toBe(false);
+  expect(menu.textContent).toContain('Edit');
+  expect(menu.textContent).toContain('Disable');
+  expect(menu.textContent).toContain('Move up');
+  expect(menu.textContent).toContain('Move down');
+  expect(menu.textContent).toContain('Delete');
+  (firstRow.querySelector('.quota-row-open') as HTMLButtonElement).click();
+  const drawer = root.querySelector('[role=dialog]') as HTMLElement;
+  expect(drawer).not.toBeNull();
+  expect(drawer.textContent).toContain('Gemini AI Pro');
+  expect(drawer.textContent).toContain('Source:');
+  expect(drawer.textContent).toContain('Reset:');
+  (drawer.querySelector('[aria-label="Close details"]') as HTMLButtonElement).click();
+  expect(root.querySelector('[role=dialog]')).toBeNull();
+  dispose();
+});
+
+test('delete requires explicit confirmation before writing', async () => {
+  const fetcher = vi.fn((_url: string, init?: RequestInit) => {
+    if (init?.method === 'PUT') return Promise.resolve(json({ entries: payload.entries.slice(1), revision: 2 }));
+    return Promise.resolve(json(payload));
+  });
+  const root = document.createElement('div'); document.body.append(root);
+  const dispose = mountQuotaDashboard(root, fetcher as typeof fetch);
+  await vi.waitFor(() => expect(root.querySelectorAll('.quota-row')).toHaveLength(3));
+  const firstRow = root.querySelector('.quota-row') as HTMLElement;
+  (firstRow.querySelector('.quota-row-menu-button') as HTMLButtonElement).click();
+  const deleteItem = [...firstRow.querySelectorAll<HTMLButtonElement>('.quota-menu-item')].find(item => item.textContent === 'Delete…')!;
+  deleteItem.click();
+  const confirm = root.querySelector('[role=dialog]') as HTMLElement;
+  expect(confirm.textContent).toContain('This cannot be undone');
+  expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(false);
+  const confirmButton = [...confirm.querySelectorAll<HTMLButtonElement>('button')].find(item => item.textContent === 'Confirm delete')!;
+  confirmButton.click();
+  await vi.waitFor(() => expect(fetcher.mock.calls.some(([, init]) => init?.method === 'PUT')).toBe(true));
+  const put = fetcher.mock.calls.find(([, init]) => init?.method === 'PUT')!;
+  expect(JSON.parse((put[1] as RequestInit).body as string).entries.map((item: Entry) => item.id)).toEqual(['zero', 'opencode']);
+  dispose();
+});
+
+test('a save conflict keeps the editor and does not claim a successful write', async () => {
+  const root = document.createElement('div'); document.body.append(root);
+  const fetcher = vi.fn().mockResolvedValueOnce(json({ providers: [], entries: [], revision: 7 }))
     .mockResolvedValueOnce(new Response('{}', { status: 409 }));
   const dispose = mountQuotaDashboard(root, fetcher);
-  const findButton = (text: string) => [...root.querySelectorAll('button')].find(b => b.textContent === text)!;
+  const findButton = (text: string) => [...root.querySelectorAll('button')].find(item => item.textContent === text)!;
   await vi.waitFor(() => expect(findButton('Add subscription').disabled).toBe(false));
   findButton('Add subscription').click();
   const inputs = root.querySelectorAll<HTMLInputElement>('input');
@@ -89,27 +182,23 @@ test('save conflicts keep the editor and do not claim a successful write', async
   dispose();
 });
 
-test.each(['gemini', 'opencode'])('%s shows source, provider error and refresh recovery', async id => {
-  const provider = { id, name: id, service: id, plan: '', adapter: 'unsupported', enabled: true,
-    status: 'available', source: id === 'gemini' ? "agy -p '/usage' · Gemini Models" : 'OpenCode Go · GET /zen/go/v1/usage',
-    reason: 'Provider fixture', windows: [{ minutes: 300, remainingPercent: 85, resetsAt: '2030-01-01T00:00:00Z' }],
-    updatedAt: '2030-01-01T00:00:00Z', checkedAt: '2030-01-01T00:00:00Z' };
-  const reply = (value: object) => new Response(JSON.stringify({ providers: [value] }));
-  const fetcher = vi.fn().mockResolvedValueOnce(reply(provider)).mockResolvedValueOnce(reply({ ...provider,
+test.each(['gemini', 'opencode'])('%s shows provider failure in the compact row and recovers', async id => {
+  const first = provider(id, id, [{ minutes: 300, remainingPercent: 85, resetsAt: '2030-01-01T00:00:00Z' }]);
+  const reply = (value: object) => json({ providers: [value], entries: [entry(id, id)], revision: 1 });
+  const fetcher = vi.fn().mockResolvedValueOnce(reply(first)).mockResolvedValueOnce(reply({ ...first,
     status: id === 'gemini' ? 'timeout' : 'login_required', reason: 'Configure the server connection then Refresh.',
-    windows: [], updatedAt: null })).mockResolvedValueOnce(reply(provider));
-  const root = document.createElement('div');
+    windows: [], updatedAt: null })).mockResolvedValueOnce(reply(first));
+  const root = document.createElement('div'); document.body.append(root);
   const dispose = mountQuotaDashboard(root, fetcher);
-  await vi.waitFor(() => expect(root.textContent).toContain('85% remaining'));
-  expect(root.textContent).toContain(`Source: ${provider.source}`);
-  if (id === 'opencode') expect(root.textContent).toContain('Monthly window');
-  const refresh = root.querySelector('button')!;
+  await vi.waitFor(() => expect(root.querySelector('.quota-row-summary')?.textContent).toBe('5h 85%'));
+  const refresh = root.querySelector('.quota-toolbar button') as HTMLButtonElement;
   refresh.click();
   expect(refresh.disabled).toBe(true);
-  expect(root.textContent).toContain('Refreshing…');
-  await vi.waitFor(() => expect(root.textContent).toContain(id === 'gemini' ? 'Timed out' : 'Login required'));
-  expect(root.textContent).not.toContain('85% remaining');
+  await vi.waitFor(() => expect(root.querySelector('.quota-row-summary')?.textContent).toBe(id === 'gemini' ? 'Timed out' : 'Login required'));
+  expect(root.textContent).not.toContain('0%');
   refresh.click();
-  await vi.waitFor(() => expect(root.textContent).toContain('85% remaining'));
+  await vi.waitFor(() => expect(root.querySelector('.quota-row-summary')?.textContent).toBe('5h 85%'));
   dispose();
 });
+
+type Entry = ReturnType<typeof entry>;
