@@ -17,7 +17,7 @@ const result = await build({ configFile: false, logLevel: 'error',
 const hostScript = result[0].output.find(asset => asset.type === 'chunk').code;
 const host = await createMockHost({ host: 'localhost' });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
-const output = process.env.SHOT_DIR || 'artifacts/home-selection';
+const output = process.env.SHOT_DIR || 'node_modules/.cache/home-selection';
 await mkdir(output, { recursive: true });
 try {
   for (const mobile of [false, true]) for (const theme of ['light', 'dark']) {

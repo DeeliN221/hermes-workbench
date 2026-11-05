@@ -18,6 +18,8 @@ pnpm build
 node tests/browser/home-session-selection.mjs
 ```
 
+Default test screenshots go to `node_modules/.cache/home-selection`, keeping tracked delivery evidence unchanged during CI. To refresh the committed evidence deliberately, set `SHOT_DIR=artifacts/home-selection`.
+
 The focused Playwright harness mounts the host router before Workbench and checks desktop light/dark at 1440x900 and phone light/dark at 390x844. It covers selection without navigation, deselection, clear, Space/Escape, transient selection on reload, mixed Codex/Hermes sessions with identical ids across profiles, selection order, the three-session union limit, confirmation clearing, persisted pane profiles/order, already-open markers and focus, closing/reloading/reopening, drag/drop below and at capacity, card dimensions and horizontal overflow. Phone checks also verify that the active conversation is visible in the existing horizontal pane strip.
 
 The optional installation development policy points at a different workspace on the verification machine. For this isolated clone only, the build uses `XDG_CONFIG_HOME="$PWD/.local-config"`; it writes generated assets only under this checkout. Browser runs use the preinstalled Chromium headless shell via `CHROMIUM_EXECUTABLE_PATH`.
