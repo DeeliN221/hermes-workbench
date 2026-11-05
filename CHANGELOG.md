@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Retry GitHub release catalog reads after incomplete responses, timeouts, TLS failures, and malformed JSON, then fall back to the last successful in-memory or on-disk catalog so the version page keeps returning local and previously published releases with a warning instead of HTTP 500.
 - Read the OpenCode Go catalog from the officially documented inference endpoint, accept OPENCODE_API_KEY as a server-side credential alongside the private auth file, and document the official Go API, plan limits, and OpenCodex provider setup with a credential-free, idempotent scripts/configure-opencode-go.py helper. Fetch the public catalog without sending keys or cookies.
 - Put the completed-task checkbox beside the card title and shorten the completed-column actions to Select, Clear, Archive, and Show archived.
 - Prioritize final PR/commit/demo/report links in task review, fall back to a locally rendered Mermaid stage report, and replace passive execution-session text with direct local or remote Workbench entry points.

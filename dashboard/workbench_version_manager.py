@@ -5,11 +5,14 @@ import asyncio
 import fcntl
 import uuid
 import hashlib
+import http.client
 import io
 import json
+import logging
 import os
 import re
 import shutil
+import ssl
 import tarfile
 import tempfile
 import threading
@@ -38,8 +41,19 @@ _lock = threading.Lock()
 _catalog_lock = threading.Lock()
 _admission_lock = threading.Lock()
 _active_mutations = 0
-_catalog: tuple[float, list[dict]] = (0, [])
+# (monotonic fetch/attempt time, release rows, warning when rows are stale)
+_catalog: tuple[float, list[dict], str | None] = (0, [], None)
+_CATALOG_TTL = 300
+_CATALOG_FAILURE_TTL = 30
+_URL_ATTEMPTS = 3
+_JSON_ATTEMPTS = 3
+_sleep = time.sleep
+logger = logging.getLogger(__name__)
 _TERMINAL_THREAD_STATUSES = {'idle', 'notLoaded', 'systemError'}
+
+
+class ReleaseCatalogUnavailable(RuntimeError):
+    """The remote GitHub release catalog could not be read."""
 
 
 def managed_store() -> ReleaseStore | None:
@@ -177,68 +191,202 @@ def _manifest_version() -> str:
         return 'unknown'
 
 
+def _retry_delay(attempt: int) -> float:
+    return min(0.5 * (2 ** attempt), 4.0)
+
+
+def _fetch_url(request: urllib.request.Request, limit: int, progress, attempt: int) -> bytes:
+    with urllib.request.urlopen(request, timeout=20) as response:
+        length = response.headers.get('Content-Length')
+        total = int(length) if length and length.isdigit() else None
+        if total is not None and total > limit:
+            raise ValueError('Release response exceeds size limit')
+        chunks, received = [], 0
+        if progress:
+            progress(stage='downloading', received=0, total=total, attempt=attempt + 1)
+        while True:
+            chunk = response.read(min(256 * 1024, limit + 1 - received))
+            if not chunk:
+                break
+            chunks.append(chunk)
+            received += len(chunk)
+            if received > limit:
+                raise ValueError('Release response exceeds size limit')
+            if progress:
+                progress(stage='downloading', received=received, total=total, attempt=attempt + 1)
+        data = b''.join(chunks)
+        # urllib can surface an early EOF as a normal empty read for chunked
+        # responses. Treat a short Content-Length body as the same transient
+        # IncompleteRead failure so the caller retries instead of parsing half
+        # of a JSON response.
+        if total is not None and received < total:
+            raise http.client.IncompleteRead(data, total - received)
+        if len(data) > limit:
+            raise ValueError('Release response exceeds size limit')
+        return data
+
+
 def _read_url(url: str, limit: int, progress=None) -> bytes:
     request = urllib.request.Request(url, headers={'User-Agent': 'hermes-workbench', 'Accept': 'application/vnd.github+json' if '/api.github.com/' in url else 'application/octet-stream'})
-    for attempt in range(3):
+    last_error: BaseException | None = None
+    for attempt in range(_URL_ATTEMPTS):
         try:
-            with urllib.request.urlopen(request, timeout=20) as response:
-                length = response.headers.get('Content-Length')
-                total = int(length) if length and length.isdigit() else None
-                if total is not None and total > limit:
-                    raise ValueError('Release response exceeds size limit')
-                chunks, received = [], 0
-                if progress:
-                    progress(stage='downloading', received=0, total=total, attempt=attempt + 1)
-                while True:
-                    chunk = response.read(min(256 * 1024, limit + 1 - received))
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
-                    received += len(chunk)
-                    if received > limit:
-                        raise ValueError('Release response exceeds size limit')
-                    if progress:
-                        progress(stage='downloading', received=received, total=total, attempt=attempt + 1)
-                data = b''.join(chunks)
-            break
-        except OSError as exc:
-            if attempt == 2 or (isinstance(exc, urllib.error.HTTPError) and exc.code < 500 and exc.code != 429):
+            return _fetch_url(request, limit, progress, attempt)
+        except urllib.error.HTTPError as exc:
+            if exc.code < 500 and exc.code != 429:
                 raise
-            time.sleep(attempt + 1)
-    if len(data) > limit:
-        raise ValueError('Release response exceeds size limit')
-    return data
+            last_error = exc
+        except (http.client.HTTPException, TimeoutError, ssl.SSLError, OSError) as exc:
+            # IncompleteRead is an http.client.HTTPException, not an OSError.
+            # Timeouts and TLS handshake failures are retried with backoff too.
+            last_error = exc
+        if attempt + 1 < _URL_ATTEMPTS:
+            _sleep(_retry_delay(attempt))
+    assert last_error is not None
+    raise last_error
+
+
+def _read_json(url: str, limit: int):
+    last_error: BaseException | None = None
+    for attempt in range(_JSON_ATTEMPTS):
+        try:
+            return json.loads(_read_url(url, limit))
+        except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+            last_error = exc
+        if attempt + 1 < _JSON_ATTEMPTS:
+            _sleep(_retry_delay(attempt))
+    assert last_error is not None
+    raise last_error
+
+
+def _catalog_cache_path() -> Path | None:
+    override = os.environ.get('HERMES_WORKBENCH_RELEASE_CATALOG_CACHE')
+    if override is not None:
+        return Path(override) if override else None
+    try:
+        store = managed_store()
+    except Exception:
+        store = None
+    return (store.root if store else PLUGIN_ROOT) / 'release-catalog.json'
+
+
+def _load_disk_catalog() -> list[dict]:
+    path = _catalog_cache_path()
+    if path is None:
+        return []
+    try:
+        payload = json.loads(path.read_text(encoding='utf-8'))
+    except (OSError, ValueError, TypeError):
+        return []
+    rows = payload.get('releases') if isinstance(payload, dict) else None
+    if not isinstance(rows, list):
+        return []
+    valid = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        version, tag = row.get('version'), row.get('tag')
+        if not isinstance(version, str) or not VERSION_RE.fullmatch(version):
+            continue
+        if not isinstance(tag, str) or tag not in (version, f'v{version}'):
+            continue
+        valid.append({**row, 'source': 'github'})
+    return valid
+
+
+def _save_disk_catalog(rows: list[dict]) -> None:
+    path = _catalog_cache_path()
+    if path is None:
+        return
+    temporary: Path | None = None
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile('w', dir=path.parent, prefix='.release-catalog-', delete=False, encoding='utf-8') as stream:
+            json.dump({'saved_at': time.time(), 'releases': rows}, stream, ensure_ascii=False)
+            stream.flush()
+            os.fsync(stream.fileno())
+            temporary = Path(stream.name)
+        os.replace(temporary, path)
+    except (OSError, TypeError, ValueError) as exc:
+        logger.warning('Could not persist the GitHub release catalog cache: %s', exc)
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+
+
+def _catalog_warning(exc: BaseException, has_cache: bool) -> str:
+    detail = type(exc).__name__
+    if has_cache:
+        return f'GitHub releases are temporarily unavailable ({detail}); showing the last successful catalog and local versions.'
+    return f'GitHub releases are temporarily unavailable ({detail}). Local versions remain selectable.'
+
+
+def _catalog_state() -> tuple[float, list[dict], str | None]:
+    """Accept the legacy two-item snapshot used by older callers and tests."""
+
+    state = _catalog
+    if len(state) == 2:
+        return state[0], state[1], None
+    return state
+
+
+def _fetch_github_releases() -> list[dict]:
+    rows = []
+    for page in range(1, 4):
+        payload = _read_json(f'https://api.github.com/repos/{REPOSITORY}/releases?per_page=100&page={page}', 4 * 1024 * 1024)
+        if not isinstance(payload, list):
+            raise ReleaseCatalogUnavailable('Invalid GitHub release catalog')
+        for release in payload:
+            if not isinstance(release, dict):
+                raise ReleaseCatalogUnavailable('Invalid GitHub release entry')
+            version = str(release.get('tag_name', '')).removeprefix('v')
+            if release.get('draft') or not VERSION_RE.fullmatch(version) or not (DATE_VERSION_RE.fullmatch(version) or SEMVER_RE.fullmatch(version)):
+                continue
+            names = {asset.get('name') for asset in release.get('assets', []) if isinstance(asset, dict)}
+            tag = str(release['tag_name'])
+            if tag not in (version, f'v{version}'):
+                continue
+            if f'hermes-workbench-{tag}.tar.gz' not in names or 'SHA256SUMS' not in names:
+                continue
+            rows.append({'version': version, 'tag': tag, 'ready': False, 'source': 'github',
+                         'notes': str(release.get('body') or ''),
+                         'published_at': release.get('published_at'),
+                         'prerelease': bool(release.get('prerelease')),
+                         'url': f'https://github.com/{REPOSITORY}/releases/tag/{tag}'})
+        if len(payload) < 100:
+            break
+    return rows
+
+
+def _github_releases_with_warning() -> tuple[list[dict], str | None]:
+    global _catalog
+    now = time.monotonic()
+    with _catalog_lock:
+        fetched_at, cached_rows, cached_warning = _catalog_state()
+        ttl = _CATALOG_FAILURE_TTL if cached_warning else _CATALOG_TTL
+        if fetched_at > 0 and now - fetched_at < ttl:
+            return cached_rows, cached_warning
+        try:
+            rows = _fetch_github_releases()
+        except Exception as exc:
+            # A remote outage must never turn the version page into an HTTP 500.
+            logger.warning('GitHub release catalog refresh failed: %s', exc)
+            rows = list(cached_rows)
+            if not rows:
+                rows = _load_disk_catalog()
+            warning = _catalog_warning(exc, bool(rows))
+            _catalog = (time.monotonic(), rows, warning)
+            return rows, warning
+        _catalog = (time.monotonic(), rows, None)
+        _save_disk_catalog(rows)
+        return rows, None
 
 
 def _github_releases() -> list[dict]:
-    global _catalog
-    with _catalog_lock:
-        if _catalog[0] > 0 and time.monotonic() - _catalog[0] < 300:
-            return _catalog[1]
-        rows = []
-        for page in range(1, 4):
-            payload = json.loads(_read_url(f'https://api.github.com/repos/{REPOSITORY}/releases?per_page=100&page={page}', 4 * 1024 * 1024))
-            if not isinstance(payload, list):
-                raise ValueError('Invalid GitHub release catalog')
-            for release in payload:
-                version = str(release.get('tag_name', '')).removeprefix('v')
-                if release.get('draft') or not VERSION_RE.fullmatch(version) or not (DATE_VERSION_RE.fullmatch(version) or SEMVER_RE.fullmatch(version)):
-                    continue
-                names = {asset.get('name') for asset in release.get('assets', [])}
-                tag = str(release['tag_name'])
-                if tag not in (version, f'v{version}'):
-                    continue
-                if f'hermes-workbench-{tag}.tar.gz' not in names or 'SHA256SUMS' not in names:
-                    continue
-                rows.append({'version': version, 'tag': tag, 'ready': False, 'source': 'github',
-                             'notes': str(release.get('body') or ''),
-                             'published_at': release.get('published_at'),
-                             'prerelease': bool(release.get('prerelease')),
-                             'url': f'https://github.com/{REPOSITORY}/releases/tag/{tag}'})
-            if len(payload) < 100:
-                break
-        _catalog = (time.monotonic(), rows)
-        return rows
+    return _github_releases_with_warning()[0]
+
+
+def _catalog_warning_text() -> str | None:
+    return _catalog_state()[2]
 
 
 def _local_versions() -> list[dict]:
@@ -265,15 +413,29 @@ def _local_versions() -> list[dict]:
 def _version_catalog() -> dict:
     store = managed_store()
     rows = {row['version']: row for row in _local_versions()}
-    warning = None
     try:
-        for row in _github_releases():
+        remote_rows = _github_releases()
+        warning = _catalog_warning_text()
+        for row in remote_rows:
             if store and (row.get('prerelease') or _version_key(row['version']) < _version_key('0.8.0')):
                 continue
             rows[row['version']] = {**row, 'ready': bool(rows.get(row['version'], {}).get('ready'))}
-    except (OSError, ValueError, TypeError, KeyError) as exc:
+    except Exception as exc:
+        # Keep the local catalog usable even if an unexpected parsing bug slips
+        # through the remote fallback.
+        logger.warning('Could not merge the GitHub release catalog: %s', exc)
         warning = 'GitHub releases are temporarily unavailable. Local versions remain selectable.'
-    return {'active': store.active() if store else _manifest_version(), 'update_mode': 'release' if store else 'development', 'update': store.status() if store else None, 'versions': sorted(rows.values(), key=lambda row: _version_key(row['version']), reverse=True), 'warning': warning}
+    try:
+        active = store.active() if store else _manifest_version()
+    except (OSError, ValueError) as exc:
+        logger.warning('Could not read the active Workbench version: %s', exc)
+        active = _manifest_version()
+    try:
+        update = store.status() if store else None
+    except (OSError, ValueError, TypeError) as exc:
+        logger.warning('Could not read the Workbench update status: %s', exc)
+        update = None
+    return {'active': active, 'update_mode': 'release' if store else 'development', 'update': update, 'versions': sorted(rows.values(), key=lambda row: _version_key(row['version']), reverse=True), 'warning': warning}
 
 
 def _download_release(version: str, progress=None) -> Path:
