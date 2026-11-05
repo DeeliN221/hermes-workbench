@@ -5,7 +5,7 @@
 - Read the OpenCode Go catalog from the officially documented inference endpoint, accept OPENCODE_API_KEY as a server-side credential alongside the private auth file, and document the official Go API, plan limits, and OpenCodex provider setup with a credential-free, idempotent scripts/configure-opencode-go.py helper. Fetch the public catalog without sending keys or cookies.
 - Put the completed-task checkbox beside the card title and shorten the completed-column actions to Select, Clear, Archive, and Show archived.
 - Prioritize final PR/commit/demo/report links in task review, fall back to a locally rendered Mermaid stage report, and replace passive execution-session text with direct local or remote Workbench entry points.
-- Recover the Files root listing when a managed directory contains an external symlink, while still rejecting genuine out-of-root paths and ending the loading label after an error.
+- Recover the Files root listing when a managed directory contains an external symlink, including explicit `/opt/data` and configured `dashboard.workbench.root` requests, while still rejecting genuine out-of-root paths and clearing the stale error banner after recovery.
 - Answer /healthz with {"ok":true} so liveness probes pass while the release assets that /health requires are still missing.
 - Fold completed chat work to one summary line and open it as a bounded scroll window whose height follows the detail level, so long reasoning and tool output no longer stretch the transcript.
 - Answer the Codex runtime status check from cached metadata and move release lookups into the background, so a slow GitHub request no longer times out the health monitor or blocks the version page.
