@@ -137,7 +137,9 @@ try {
   filesPage.on('pageerror', error => fileErrors.push(error.stack || error.message));
   await filesPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await filesPage.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
-  await filesPage.evaluate(() => document.querySelector('.dashboard-workspace-button')?.click());
+  await filesPage.locator('.dashboard-nav-collapse').focus();
+  await filesPage.keyboard.press('w');
+  await filesPage.locator('.workbench-actions-dialog').getByRole('button', { name: /^(Files|文件)$/ }).click();
   await filesPage.waitForFunction(() => document.querySelectorAll('.hti-tree-row').length > 0, null, { timeout: 5000 });
   await filesPage.evaluate(() => {
     [...document.querySelectorAll('.hti-tree-row')]

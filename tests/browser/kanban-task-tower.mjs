@@ -53,9 +53,17 @@ try {
         const nav = mobile ? page.locator('.dashboard-action-rail') : page.locator('.workbench-actions-dialog');
         const openNav = async () => { if (!mobile) { await page.locator('.dashboard-nav-collapse').focus(); await page.keyboard.press('w'); await page.locator('.workbench-actions-dialog[open]').waitFor(); } };
         await openNav();
-        const link = nav.getByRole('link', { name: 'Kanban', exact: true });
-        assert.equal(await link.getAttribute('href'), '/kanban');
-        await link.click();
+        const entry = nav.getByRole(mobile ? 'link' : 'button', { name: 'Kanban', exact: true });
+        if (mobile) assert.equal(await entry.getAttribute('href'), '/kanban');
+        await entry.click();
+        if (!mobile) {
+          await page.locator('.hti-kanban-float-panel .tower-card').first().waitFor();
+          assert.equal(new URL(page.url()).pathname, '/chat');
+          assert.equal(await page.locator('.task-tower').count(), 1);
+          await page.keyboard.press('Escape');
+          await page.locator('.hti-kanban-float-panel').waitFor({ state: 'hidden' });
+          await page.goto(host.origin + '/kanban');
+        }
         const check = async () => {
           await page.locator('.task-tower').waitFor();
           await page.locator('.tower-card:visible').first().waitFor();
@@ -66,7 +74,7 @@ try {
           assert.equal(await page.getByText('Demo mode', { exact: true }).count(), 0);
           assert.equal(await page.locator('vite-error-overlay, .hermes-kanban-columns:visible, .dashboard-accessory-backdrop:visible').count(), 0);
           await openNav();
-          assert.equal(await nav.getByRole('link', { name: 'Kanban', exact: true }).getAttribute('aria-current'), 'page');
+          assert.equal(await nav.getByRole(mobile ? 'link' : 'button', { name: 'Kanban', exact: true }).getAttribute('aria-current'), 'page');
           assert.equal(await nav.getByRole('link', { name: 'Home', exact: true }).getAttribute('aria-current'), null);
           if (!mobile) await page.keyboard.press('Escape');
         };

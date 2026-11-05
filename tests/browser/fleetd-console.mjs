@@ -174,9 +174,11 @@ try {
   // Opening W from a non-editable control must leave the mounted conversation intact.
   await composer.evaluate(node=>node.blur());
   await page.keyboard.press('w');
-  await page.locator('.workbench-actions-dialog[open]').getByRole('link',{name:'Kanban',exact:true}).click();
+  const chatUrl = page.url();
+  await page.locator('.workbench-actions-dialog[open]').getByRole('button',{name:'Kanban',exact:true}).click();
   await loaded();
-  assert.equal(new URL(page.url()).searchParams.has('profile'),false);
+  assert.equal(page.url(), chatUrl);
+  assert.equal(await page.locator('.hti-kanban-float-panel').count(), 1);
   await page.keyboard.press('Escape');
   await composer.waitFor({state:'visible'});
   assert.equal(await composer.inputValue(),'Unsent draft\nKeep my input');
