@@ -1,4 +1,5 @@
 import { renderHomeSettings } from './home-settings';
+import { renderHomeLayoutSettings } from './home-layout-settings';
 import { renderFolderUploadSetting } from './attachment-preferences';
 import type { FetchJSON } from './workbench-api';
 import {
@@ -153,7 +154,11 @@ export function createChatDisplaySettings(sdk: any) {
     useEffect(() => {
       const node = ref.current;
       if (!node) return;
-      const render = () => { renderChatDisplayPanel(node, sdk.fetchJSON); void renderHomeSettings(node, sdk.fetchJSON); };
+      const render = () => {
+        renderChatDisplayPanel(node, sdk.fetchJSON);
+        void renderHomeSettings(node, sdk.fetchJSON);
+        void renderHomeLayoutSettings(node, sdk.fetchJSON);
+      };
       render();
       const observer = new MutationObserver(render);
       observer.observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });

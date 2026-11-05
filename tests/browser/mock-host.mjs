@@ -215,6 +215,20 @@ function apiPayload(url, method, body = null, preferences = new Map()) {
     if (method === 'PUT') { labels[url.searchParams.get('profile') || 'default'] = body.show_project_labels; preferences.set('home-labels', labels); }
     return {labels};
   }
+  if (url.pathname.endsWith('/home-layout')) {
+    const key = 'home-layout:' + (url.searchParams.get('profile') || 'default');
+    const layout = preferences.get(key) || { columns: 3, sessions_per_profile: 3 };
+    if (method === 'PUT') {
+      const next = { columns: Number(body.columns), sessions_per_profile: Number(body.sessions_per_profile) };
+      if (!Number.isInteger(next.columns) || next.columns < 1 || next.columns > 6
+        || !Number.isInteger(next.sessions_per_profile) || next.sessions_per_profile < 1 || next.sessions_per_profile > 20) {
+        return { __status: 422, detail: 'Invalid home layout' };
+      }
+      preferences.set(key, next);
+      return next;
+    }
+    return layout;
+  }
   if (url.pathname.endsWith('/profile-order')) {
     if (method === 'PUT') preferences.set('profile-order', body.order);
     return {order: preferences.get('profile-order') || []};
