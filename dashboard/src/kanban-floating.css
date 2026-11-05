@@ -1,0 +1,25 @@
+.hti-kanban-float-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 95;
+  display: grid;
+  place-items: center;
+  background: #151a1442;
+}
+.hti-kanban-float-panel {
+  width: 80vw;
+  height: 80vh;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  overflow: auto;
+  border: 2px solid var(--mc-line-soft, #68685e);
+  border-radius: 12px;
+  color: var(--dashboard-ink, var(--mc-ink, #30352c));
+  background: var(--dashboard-page-surface, var(--mc-surface, #f3f0e7));
+  box-shadow: 0 30px 80px #0008;
+}
+.hti-kanban-float-panel:focus-visible { outline: 2px solid var(--mc-accent, #496b2d); }
+@media (max-width: 800px) {
+  .hti-kanban-float-backdrop { display: none; }
+}
