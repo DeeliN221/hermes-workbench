@@ -136,6 +136,26 @@ try {
     assert.deepEqual(errors, []);
     await page.close();
   }
+  // Global shortcut also works on the full-page board; only the foreground search responds.
+  {
+    const { page, errors } = await preparePage(browser, host.origin, { profile: 'default', theme: 'light' });
+    await page.goto(host.origin + '/kanban');
+    await page.locator('.tower-card').first().waitFor();
+    await page.locator('.dashboard-nav-collapse').focus();
+    await page.keyboard.press('b');
+    const panel = page.locator('.hti-kanban-float-panel');
+    await panel.locator('.tower-card').first().waitFor();
+    await page.keyboard.press('f');
+    await panel.locator('.tower-searchbar input').waitFor();
+    assert.ok(await panel.locator('.tower-searchbar input').evaluate(el => el === document.activeElement));
+    assert.equal(await page.locator('.task-tower .tower-searchbar input').count(), 1);
+    await page.keyboard.press('Escape');
+    assert.ok(await panel.isVisible());
+    await page.keyboard.press('Escape');
+    await panel.waitFor({ state: 'hidden' });
+    assert.deepEqual(errors, []);
+    await page.close();
+  }
   for (const theme of ['light', 'dark']) {
     const { page, errors } = await preparePage(browser, host.origin, { profile: 'default', theme, viewport: { width: 390, height: 844 } });
     await page.goto(host.origin + '/kanban');

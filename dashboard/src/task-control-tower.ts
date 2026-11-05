@@ -209,6 +209,7 @@ export function createTaskControlTower(
     (a: any, b: any) => a.task === b.task && a.runtime === b.runtime && a.compact === b.compact
       && a.archived === b.archived && a.busy === b.busy && a.checked === b.checked && a.selected === b.selected);
   function TaskControlTower({ profile }: { profile: string }) {
+    const root = useRef(null as HTMLElement | null);
     const [tasks, setTasks] = useState([] as Task[]),
       [config, setConfig] = useState(null as FleetConfig | null);
     const [archiveVersion, setArchiveVersion] = useState(0),
@@ -271,6 +272,8 @@ export function createTaskControlTower(
     useEffect(() => {
       const focusSearch = (event: KeyboardEvent) => {
         const target = event.target as HTMLElement | null;
+        const floating = document.querySelector('.hti-kanban-float-panel');
+        if (floating && !floating.contains(root.current)) return;
         if (event.metaKey || event.ctrlKey || event.altKey || document.querySelector(".tower-drawer")) return;
         if (event.key === "Escape" && searchOpen) {
           event.preventDefault(); event.stopImmediatePropagation();
@@ -280,7 +283,7 @@ export function createTaskControlTower(
         if (event.key === "/" || event.key === "f" || event.key === "F") {
           event.preventDefault();
           setSearchOpen(true);
-          requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus());
+          requestAnimationFrame(() => root.current?.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus());
         }
       };
       document.addEventListener("keydown", focusSearch, true);
@@ -712,6 +715,7 @@ export function createTaskControlTower(
     return h(
       "main",
       {
+        ref: root,
         className: "task-tower",
         "aria-label": tr("看板", "Kanban"),
         "aria-busy": busy || loading,
@@ -750,7 +754,7 @@ export function createTaskControlTower(
               query ? btn("×", () => setQuery(""), { className: "tower-search-clear", "aria-label": tr("清空搜索", "Clear search") }) : null,
               btn(tr("关闭", "Close"), closeSearch, { className: "tower-search-close" })) : null,
             btn(searchOpen ? tr("搜索", "Search") : tr("搜索任务", "Search tasks"),
-              () => { setSearchOpen(true); requestAnimationFrame(() => document.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus()); },
+              () => { setSearchOpen(true); requestAnimationFrame(() => root.current?.querySelector<HTMLInputElement>(".tower-searchbar input")?.focus()); },
               { className: "tower-search-toggle", "aria-expanded": searchOpen, "aria-label": tr("搜索任务", "Search tasks"), title: tr("搜索任务（/ 或 f）", "Search tasks (/ or f)") })),
           searching ? h("section", { className: "tower-search-results", "aria-label": tr("搜索结果", "Search results") },
             btn(showArchived ? tr("隐藏已归档", "Hide archived") : tr("显示已归档", "Show archived"),

@@ -2892,7 +2892,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }
         const key = (event) => {
           if (event.key !== "Escape" || event.defaultPrevented) return;
-          if (document.querySelector('dialog[open], [aria-modal="true"]')) return;
+          if (document.querySelector('dialog[open], [aria-modal="true"], .hti-kanban-float-panel')) return;
           event.preventDefault();
           closeAccessory();
         };
