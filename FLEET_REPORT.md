@@ -1,5 +1,9 @@
 # 认证修复交付记录
 
+kind: report
+
+结论：本轮复核补齐 Compose 的 `HERMES_WORKBENCH_INTERNAL_STATUS_TOKEN` 环境传递与 `.env.example`；空值禁用内部令牌认证。现场内部调用者仍需配置发送该令牌，仓库未发现真实调用者实现。
+
 结论：代码修复已提交 `18d52f144e44a638901652d02d70425e527d5add`；仅完成隔离环境部署，生产验收未完成。
 证据：`artifacts/auth-{typecheck,vitest,python,build,playwright}.log`；类型检查、构建通过，Vitest 602 项、Python sidecar 33 项、Chromium Playwright 2 项通过。
 证据：`artifacts/auth-deployment.json`、`artifacts/auth-sidecar-access.log`；本地真实 sidecar 40 次认证轮询全部 200，认证后 401 为 0；3 次主动缺认证负例返回 401，属于预期。
@@ -98,4 +102,5 @@ flowchart LR
 ```
 
 未验证项：生产 `hermes-workbench-zzl` 部署和连续日志观察未完成；`artifacts/auth-production-access.log` 记录 Docker daemon 无法连接。不能据此声称现场 401 来源已精确定位或生产循环已消失。
+未验证项：本轮 Compose 配置校验无法执行，当前 Docker CLI 缺少 Compose 子命令；失败输出见 `artifacts/auth-compose-validation.log`。Caddy 二进制不可用，代理模板未做运行时验证。
 未验证项：Playwright 使用真实 Chromium 与受控 API 响应，验证守卫行为；没有运行完整 Hermes/Caddy/Authelia 登录流程。本地 sidecar 未连接 Codex app-server，运行时状态端点只验证认证门禁，未验证实际服务可用性。

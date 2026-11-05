@@ -23,7 +23,7 @@ dashboard/dist/plantuml/plantuml.js           4,007.58 kB
 dashboard/dist/style.css                        371.76 kB │ gzip:  60.52 kB
 dashboard/dist/index.js                       2,041.17 kB │ gzip: 670.43 kB
 
-✓ built in 2.49s
+✓ built in 1.45s
 (!) Your Vite config uses features that are unsupported by `configLoader: 'native'`, which is planned to become the default in a future major version of Vite:
   - ESM syntax in a file loaded as CommonJS (vite.loader.config.ts:1:1). Use a `.mjs` extension or set `"type": "module"` in the closest package.json
 Set `VITE_CONFIG_NATIVE_IGNORE_WARNING=true` to suppress this warning.
@@ -34,4 +34,4 @@ rendering chunks...
 computing gzip size...
 dashboard/dist/loader.js  5.56 kB │ gzip: 2.62 kB
 
-✓ built in 68ms
+✓ built in 51ms
