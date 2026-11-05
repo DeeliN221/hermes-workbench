@@ -3,7 +3,9 @@
  * after an individual commentary item completed without a trailing newline.
  * Keep line buffering for the answer body; never buffer progress commentary.
  */
-export function visibleChatText(message: { content: string; role?: string; status?: string; phase?: string }): string {
+export function visibleChatText(message: { content: string; role?: string; status?: string; phase?: string; questions?: unknown }): string {
+  // Structured questions are complete even while their parent turn is running.
+  if (Array.isArray(message.questions) && message.questions.length) return message.content;
   if (message.phase === 'commentary' || message.status !== 'running' || !['assistant', 'reasoning'].includes(message.role || '')) {
     return message.content;
   }

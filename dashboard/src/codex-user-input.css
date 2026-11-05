@@ -1,13 +1,25 @@
-.codex-user-input { display: grid; gap: 12px; padding: 16px; max-height: min(60vh, 560px); overflow: auto; border: 1px solid var(--mc-line, #8a927b); background: var(--mc-surface, #f1efe5); color: inherit; }
-.codex-user-input fieldset { min-width: 0; margin: 0; padding: 10px; border: 1px solid currentColor; }
-.codex-user-input legend { font-weight: 600; }
-.codex-user-input p { margin: 0 0 10px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.codex-user-input-option { display: flex; align-items: flex-start; gap: 8px; padding: 9px 4px; cursor: pointer; }
-.codex-user-input-option input { flex: 0 0 auto; margin-top: 4px; }
-.codex-user-input-option span { min-width: 0; overflow-wrap: anywhere; }
-.codex-user-input-option small { display: block; margin-top: 4px; opacity: .8; }
-.codex-user-input-free { display: grid; gap: 6px; margin-top: 8px; }
-.codex-user-input-free input { box-sizing: border-box; min-width: 0; width: 100%; padding: 8px; color: inherit; background: transparent; border: 1px solid currentColor; }
-.codex-user-input button { justify-self: start; padding: 8px 14px; border: 1px solid currentColor; }
-.codex-user-input button:disabled { opacity: .5; }
-.codex-user-input-open { align-self: flex-start; margin: 8px 16px; padding: 8px 12px; color: inherit; border: 1px solid currentColor; }
+.codex-user-input { --question-accent: var(--mc-accent, #74865c); display: grid; gap: 20px; padding: 22px; max-height: min(64vh, 600px); overflow: auto; border: 1px solid color-mix(in srgb, currentColor 14%, transparent); border-radius: 18px; background: var(--mc-surface, #f1efe5); color: inherit; box-shadow: 0 8px 28px #0000000a; }
+.codex-user-input-heading { display: grid; grid-template-columns: 32px 1fr; gap: 3px 10px; align-items: center; }
+.codex-user-input-mark { grid-row: span 2; display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--question-accent) 18%, transparent); font-weight: 700; }
+.codex-user-input-heading small { opacity: .65; font-size: 12px; }
+.codex-user-input fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
+.codex-user-input fieldset + fieldset { padding-top: 16px; border-top: 1px solid color-mix(in srgb, currentColor 12%, transparent); }
+.codex-user-input legend { padding: 0; margin-bottom: 10px; font-size: 15px; font-weight: 600; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.codex-user-input p { margin: 0 0 12px; line-height: 1.6; white-space: pre-wrap; overflow-wrap: anywhere; }
+.codex-user-input-option { display: flex; align-items: flex-start; gap: 10px; padding: 11px 13px; margin-top: 5px; border: 1px solid transparent; border-radius: 10px; cursor: pointer; transition: background .15s, border-color .15s; }
+.codex-user-input-option:hover { background: color-mix(in srgb, currentColor 5%, transparent); }
+.codex-user-input-option.is-selected { background: color-mix(in srgb, var(--question-accent) 15%, transparent); border-color: color-mix(in srgb, var(--question-accent) 50%, transparent); }
+.codex-user-input-option input { flex: 0 0 auto; margin: 4px 0 0; accent-color: var(--question-accent); }
+.codex-user-input-option span { min-width: 0; overflow-wrap: anywhere; line-height: 1.5; }
+.codex-user-input-option strong { font-weight: 500; }
+.codex-user-input-option small { display: block; margin-top: 3px; opacity: .65; line-height: 1.5; }
+.codex-user-input-free { display: grid; gap: 7px; margin-top: 14px; font-size: 12px; }
+.codex-user-input-free input { box-sizing: border-box; min-width: 0; width: 100%; padding: 11px 13px; font: inherit; font-size: 14px; color: inherit; background: color-mix(in srgb, currentColor 3%, transparent); border: 1px solid color-mix(in srgb, currentColor 18%, transparent); border-radius: 10px; }
+.codex-user-input :is(input, button):focus-visible { outline: 2px solid var(--question-accent); outline-offset: 3px; }
+.codex-user-input-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.codex-user-input-footer small { opacity: .6; }
+.codex-user-input button { padding: 10px 18px; border: 1px solid color-mix(in srgb, var(--question-accent) 60%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--question-accent) 22%, transparent); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+.codex-user-input button:disabled { opacity: .4; cursor: default; }
+.codex-user-input-open { align-self: flex-start; margin: 8px 16px; padding: 8px 14px; color: inherit; background: color-mix(in srgb, currentColor 5%, transparent); border: 0; border-radius: 20px; cursor: pointer; }
+@media (max-width: 600px) { .codex-user-input { padding: 16px; gap: 16px; border-radius: 14px; } }
+@media (prefers-reduced-motion: reduce) { .codex-user-input-option { transition: none; } }
