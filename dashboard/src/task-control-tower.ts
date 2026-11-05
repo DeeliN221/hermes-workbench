@@ -35,6 +35,7 @@ import {
 } from "./task-control-model";
 import { cardRefresh, mergeCards } from "./task-control-refresh";
 import { renderMarkdownSource } from "./markdown-source";
+import { normalizeTaskMarkdown } from "./task-detail-markdown";
 import { renderMermaidBlocks } from "./file-preview";
 import { renderPlantUMLBlocks } from "./plantuml-renderer";
 
@@ -175,7 +176,7 @@ export function createTaskControlTower(
     useEffect(() => {
       const element = markdown.current;
       if (!element || raw) return;
-      element.innerHTML = renderMarkdownSource(source);
+      element.innerHTML = renderMarkdownSource(normalizeTaskMarkdown(source));
       for (const anchor of Array.from(element.querySelectorAll<HTMLAnchorElement>("a[href]"))) {
         const href = safeLink(anchor.getAttribute("href") || "");
         if (!href) { anchor.removeAttribute("href"); continue; }
