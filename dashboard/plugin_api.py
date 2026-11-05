@@ -1667,6 +1667,8 @@ class KanbanGeometryBody(BaseModel):
 
 def _kanban_geometry(owner: str, profile: str, body: KanbanGeometryBody | None = None):
     profile = _clean_identifier(profile, label='Profile', maximum=_MAX_PROFILE_LENGTH)
+    if "/" in profile or "\\" in profile or profile in (".", ".."):
+        raise HTTPException(status_code=422, detail='Invalid profile')
     if body and (body.x + body.width > 1.0000001 or body.y + body.height > 1.0000001):
         raise HTTPException(status_code=422, detail='Geometry exceeds viewport')
     connection = _open_organization_db()
