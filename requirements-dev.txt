@@ -65,13 +65,13 @@ pluggy==1.6.0
     # via pytest
 pycparser==3.0
     # via cffi
-pydantic==2.14.1
+pydantic==2.14.2
     # via
     #   -r requirements-dev.in
     #   fastapi
     #   mcp
     #   mcp-types
-pydantic-core==2.50.1
+pydantic-core==2.50.2
     # via pydantic
 pygments==2.21.0
     # via pytest
@@ -104,7 +104,6 @@ truststore==0.10.4
     #   httpx2
 typing-extensions==4.16.0
     # via
-    #   anyio
     #   fastapi
     #   mcp
     #   mcp-types
