@@ -7,14 +7,32 @@
 .codex-generation-tooltip { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 120; white-space: normal; background: var(--mc-surface, #fff); color: var(--mc-ink, #203345); border: 1px solid var(--mc-line-soft, #ccc); box-shadow: 0 4px 12px #0003; }
 .codex-center-heading-copy { min-width: 0; }
 
-/* Reserve message-free space alongside the pane-local user message ball. */
+/* Anchor to the composer edge without reserving a full-width transcript row. */
 .codex-conversation-dock {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  flex: 0 0 72px;
+  position: relative;
+  z-index: 18;
+  flex: 0 0 0;
+  height: 0;
+  min-height: 0;
   min-width: 0;
-  padding: 0 72px 0 12px;
+  padding: 0;
+  background: transparent;
+  pointer-events: none;
+}
+.codex-conversation-dock > .codex-generation-speed {
+  position: absolute;
+  right: 68px;
+  bottom: 36px;
+  max-width: calc(100% - 84px);
+  transform: translateY(50%);
+  pointer-events: auto;
+}
+.codex-conversation-dock .codex-generation-speed > summary {
+  background: var(--codex-surface, var(--mc-surface, #fff));
+}
+/* The last message can scroll clear of the floating controls. */
+.codex-center:has(> .codex-conversation-dock) > .codex-message-list {
+  padding-bottom: 72px;
 }
 .codex-center-header > .codex-center-title { flex: 1 1 auto; min-width: 0; }
 .codex-project-color-mark { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: currentColor; margin-right: 8px; color: var(--dashboard-ink, var(--mc-ink)); }

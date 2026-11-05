@@ -72,9 +72,16 @@ try {
       const ballBox = await page.locator('.workbench-user-message-ball:visible').boundingBox();
       const composerBox = await page.locator('.codex-composer-wrap').boundingBox();
       const messagesBox = await page.locator('.codex-message-list').boundingBox();
+      const dockBox = await page.locator('.codex-conversation-dock').boundingBox();
+      assert.equal(dockBox.height, 0, 'TPS must not reserve a full-width row');
       assert.ok(speedBox.x + speedBox.width < ballBox.x);
-      assert.ok(speedBox.y >= messagesBox.y + messagesBox.height);
+      assert.ok(Math.abs(speedBox.y + speedBox.height / 2 - (ballBox.y + ballBox.height / 2)) < 1);
+      assert.ok(speedBox.y >= messagesBox.y && speedBox.y < messagesBox.y + messagesBox.height);
       assert.ok(speedBox.y + speedBox.height <= composerBox.y);
+      assert.ok(Math.abs(messagesBox.y + messagesBox.height - composerBox.y) < 1, 'Transcript reaches the composer without a blank TPS strip');
+      assert.ok(await page.evaluate(({ x, y }) => !!document.elementFromPoint(x, y)?.closest('.codex-message-list'), {
+        x: messagesBox.x + messagesBox.width / 2, y: speedBox.y + speedBox.height / 2,
+      }), 'The space beside TPS passes pointer events to the transcript');
       async function event(method, params, seq) {
         await page.evaluate(({ method, params, seq }) => {
           const socket = window.__previewSockets.findLast(socket => socket.readyState === 1 && socket.url.includes('codex'));
