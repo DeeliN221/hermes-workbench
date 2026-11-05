@@ -1,6 +1,11 @@
 .task-tower {
   --tower-line: var(--mc-line-soft, #d7dbd1);
   --tower-card: var(--mc-raised, #fff);
+  --tower-blocked-bg: #f7e7e3;
+  --tower-blocked-bg-hover: #f5e4e0;
+  --tower-blocked-border: #d6a79f;
+  --tower-blocked-border-hover: #b96e63;
+  --tower-blocked-ink: #8b2e26;
   box-sizing: border-box;
   height: 100%;
   min-height: 0;
@@ -218,6 +223,44 @@
 }
 .tower-card:hover {
   border-color: var(--mc-muted, #70776b);
+}
+
+/* A blocked card is red end to end in Pending; the label keeps the state
+   readable without relying on colour. Hover/focus/selection only deepen the
+   tint and border so the card never turns back into a neutral surface. */
+:root[data-workbench-theme="dark"] .task-tower,
+:root.dark .task-tower {
+  --tower-blocked-bg: #332321;
+  --tower-blocked-bg-hover: #3b2926;
+  --tower-blocked-border: #75514a;
+  --tower-blocked-border-hover: #a9766d;
+  --tower-blocked-ink: #ffb4a8;
+}
+:is(.tower-column, .tower-list > section)[data-column="pending"] .tower-card[data-blocked="true"] {
+  border-color: var(--tower-blocked-border);
+  background: var(--tower-blocked-bg);
+}
+:is(.tower-column, .tower-list > section)[data-column="pending"] .tower-card[data-blocked="true"]:hover {
+  border-color: var(--tower-blocked-border-hover);
+  background: var(--tower-blocked-bg-hover);
+}
+:is(.tower-column, .tower-list > section)[data-column="pending"] .tower-card[data-blocked="true"]:focus-within,
+:is(.tower-column, .tower-list > section)[data-column="pending"] .tower-card[data-blocked="true"][aria-selected="true"],
+:is(.tower-column, .tower-list > section)[data-column="pending"] .tower-card[data-blocked="true"].is-selected {
+  border-color: var(--tower-blocked-border-hover);
+  background: var(--tower-blocked-bg-hover);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--tower-blocked-border-hover) 32%, transparent);
+}
+.tower-blocked-label {
+  flex: 0 0 auto;
+  margin-inline-end: 6px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--tower-blocked-ink) 42%, transparent);
+  border-radius: 4px;
+  color: var(--tower-blocked-ink);
+  font-size: 9px;
+  font-weight: 650;
+  line-height: 1.55;
 }
 .task-tower .tower-card-title {
   display: -webkit-box;

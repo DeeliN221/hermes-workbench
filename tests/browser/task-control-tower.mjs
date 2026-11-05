@@ -120,11 +120,65 @@ try {
   for (const width of [1536, 390]) for (const theme of ['light', 'dark']) {
     await page.setViewportSize({width, height: 960});
     await page.evaluate(theme => document.documentElement.dataset.workbenchTheme = theme, theme);
-    assert.ok(await page.locator(width > 800 ? '.tower-board' : '.tower-list').isVisible());
+    const surface = width > 800 ? '.tower-board' : '.tower-list';
+    assert.ok(await page.locator(surface).isVisible());
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-    const visibleCards = page.locator(`${width > 800 ? '.tower-board' : '.tower-list'} .tower-card`);
+    const visibleCards = page.locator(`${surface} .tower-card`);
     for (const card of await visibleCards.all()) assert.ok(await card.evaluate(el => el.scrollWidth <= el.clientWidth));
+
+    const blockedCard = page.locator(`${surface} [data-task-id="blocked-agent"]`);
+    const readyCard = page.locator(`${surface} [data-task-id="ready-a"]`);
+    assert.equal(await blockedCard.getAttribute('data-blocked'), 'true');
+    assert.equal(await blockedCard.getAttribute('data-status'), 'blocked');
+    assert.equal(await readyCard.getAttribute('data-blocked'), null);
+    assert.match(await blockedCard.textContent(), /Blocked/);
+    assert.equal(await blockedCard.locator('.tower-blocked-label').getAttribute('aria-label'), 'Blocked');
+    assert.equal(await readyCard.locator('.tower-blocked-label').count(), 0);
+    const cardColors = await blockedCard.evaluate((card) => {
+      const style = getComputedStyle(card);
+      const meta = card.querySelector('.tower-card-meta');
+      return { background: style.backgroundColor, text: style.color, meta: meta ? getComputedStyle(meta).color : style.color };
+    });
+    const readyBackground = await readyCard.evaluate(card => getComputedStyle(card).backgroundColor);
+    assert.notEqual(cardColors.background, readyBackground, `${width}-${theme}: blocked and ready cards must differ`);
+    const contrast = await blockedCard.evaluate((card) => {
+      const channel = value => {
+        const part = value / 255;
+        return part <= 0.03928 ? part / 12.92 : ((part + 0.055) / 1.055) ** 2.4;
+      };
+      const luminance = color => {
+        const match = /rgba?\((\d+),\s*(\d+),\s*(\d+)/.exec(color || '');
+        if (!match) return 1;
+        const [red, green, blue] = match.slice(1, 4).map(value => channel(Number(value)));
+        return 0.2126 * red + 0.7152 * green + 0.0722 * blue;
+      };
+      const ratio = (a, b) => {
+        const one = luminance(a), two = luminance(b);
+        return (Math.max(one, two) + 0.05) / (Math.min(one, two) + 0.05);
+      };
+      const style = getComputedStyle(card);
+      const meta = card.querySelector('.tower-card-meta');
+      return { body: ratio(style.color, style.backgroundColor), meta: ratio(meta ? getComputedStyle(meta).color : style.color, style.backgroundColor) };
+    });
+    assert.ok(contrast.body >= 4.5, `${width}-${theme}: blocked title contrast ${contrast.body.toFixed(2)}`);
+    assert.ok(contrast.meta >= 4.5, `${width}-${theme}: blocked meta contrast ${contrast.meta.toFixed(2)}`);
+
+    await blockedCard.hover();
+    await page.waitForTimeout(80);
+    const hoveredBackground = await blockedCard.evaluate(card => getComputedStyle(card).backgroundColor);
+    assert.notEqual(hoveredBackground, cardColors.background, `${width}-${theme}: hover must stay visibly tinted`);
+    await blockedCard.locator('.tower-card-title').focus();
+    const focusedBackground = await blockedCard.evaluate(card => getComputedStyle(card).backgroundColor);
+    assert.equal(focusedBackground, hoveredBackground, `${width}-${theme}: focus must keep the blocked tint`);
+    await page.evaluate(() => (document.activeElement instanceof HTMLElement ? document.activeElement.blur() : null));
+    await page.mouse.move(2, 2);
+    await page.evaluate(() => {
+      window.scrollTo(0, 0);
+      document.querySelector('.task-tower')?.scrollTo(0, 0);
+    });
+
     await page.screenshot({path: path.join(shotDir, `${width}-${theme}.png`)});
+    await page.screenshot({path: path.join(shotDir, `blocked-mixed-${width}-${theme}.png`), fullPage: width <= 800});
   }
   await page.setViewportSize({width:1536,height:960});
   const card = id => page.locator(`.tower-board [data-task-id="${id}"]`);

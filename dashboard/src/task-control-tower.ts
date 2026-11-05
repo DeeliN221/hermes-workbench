@@ -592,13 +592,16 @@ export function createTaskControlTower(
       const duration = hasStarted(t) ? durationMinutes(t, now) : "";
       const values = duration ? runtime.slice(0, -duration.length).trim() : runtime;
       const stale = isZombieRunning(t);
+      const blocked = t.status === "blocked" || t.fleet_status === "blocked";
       return (
       h(
         "article",
         {
           key: t.id,
-          className: `tower-card ${compact ? "is-row" : ""}${archived ? " is-archived-card" : ""}`,
+          className: `tower-card ${compact ? "is-row" : ""}${archived ? " is-archived-card" : ""}${blocked ? " is-blocked" : ""}`,
           "data-task-id": t.id,
+          "data-status": t.status,
+          "data-blocked": blocked ? "true" : undefined,
           "data-archived": archived ? "true" : undefined,
           "data-runtime": runtime,
           "data-active-attempt": activeAttempt(t) ? "true" : "false",
@@ -626,6 +629,9 @@ export function createTaskControlTower(
         h(
           "div",
           { className: "tower-card-meta", title: runtime || undefined },
+          blocked
+            ? h("span", { className: "tower-blocked-label", "aria-label": tr("阻塞", "Blocked") }, tr("阻塞", "Blocked"))
+            : null,
           values ? h("span", { className: "tower-runtime-values" }, values) : null,
           duration ? h("span", { className: "tower-runtime-duration" }, `${values ? " " : ""}${duration}`) : null,
         ),

@@ -48,6 +48,46 @@ it("renders four responsive groups without toolbar, creation or duplicate attent
   expect(host.querySelector(".tower-list")?.textContent).toContain("Pending");
 });
 
+it("marks blocked pending cards for the full-card tint while ready cards stay neutral", async () => {
+  const base = {
+    risk: "R1", priority: "P2", revision: 0, created_at: new Date().toISOString(),
+    acceptance: [], machine: "dev-box", capability: "codex",
+  };
+  const tasks = [
+    { ...base, id: "T-blocked", title: "Blocked task", status: "blocked", needs_human: true },
+    { ...base, id: "T-fleet-blocked", title: "Fleet blocked task", status: "review", fleet_status: "blocked" },
+    { ...base, id: "T-ready", title: "Ready task", status: "ready" },
+  ];
+  const fetchJSON: FetchJSON = async <T>(url: string) => {
+    if (url.endsWith("/config")) return { mode: "live", extended_workflow: false } as T;
+    if (url.endsWith("/tasks/sync")) return { removed: [], cursors: {}, full: true, tasks } as T;
+    if (url.endsWith("/decisions")) return { decisions: [] } as T;
+    if (url.endsWith("/workers")) return { workers: [] } as T;
+    return { profiles: [], items: [], sessions: [], groups: [] } as T;
+  };
+  const Component = createTaskControlTower({ React, hooks: React, fetchJSON }, vi.fn());
+  const host = document.createElement("div"); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  await act(async () => { root.render(React.createElement(Component, { profile: "default" })); await new Promise(r => setTimeout(r, 30)); });
+
+  for (const id of ["T-blocked", "T-fleet-blocked"]) {
+    const card = host.querySelector(`.tower-card[data-task-id="${id}"]`) as HTMLElement;
+    expect(card.dataset.status).toMatch(/blocked|review/);
+    expect(card.dataset.blocked).toBe("true");
+    expect(card.classList.contains("is-blocked")).toBe(true);
+    expect(card.closest("[data-column]")?.getAttribute("data-column")).toBe("pending");
+    const label = card.querySelector(".tower-blocked-label") as HTMLElement;
+    expect(label.textContent).toBe("Blocked");
+    expect(label.getAttribute("aria-label")).toBe("Blocked");
+  }
+
+  const ready = host.querySelector('.tower-card[data-task-id="T-ready"]') as HTMLElement;
+  expect(ready.closest("[data-column]")?.getAttribute("data-column")).toBe("queued");
+  expect(ready.dataset.blocked).toBeUndefined();
+  expect(ready.classList.contains("is-blocked")).toBe(false);
+  expect(ready.querySelector(".tower-blocked-label")).toBeNull();
+});
+
 
 it("retains the last complete snapshot on a failed refresh and recovers on retry", async () => {
   let title = "Previous successful task", fail = false;
