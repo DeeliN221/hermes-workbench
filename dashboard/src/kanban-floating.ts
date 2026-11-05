@@ -30,15 +30,16 @@ export function createKanbanFloatingBoard(sdk: Record<string, any>, navigate: (p
       window.addEventListener('resize', resize);
       return () => window.removeEventListener('resize', resize);
     }, []);
+    const panel = useRef(null as HTMLElement | null);
     const finishResize = () => {
       if (!drag.current) return;
       drag.current = null;
+      panel.current?.focus({ preventScroll: true });
       const value = currentGeometry.current;
       saveQueue.current = saveQueue.current.catch(() => {}).then(() => sdk.fetchJSON(endpoint, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(value), keepalive: true,
       })).catch(() => { /* Keep the usable local geometry if the server is temporarily unavailable. */ });
     };
-    const panel = useRef(null as HTMLElement | null);
     const opener = useRef(null as HTMLElement | null);
     useEffect(() => {
       const media = window.matchMedia('(max-width: 800px)');
