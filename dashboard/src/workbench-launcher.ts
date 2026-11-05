@@ -24,7 +24,7 @@ export function createWorkbenchLauncher(sdk: Record<string, any>) {
 export function createWorkbenchDialog(sdk: Record<string, any>) {
   const h = sdk.React.createElement;
   const { useRef, useEffect } = sdk.hooks;
-  return function WorkbenchDialog({ open, onClose, children }: { open: boolean; onClose: () => void; children: any }) {
+  return function WorkbenchDialog({ open, onClose, children, returnFocusRef }: { open: boolean; onClose: () => void; children: any; returnFocusRef?: { current: HTMLElement | null } }) {
     const ref = useRef(null as HTMLDialogElement | null);
     const trigger = useRef(null as HTMLElement | null);
     useEffect(() => {
@@ -48,6 +48,7 @@ export function createWorkbenchDialog(sdk: Record<string, any>) {
       if (!dialog) return;
       if (open && !dialog.open) {
         trigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        if (returnFocusRef) returnFocusRef.current = trigger.current;
         dialog.showModal();
         dialog.querySelector<HTMLElement>('a[href], button:not(:disabled)')?.focus();
       }

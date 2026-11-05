@@ -2594,6 +2594,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [d, f] = s(!1),
         [mobileActions, setMobileActions] = s(() => window.innerWidth <= 800),
         [actionsOpen, setActionsOpen] = s(false),
+        [kanbanOpen, setKanbanOpen] = s(false),
         [navCollapsed, setNavCollapsed] = s(() => {
           try { return window.localStorage.getItem(NAV_COLLAPSED_KEY) === "true"; }
           catch { return false; }
@@ -2606,6 +2607,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         [v, x] = s(() => Yf()),
         [y, C] = s(!1),
         [P, E] = s(""),
+        workbenchReturnFocus = n(null),
         D = n(null),
         A = n(p),
         R = n(null);
@@ -2920,7 +2922,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             onClickCapture: (event) => { const action = event.target.closest("a, button"); if (!mobile && action && !action.closest(".workbench-theme-action, .workbench-profile-action")) setActionsOpen(false); } },
             l("div", { className: "dashboard-nav-pair dashboard-chat-actions" }, mobile ? null : k("/sessions", runtimeText("首页", "Home"), "home", isHome), Y, k("/config?workbench=versions", runtimeText("设置", "Settings"), "settings", H, undefined, true)),
             l("div", { className: "dashboard-nav-pair" },
-              k("/kanban", runtimeText("看板", "Kanban"), "kanban", u.path === "/kanban"),
+              mobile ? k("/kanban", runtimeText("看板", "Kanban"), "kanban", isTaskBoard) :
+                l("button", { type: "button", className: "dashboard-workspace-button", "data-kanban-floating-trigger": "", "aria-label": runtimeText("看板", "Kanban"), "aria-pressed": kanbanOpen, "aria-current": kanbanOpen || isTaskBoard ? "page" : undefined, "aria-haspopup": "dialog", onClick: () => setKanbanOpen(value => !value) }, craftingIcon(t, "kanban"), l("span", null, runtimeText("看板", "Kanban"))),
               k("/cron", runtimeText("定时", "Scheduled jobs"), "cron", u.path === "/cron", undefined, true),
               k("/chat?workbench=terminal", runtimeText("终端", "Terminal"), "terminal", u.terminal, "hti-dashboard-terminal-trigger", true),
             ),
@@ -2965,7 +2968,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 title: runtimeText("关闭", "Close"), onClick: closeAccessory,
               }, zc(t, "close")) : null)
           : null,
-        l(KanbanFloatingBoard, { profile: F }),
+        l(KanbanFloatingBoard, { profile: F, open: kanbanOpen, onOpenChange: setKanbanOpen, returnFocusRef: workbenchReturnFocus }),
         l(
           "aside",
           {
@@ -2985,7 +2988,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 "aria-expanded": String(!navIsCollapsed),
                 onClick: () => setNavCollapsed((value) => !value),
               }, zc(t, navIsCollapsed ? "chevron-right" : "chevron-left"))),
-            l(WorkbenchDialog, { open: actionsOpen, onClose: () => setActionsOpen(false) }, renderActions(false)),
+            l(WorkbenchDialog, { open: actionsOpen, returnFocusRef: workbenchReturnFocus, onClose: () => setActionsOpen(false) }, renderActions(false)),
             l(
               "div",
               {

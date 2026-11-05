@@ -1,4 +1,4 @@
-/** Browser plugin not available; localhost Phase 1 regression. */
+/** Localhost shared floating launcher regression. */
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
@@ -83,6 +83,32 @@ try {
     assert.match(await page.title(), /./);
     assert.equal(await page.locator('vite-error-overlay').count(), 0);
     if (shotDir) await page.screenshot({ path: path.join(shotDir, `desktop-${theme}-before.png`) });
+    const trigger = page.locator('[data-kanban-floating-trigger]');
+    const originalUrl = page.url();
+    const launcher = page.locator('.dashboard-nav-collapse');
+    await launcher.focus();
+    await page.keyboard.press('w');
+    await trigger.click();
+    const sharedPanel = page.locator('.hti-kanban-float-panel');
+    await sharedPanel.locator('.tower-card').first().waitFor();
+    assert.equal(page.url(), originalUrl);
+    assert.equal(await trigger.getAttribute('aria-pressed'), 'true');
+    assert.equal(await trigger.getAttribute('aria-current'), 'page');
+    assert.equal(await page.locator('.task-tower').count(), 1);
+    if (shotDir) await page.screenshot({ path: path.join(shotDir, `desktop-${theme}-button.png`) });
+    await page.keyboard.press('w');
+    await trigger.click();
+    await sharedPanel.waitFor({ state: 'hidden' });
+    assert.equal(await trigger.getAttribute('aria-pressed'), 'false');
+    assert.equal(await trigger.getAttribute('aria-current'), null);
+    assert.ok(await launcher.evaluate(el => el === document.activeElement));
+    await page.keyboard.press('w');
+    await trigger.click();
+    await sharedPanel.waitFor();
+    await page.waitForFunction(() => document.activeElement?.classList.contains('hti-kanban-float-panel'));
+    await page.keyboard.press('b');
+    await sharedPanel.waitFor({ state: 'hidden' });
+    assert.ok(await launcher.evaluate(el => el === document.activeElement));
     const opener = page.locator('.dashboard-nav-collapse');
     await page.clock.install();
     let syncs = 0;
@@ -140,6 +166,8 @@ try {
   {
     const { page, errors } = await preparePage(browser, host.origin, { profile: 'default', theme: 'light' });
     await page.goto(host.origin + '/kanban');
+    assert.equal(new URL(page.url()).pathname, '/kanban');
+    assert.equal(await page.locator('.hti-kanban-float-panel').count(), 0);
     await page.locator('.tower-card').first().waitFor();
     await page.locator('.dashboard-nav-collapse').focus();
     await page.keyboard.press('b');
@@ -158,7 +186,8 @@ try {
   }
   for (const theme of ['light', 'dark']) {
     const { page, errors } = await preparePage(browser, host.origin, { profile: 'default', theme, viewport: { width: 390, height: 844 } });
-    await page.goto(host.origin + '/kanban');
+    await page.locator('.dashboard-action-rail a[href*="kanban"]').click();
+    assert.equal(new URL(page.url()).pathname, '/kanban');
     await page.locator('.tower-list .tower-card').first().waitFor();
     await page.evaluate(value => { document.documentElement.dataset.workbenchTheme = value; document.activeElement?.blur(); }, theme);
     await page.addStyleTag({ content: '#preview-banner { display:none }' });
