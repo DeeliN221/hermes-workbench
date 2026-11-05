@@ -8,7 +8,7 @@ const managedRoot = '/opt/data';
 const configuredRoot = '/srv/hermes-workbench';
 const host = await createMockHost({ host: 'localhost', filesRootError: true, managedRoot, managedRoots: [configuredRoot] });
 const browser = await chromium.launch({ headless: true, executablePath: process.env.CHROMIUM_EXECUTABLE_PATH || undefined });
-const shots = process.env.SHOT_DIR || 'assets/files-root-recovery';
+const shots = process.env.SHOT_DIR || 'node_modules/.cache/files-root-recovery';
 await mkdir(shots, { recursive: true });
 try {
   for (const mobile of [false, true]) for (const theme of ['light', 'dark']) {
