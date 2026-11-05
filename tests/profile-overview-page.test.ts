@@ -1,6 +1,7 @@
 // @vitest-environment happy-dom
 import { afterEach, expect, it, vi } from 'vitest';
 import { createRequire } from 'node:module';
+import { announceHomeLayout } from '../dashboard/src/home-layout';
 import { createProfileOverview } from '../dashboard/src/profile-overview-page';
 import type { FetchJSON } from '../dashboard/src/workbench-api';
 
@@ -52,4 +53,32 @@ it('renders only the freshest three per profile after merging unordered sources,
   expect(host.querySelector('select, .profile-order-controls, .profile-project-actions, .profile-overview-heading')).toBeNull();
   expect(host.querySelectorAll('.profile-column-heading button')).toHaveLength(2);
   expect(sessions.map(row => row.id)).toEqual(['fourth', 'second', 'opened', 'fifth']);
+});
+
+it('renders a configured four-by-five home layout without changing session behavior', async () => {
+  const now = Date.now();
+  const sessions = Array.from({ length: 9 }, (_, index) => ({
+    id: `session-${index}`, title: `Session ${index}`, updatedAt: now - index * 1000, groupId: 'project', unread: index === 0,
+  }));
+  const fetchJSON: FetchJSON = async <T>(url: string) => {
+    if (url.endsWith('/home-layout?profile=default')) return { columns: 4, sessions_per_profile: 5 } as T;
+    if (url.endsWith('/profile-overview')) return { profiles: [{ name: 'default', projects: [{ id: 'project', name: 'Project' }], sessions, failed: [] }] } as T;
+    if (url.startsWith('/api/profiles/sessions?')) return { sessions: [], total: 0 } as T;
+    return { profiles: [], order: [], labels: {} } as T;
+  };
+  const Component = createProfileOverview({ React, hooks: React, fetchJSON }, vi.fn());
+  const host = document.createElement('div'); document.body.append(host);
+  const root = createRoot(host); roots.push(root);
+  await React.act(async () => root.render(React.createElement(Component)));
+  const grid = host.querySelector('.profile-overview-columns') as HTMLElement;
+  expect(grid.dataset.columns).toBe('4');
+  expect(grid.style.getPropertyValue('--profile-columns')).toBe('4');
+  expect(host.querySelectorAll('.profile-session')).toHaveLength(5);
+  expect(host.querySelector('.profile-column-count')?.textContent).toBe('9 sessions');
+  expect(host.querySelectorAll('.profile-session-indicator[aria-label="Unread"]')).toHaveLength(1);
+  expect(host.querySelector<HTMLAnchorElement>('.profile-session')?.href).toContain('profile=default');
+  expect(host.querySelector('.profile-new-session')).not.toBeNull();
+  await React.act(async () => announceHomeLayout({ columns: 6, sessionsPerProfile: 8 }));
+  expect(grid.dataset.columns).toBe('6');
+  expect(host.querySelectorAll('.profile-session')).toHaveLength(8);
 });

@@ -4,8 +4,14 @@ import { openHomeConversation } from './home-navigation';
 import { useProfileDisplay } from './profile-display';
 import { profileTabName } from './kanban-agent-picker';
 import { uiText as tr } from './ui-locale';
-
-const HOME_SESSIONS_PER_PROFILE = 3;
+import { currentProfile } from './profile-scope';
+import {
+  HOME_LAYOUT_CHANGE_EVENT,
+  HOME_LAYOUT_DEFAULTS,
+  loadHomeLayout,
+  normalizeHomeLayout,
+  type HomeLayout,
+} from './home-layout';
 
 export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: FetchJSON }, navigate: (path: string, profile: string) => void) {
   const h = sdk.React.createElement, { useState, useEffect } = sdk.hooks;
@@ -15,6 +21,7 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
     const [loading, setLoading] = useState(true), [error, setError] = useState(false), [attempt, setAttempt] = useState(0);
     const [order, setOrder] = useState([] as string[]);
     const [preferences, setPreferences] = useState({} as Record<string, boolean>);
+    const [layout, setLayout] = useState({ ...HOME_LAYOUT_DEFAULTS } as HomeLayout);
     useEffect(() => {
       const controller = new AbortController();
       sdk.fetchJSON<{order: string[]}>('/api/plugins/workbench/profile-order', { signal: controller.signal })
@@ -22,6 +29,18 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       sdk.fetchJSON<{labels: Record<string, boolean>}>('/api/plugins/workbench/home-preferences', { signal: controller.signal })
         .then(value => setPreferences(value.labels || {})).catch(() => {});
       return () => controller.abort();
+    }, []);
+    useEffect(() => {
+      const controller = new AbortController();
+      void loadHomeLayout(sdk.fetchJSON, currentProfile(), controller.signal)
+        .then(result => { if (!controller.signal.aborted) setLayout(result.layout); })
+        .catch(() => { /* The default 3x3 layout keeps the home page usable. */ });
+      const update = (event: Event) => {
+        const value = (event as CustomEvent<HomeLayout>).detail;
+        setLayout(normalizeHomeLayout({ columns: value.columns, sessions_per_profile: value.sessionsPerProfile }).layout);
+      };
+      window.addEventListener(HOME_LAYOUT_CHANGE_EVENT, update);
+      return () => { controller.abort(); window.removeEventListener(HOME_LAYOUT_CHANGE_EVENT, update); };
     }, []);
     const sorted = [...columns].sort((a: ProfileColumn, b: ProfileColumn) => {
       const rank = (name: string) => order.includes(name) ? order.indexOf(name) : order.length;
@@ -44,7 +63,8 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
       error || allFailed ? h('p', { role: 'alert', className: 'overview-notice' }, tr('会话总览暂不可用，请重试。', 'Session overview unavailable. Please retry.'), retry()) : null,
       loading && !columns.length ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载 Profile 和项目会话…', 'Loading profiles and project sessions…')) : null,
       !loading && !error && !columns.length ? h('p', { className: 'overview-notice' }, tr('暂无 Profile。', 'No profiles available.')) : null,
-      h('div', { className: 'profile-overview-columns', 'aria-label': tr('按 Profile 分组的会话', 'Sessions grouped by profile') },
+      h('div', { className: 'profile-overview-columns', 'data-columns': String(layout.columns),
+        style: { '--profile-columns': layout.columns }, 'aria-label': tr('按 Profile 分组的会话', 'Sessions grouped by profile') },
         sorted.map((column: ProfileColumn, position: number) => {
           const rows = column.rows;
           return h('section', { key: column.name, className: 'profile-overview-column', 'data-profile': column.name, 'aria-labelledby': `overview-${column.name}` },
@@ -54,7 +74,7 @@ export function createProfileOverview(sdk: { React: any; hooks: any; fetchJSON: 
             h('div', { className: 'profile-column-scroll', 'aria-label': profileTabName(column.name) },
               column.failed.length ? h('p', { role: 'alert', className: 'overview-notice' }, tr('部分数据加载失败', 'Some sessions unavailable.'), retry()) : null,
               column.loading ? h('p', { role: 'status', className: 'overview-notice' }, tr('正在加载历史会话…', 'Loading conversation history…')) : null,
-              rows.slice(0, HOME_SESSIONS_PER_PROFILE).map((row) => {
+              rows.slice(0, layout.sessionsPerProfile).map((row) => {
                 const rank = freshnessRank(row, column.rows.indexOf(row), now);
                 const href = `/chat?${row.source === 'Codex' ? 'session' : 'hermesSession'}=${encodeURIComponent(row.id)}&profile=${encodeURIComponent(column.name)}`;
                 return h('a', { key: `${row.source}:${row.id}`, href, className: 'profile-session', 'data-freshness': rank,

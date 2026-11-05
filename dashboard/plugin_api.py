@@ -1776,6 +1776,21 @@ class HomePreferencesBody(BaseModel):
     show_project_labels: bool
 
 
+HOME_LAYOUT_DEFAULT_COLUMNS = 3
+HOME_LAYOUT_DEFAULT_SESSIONS = 3
+HOME_LAYOUT_COLUMNS_MIN = 1
+HOME_LAYOUT_COLUMNS_MAX = 6
+HOME_LAYOUT_SESSIONS_MIN = 1
+HOME_LAYOUT_SESSIONS_MAX = 20
+
+
+class HomeLayoutBody(BaseModel):
+    """Desktop profile-card density, owned by one user and profile."""
+
+    columns: int = Field(strict=True, ge=HOME_LAYOUT_COLUMNS_MIN, le=HOME_LAYOUT_COLUMNS_MAX)
+    sessions_per_profile: int = Field(strict=True, ge=HOME_LAYOUT_SESSIONS_MIN, le=HOME_LAYOUT_SESSIONS_MAX)
+
+
 def _home_preferences(user: str, profile: str | None = None, body: HomePreferencesBody | None = None):
     if profile is not None:
         _clean_identifier(profile, label="Profile", maximum=_MAX_PROFILE_LENGTH)
@@ -1804,6 +1819,57 @@ def get_home_preferences(request: Request):
 def put_home_preferences(request: Request, body: HomePreferencesBody, profile: str = 'default'):
     from codex_bridge import _user
     return _home_preferences(_user(request), profile, body)
+
+
+def _home_layout(user: str, profile: str | None = None, body: HomeLayoutBody | None = None):
+    """Read or replace one profile's home density without browser-local state."""
+
+    if profile is not None:
+        _clean_identifier(profile, label="Profile", maximum=_MAX_PROFILE_LENGTH)
+        if "/" in profile or "\\" in profile or profile in (".", ".."):
+            raise HTTPException(422, "Invalid profile")
+    connection = _open_organization_db()
+    try:
+        with connection:
+            connection.execute(
+                "CREATE TABLE IF NOT EXISTS home_layout (owner TEXT NOT NULL, profile TEXT NOT NULL, "
+                "columns INTEGER NOT NULL, sessions_per_profile INTEGER NOT NULL, PRIMARY KEY(owner, profile))"
+            )
+            if body is not None:
+                connection.execute(
+                    "INSERT INTO home_layout VALUES (?, ?, ?, ?) "
+                    "ON CONFLICT(owner, profile) DO UPDATE SET columns=excluded.columns, "
+                    "sessions_per_profile=excluded.sessions_per_profile",
+                    (user, profile, body.columns, body.sessions_per_profile),
+                )
+            row = connection.execute(
+                "SELECT columns, sessions_per_profile FROM home_layout WHERE owner=? AND profile=?",
+                (user, profile),
+            ).fetchone()
+        def bounded(value, minimum, maximum, fallback):
+            return value if type(value) is int and minimum <= value <= maximum else fallback
+
+        columns = bounded(row["columns"], HOME_LAYOUT_COLUMNS_MIN, HOME_LAYOUT_COLUMNS_MAX, HOME_LAYOUT_DEFAULT_COLUMNS) if row else HOME_LAYOUT_DEFAULT_COLUMNS
+        sessions = bounded(row["sessions_per_profile"], HOME_LAYOUT_SESSIONS_MIN, HOME_LAYOUT_SESSIONS_MAX, HOME_LAYOUT_DEFAULT_SESSIONS) if row else HOME_LAYOUT_DEFAULT_SESSIONS
+        result = {"columns": columns, "sessions_per_profile": sessions}
+        if row and (columns != row["columns"] or sessions != row["sessions_per_profile"]):
+            result["invalid_fields"] = True
+        return result
+    finally:
+        connection.close()
+
+
+@router.get('/home-layout')
+def get_home_layout(request: Request, profile: str = 'default'):
+    from codex_bridge import _user
+    from fastapi.responses import JSONResponse
+    return JSONResponse(_home_layout(_user(request), profile), headers={"Cache-Control": "no-store"})
+
+
+@router.put('/home-layout')
+def put_home_layout(request: Request, body: HomeLayoutBody, profile: str = 'default'):
+    from codex_bridge import _user
+    return _home_layout(_user(request), profile, body)
 
 
 router.include_router(opencode_router, prefix="/opencode")
