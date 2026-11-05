@@ -1,5 +1,5 @@
 /* One compact settings rhythm; keep every preference in its existing scope. */
-.dashboard-settings-nav { padding: 18px 10px; }
+.dashboard-settings-nav { box-sizing: border-box; padding: 18px 10px; }
 .dashboard-settings-nav .workbench-settings-heading { margin-bottom: 12px; }
 .dashboard-settings-nav .workbench-settings-group { margin-bottom: 10px; }
 .dashboard-settings-nav .workbench-settings-group a { min-height: 34px; padding: 7px 10px; box-sizing: border-box; }
