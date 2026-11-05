@@ -22,7 +22,7 @@ pnpm test:browser:home-layout
 - `settings-home-layout-mobile-390-light.png` and
   `settings-home-layout-mobile-390-dark.png`: settings at phone width.
 
-Validation: `pnpm typecheck`; full Vitest suite (109 files, 587 assertions);
+Validation: `pnpm typecheck`; full Vitest suite (109 files, 588 assertions);
 full Python suite (447 cases, 6 subtests); focused layout Python tests (3);
 focused layout/component Vitest tests (8); production build; localhost layout
 Playwright; history and public-content checks.
@@ -32,7 +32,7 @@ The production build used an isolated `XDG_CONFIG_HOME` to honor the requested
 workspace boundary. Chromium was supplied through `CHROMIUM_EXECUTABLE_PATH`.
 Browser screenshots use the real built bundle with deterministic mock APIs;
 backend persistence and user/profile isolation use a real temporary SQLite database.
-A fresh FastAPI application reads the same saved database. An actual deployed
+A fresh FastAPI application and a separate Python interpreter read the same saved database. An actual deployed
 Hermes host, full operating-system restart and installed release loading route
 were not exercised. The existing home has no View all control; the separate
 session list and underlying full session membership are preserved.

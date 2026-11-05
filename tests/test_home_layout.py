@@ -1,4 +1,5 @@
 import sys
+import subprocess
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -44,6 +45,26 @@ def test_home_layout_defaults_persist_and_isolate_by_profile(tmp_path, monkeypat
         assert client.get('/home-layout?profile=writer', headers={'remote-user': 'Alice'}).json() == {
             'columns': 4, 'sessions_per_profile': 5,
         }
+
+    # A separate interpreter has no in-memory application or SQLite connection.
+    restarted = subprocess.run(
+        [sys.executable, '-c', """
+import json, sys
+from pathlib import Path
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+sys.path.insert(0, str(Path.cwd() / 'dashboard'))
+import plugin_api as api
+api._workspace_root = lambda: Path(sys.argv[1])
+app = FastAPI()
+app.include_router(api.router)
+with TestClient(app) as client:
+    print(json.dumps(client.get('/home-layout?profile=writer', headers={'remote-user': 'Alice'}).json()))
+""", str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[1], capture_output=True, text=True, check=True,
+    )
+    import json
+    assert json.loads(restarted.stdout) == {'columns': 4, 'sessions_per_profile': 5}
 
 
 def test_home_layout_rejects_out_of_range_and_invalid_profile(tmp_path, monkeypatch):
