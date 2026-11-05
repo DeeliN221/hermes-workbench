@@ -365,8 +365,10 @@ async function readRequestBody(request) {
 }
 
 /** Start a same-origin preview host or an ephemeral server for browser tests. */
-export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '', codexProxyOrigin = '', filesRootError = false } = {}) {
+export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyOrigin = '', codexProxyOrigin = '',
+  filesRootError = false, managedRoot = '/home/preview', managedRoots = [] } = {}) {
   const preferences = new Map();
+  const managedRootPaths = [...new Set([managedRoot, ...managedRoots])];
   const server = createServer(async (request, response) => {
     const url = new URL(request.url || '/', `http://${host}`);
     response.setHeader('Cache-Control', 'no-store');
@@ -400,14 +402,25 @@ export async function createMockHost({ host = '127.0.0.1', port = 0, fleetProxyO
     }
     if (url.pathname.startsWith('/api/')) {
       const path = url.searchParams.get('path');
-      const payload = filesRootError && url.pathname === '/api/files' && (!path || path === '/opt/shared-auth')
+      const managedPath = !path || managedRootPaths.some(root => path === root || path.startsWith(`${root}/`));
+      const payload = filesRootError && url.pathname === '/api/files' && (!managedPath || managedRootPaths.includes(path))
         ? { __status: 403, detail: 'Path outside managed files root' }
         : filesRootError && url.pathname === '/api/plugins/workbench/managed-files'
-          ? {
-              root: '/home/preview', locked_root: '/home/preview', can_change_path: false,
-              path: '/home/preview', parent: null,
-              entries: [{ name: 'hermes-workbench', path: '/home/preview/hermes-workbench', is_directory: true, size: null, mtime: 1, mime_type: null }],
-            }
+          ? path && !managedRootPaths.includes(path)
+            ? { __status: 403, detail: 'Path outside managed files root' }
+            : (() => {
+                const activeRoot = path && managedRootPaths.includes(path) ? path : managedRoot;
+                return {
+                root: activeRoot, locked_root: activeRoot, can_change_path: false,
+                path: path || activeRoot, parent: null,
+                // External symlinks are skipped by the Workbench backend; only
+                // the safe siblings reach the listing.
+                entries: [
+                  { name: 'workspace', path: `${activeRoot}/workspace`, is_directory: true, size: null, mtime: 1, mime_type: null },
+                  { name: 'notes.txt', path: `${activeRoot}/notes.txt`, is_directory: false, size: 5, mtime: 1, mime_type: 'text/plain' },
+                ],
+              };
+              })()
           : apiPayload(url, request.method || 'GET', await readRequestBody(request), preferences);
       const status = Number(payload?.__status) || 200;
       if (payload && typeof payload === 'object' && '__status' in payload) delete payload.__status;

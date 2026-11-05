@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { normalizeManagedListing, installManagedFilesListing, settleFilesLoadingLabel } from '../dashboard/src/files-listing';
+import { clearManagedListingError, installManagedFilesListing, normalizeManagedListing, settleFilesLoadingLabel } from '../dashboard/src/files-listing';
 import { closeFilePreview, openFilePreview, showFilePreviewLoading } from '../dashboard/src/file-preview';
 
 afterEach(() => { closeFilePreview(); vi.unstubAllGlobals(); delete (window as any).__HTI_FILES_LISTING__; });
@@ -49,17 +49,95 @@ describe('Files symlink and download regressions', () => {
     expect(await response.json()).toEqual(recovered);
     expect(fetcher).toHaveBeenLastCalledWith('/api/plugins/workbench/managed-files', undefined);
   });
-  it('keeps a real out-of-root path rejected without trying the recovery endpoint', async () => {
+  it('recovers an explicit /opt/data root before native metadata is known', async () => {
     window.history.replaceState(null, '', '/files');
     const failure = { detail: 'Path outside managed files root' };
-    const fetcher = vi.fn(async () => new Response(JSON.stringify(failure), { status: 403, headers: { 'content-type': 'application/json' } }));
+    const recovered = {
+      root: '/opt/data', locked_root: '/opt/data', can_change_path: false,
+      path: '/opt/data', parent: null,
+      entries: [
+        { name: 'workspace', path: '/opt/data/workspace', is_directory: true, size: null, mtime: 1, mime_type: null },
+      ],
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/plugins/workbench/managed-files')) {
+        return new Response(JSON.stringify(recovered), { headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify(failure), { status: 403, headers: { 'content-type': 'application/json' } });
+    });
     vi.stubGlobal('fetch', fetcher);
     installManagedFilesListing();
 
-    const response = await fetch('/api/files?path=%2Fopt%2Fshared-auth');
-    expect(response.status).toBe(403);
-    expect(await response.json()).toEqual(failure);
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    const response = await fetch('/api/files?path=%2Fopt%2Fdata');
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(recovered);
+    expect(fetcher).toHaveBeenLastCalledWith('/api/plugins/workbench/managed-files?path=%2Fopt%2Fdata', undefined);
+  });
+  it('discovers a configured dashboard.workbench.root instead of hardcoding /opt/data', async () => {
+    window.history.replaceState(null, '', '/files');
+    const failure = { detail: 'Path outside managed files root' };
+    const recovered = {
+      root: '/srv/hermes-workbench', locked_root: '/srv/hermes-workbench', can_change_path: false,
+      path: '/srv/hermes-workbench', parent: null,
+      entries: [{ name: 'configs', path: '/srv/hermes-workbench/configs', is_directory: true, size: null, mtime: 1, mime_type: null }],
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/plugins/workbench/managed-files')) {
+        return new Response(JSON.stringify(recovered), { headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify(failure), { status: 403, headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    installManagedFilesListing();
+
+    const response = await fetch('/api/files?path=%2Fsrv%2Fhermes-workbench');
+    expect(response.status).toBe(200);
+    expect((await response.json() as typeof recovered).root).toBe('/srv/hermes-workbench');
+    expect(fetcher).toHaveBeenLastCalledWith('/api/plugins/workbench/managed-files?path=%2Fsrv%2Fhermes-workbench', undefined);
+  });
+  it('keeps real out-of-root and child paths rejected', async () => {
+    window.history.replaceState(null, '', '/files');
+    const failure = { detail: 'Path outside managed files root' };
+    const childListing = { root: '/opt/data', locked_root: '/opt/data', path: '/opt/data/workspace', parent: '/opt/data', entries: [] };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/plugins/workbench/managed-files')
+        && String(input).includes('path=%2Fopt%2Fdata%2Fworkspace')) {
+        return new Response(JSON.stringify(childListing), { headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify(failure), { status: 403, headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    installManagedFilesListing();
+
+    const statuses: Record<string, number> = {};
+    for (const path of ['%2Fopt%2Fshared-auth', '%2Fetc', '%2Fopt%2Fdata%2Fworkspace', '..%2Foutside']) {
+      const response = await fetch(`/api/files?path=${path}`);
+      statuses[path] = response.status;
+      expect(await response.json()).toEqual(failure);
+    }
+    expect(statuses).toEqual(Object.fromEntries(Object.keys(statuses).map(path => [path, 403])));
+    expect(fetcher.mock.calls.some(([input]) => String(input).startsWith('/api/plugins/workbench/managed-files')
+      && String(input).includes('path=..%2Foutside'))).toBe(false);
+  });
+  it('removes the stale managed-root banner after a successful recovery', async () => {
+    window.history.replaceState(null, '', '/files');
+    document.body.innerHTML = `
+      <div role="alert"><div class="text-destructive">Path outside managed files root</div></div>
+      <button aria-label="Upload files"><span title="">Loading</span></button>`;
+    const failure = { detail: 'Path outside managed files root' };
+    const recovered = { root: '/opt/data', locked_root: '/opt/data', path: '/opt/data', parent: null, entries: [] };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).startsWith('/api/plugins/workbench/managed-files')) {
+        return new Response(JSON.stringify(recovered), { headers: { 'content-type': 'application/json' } });
+      }
+      return new Response(JSON.stringify(failure), { status: 403, headers: { 'content-type': 'application/json' } });
+    });
+    vi.stubGlobal('fetch', fetcher);
+    installManagedFilesListing();
+
+    expect((await fetch('/api/files?path=%2Fopt%2Fdata')).status).toBe(200);
+    expect(document.querySelector('[role="alert"]')).toBeNull();
+    expect(document.querySelector('button[aria-label="Upload files"] span')?.textContent).toBe('Loading');
   });
   it('ends the native loading label when a listing error is shown', () => {
     window.history.replaceState(null, '', '/files');
@@ -69,6 +147,10 @@ describe('Files symlink and download regressions', () => {
 
     expect(settleFilesLoadingLabel()).toBe(true);
     expect(document.querySelector('button[aria-label="Upload files"] span')?.textContent).toBe('Unavailable');
+
+    expect(clearManagedListingError()).toBe(true);
+    expect(document.querySelector('div.text-destructive')).toBeNull();
+    expect(document.querySelector('button[aria-label="Upload files"] span')?.textContent).toBe('Loading');
 
     document.body.innerHTML = '<button aria-label="Upload files"><span title="">Loading</span></button>';
     expect(settleFilesLoadingLabel()).toBe(false);
