@@ -316,6 +316,15 @@ export async function renderModelVisibilityPanel(panel: HTMLElement, explicitPro
     '<header class="workbench-settings-subpage-header"><h1>聊天模型显示</h1><p class="workbench-version-muted">勾选控制当前档案 <strong class="workbench-model-profile-chip" data-model-profile>default</strong> 的聊天框显示哪些模型；聊天显示名按当前用户和档案保存。设置保存在服务端，跨浏览器生效，不会修改 Codex 配置或后端模型目录。</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">正在读取模型…</span><button type="button" data-model-show-all>全部显示</button></div><div class="workbench-model-list" data-model-visibility-list>正在读取模型…</div>',
     '<header class="workbench-settings-subpage-header"><h1>Chat model visibility</h1><p class="workbench-version-muted">Checkboxes choose which models appear in the chat menu for profile <strong class="workbench-model-profile-chip" data-model-profile>default</strong>. Chat display names apply to this user and profile. Both are stored on the server across browsers and do not change Codex configuration or the backend catalog.</p></header><div class="workbench-model-toolbar"><span class="workbench-model-status" data-model-visibility-status role="status">Loading models…</span><button type="button" data-model-show-all>Show all</button></div><div class="workbench-model-list" data-model-visibility-list>Loading models…</div>',
   );
+  const columns = document.createElement('div');
+  columns.className = 'workbench-model-columns';
+  columns.setAttribute('aria-hidden', 'true');
+  const modelLabel = document.createElement('span');
+  modelLabel.textContent = sourceText('模型', 'Model');
+  const aliasLabel = document.createElement('span');
+  aliasLabel.textContent = sourceText('聊天显示名', 'Chat display name');
+  columns.append(modelLabel, aliasLabel);
+  panel.querySelector('[data-model-visibility-list]')?.before(columns);
   const profile = panel.querySelector<HTMLElement>('[data-model-profile]');
   if (profile) profile.textContent = profileName;
   await renderModelVisibility(panel, profileName);

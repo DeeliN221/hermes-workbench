@@ -28,22 +28,22 @@ const MODE_COPY: Record<ChatDetailMode, { label: () => string; description: () =
   compact: {
     label: () => sourceText('简洁', 'Compact'),
     description: () => sourceText(
-      '折叠时只显示一行摘要；展开时使用最矮的滚动窗口。',
-      'Fold to one summary line; expand into the shortest scroll window.',
+      '展开时使用最矮的滚动窗口。',
+      'The shortest expanded window.',
     ),
   },
   standard: {
     label: () => sourceText('标准', 'Standard'),
     description: () => sourceText(
-      '折叠时只显示一行摘要；展开时使用中等高度的滚动窗口。',
-      'Fold to one summary line; expand into a medium-height scroll window.',
+      '展开时使用中等高度的滚动窗口。',
+      'A medium-height expanded window.',
     ),
   },
   detailed: {
     label: () => sourceText('详细', 'Detailed'),
     description: () => sourceText(
-      '折叠时只显示一行摘要；展开时使用最高的滚动窗口，并打开工具输出。',
-      'Fold to one summary line; expand into the tallest scroll window with tool output open.',
+      '展开时使用最高的窗口，并打开工具输出。',
+      'The tallest expanded window, with tool output open.',
     ),
   },
 };
@@ -99,10 +99,21 @@ export function renderChatDisplayPanel(panel: HTMLElement, read?: FetchJSON): vo
   const description = document.createElement('p');
   description.className = 'workbench-chat-display-muted';
   description.textContent = sourceText(
-    '选择展开后过程窗口的高度上限。折叠时始终只显示一行摘要，助手回复始终完整显示。',
-    'Choose the height cap for an expanded process window. Folded groups always keep one summary line, and assistant replies always stay fully visible.',
+    '集中调整聊天过程、快捷工具和首页的显示方式。',
+    'Adjust conversation details, chat tools, and home display preferences.',
   );
   header.append(heading, description);
+  const details = document.createElement('section');
+  details.className = 'workbench-settings-section';
+  const detailsHeading = document.createElement('h2');
+  detailsHeading.textContent = sourceText('过程窗口', 'Process windows');
+  const detailsDescription = document.createElement('p');
+  detailsDescription.className = 'workbench-chat-display-muted';
+  detailsDescription.textContent = sourceText(
+    '选择展开后的高度。折叠时显示一行摘要，助手回复始终完整显示。',
+    'Choose the expanded height. Folded groups keep one summary line; replies stay fully visible.',
+  );
+  details.append(detailsHeading, detailsDescription);
   const group = document.createElement('div');
   group.className = 'workbench-chat-display-options';
   group.setAttribute('role', 'radiogroup');
@@ -141,9 +152,15 @@ export function renderChatDisplayPanel(panel: HTMLElement, read?: FetchJSON): vo
     group.append(button);
   }
 
-  panel.append(header, group, status);
-  renderUserMessageBallSetting(panel);
-  if (read) renderFolderUploadSetting(panel, read);
+  details.append(group, status);
+  const tools = document.createElement('section');
+  tools.className = 'workbench-settings-section';
+  const toolsHeading = document.createElement('h2');
+  toolsHeading.textContent = sourceText('聊天工具', 'Chat tools');
+  tools.append(toolsHeading);
+  renderUserMessageBallSetting(tools);
+  if (read) renderFolderUploadSetting(tools, read);
+  panel.append(header, details, tools);
 }
 
 export function createChatDisplaySettings(sdk: any) {

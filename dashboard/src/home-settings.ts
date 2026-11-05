@@ -5,10 +5,11 @@ import { currentProfile } from './profile-scope';
 /** User-owned preferences; profile appearance data is never rewritten here. */
 export async function renderHomeSettings(panel: HTMLElement, fetchJSON: FetchJSON): Promise<void> {
   const section = document.createElement('section');
-  section.className = 'home-settings';
+  section.className = 'home-settings workbench-settings-section';
   const title = document.createElement('h2');
   title.textContent = tr('首页显示', 'Home display');
   const status = document.createElement('p');
+  status.className = 'workbench-settings-status';
   status.setAttribute('role', 'status');
   section.append(title, status); panel.append(section);
   const profile = currentProfile();
@@ -20,8 +21,11 @@ export async function renderHomeSettings(panel: HTMLElement, fetchJSON: FetchJSO
     ]);
     if (!section.isConnected) return;
     const label = document.createElement('label'), checkbox = document.createElement('input');
+    label.className = 'home-settings-label-row';
     checkbox.type = 'checkbox'; checkbox.checked = prefs.labels[profile] !== false;
-    label.append(checkbox, tr('显示会话项目标签', 'Show session project labels') + ` · ${profile}`);
+    const labelCopy = document.createElement('span');
+    labelCopy.textContent = tr('显示会话项目标签', 'Show session project labels') + ` · ${profile}`;
+    label.append(labelCopy, checkbox);
     section.append(label);
     const put = (url: string, body: unknown) => fetchJSON(url, {method: 'PUT', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
     checkbox.onchange = async () => {
@@ -32,13 +36,25 @@ export async function renderHomeSettings(panel: HTMLElement, fetchJSON: FetchJSO
     };
     const names = roster.profiles.map(p => p.name);
     let order = [...saved.order.filter(p => names.includes(p)), ...names.filter(p => !saved.order.includes(p))];
-    const list = document.createElement('div'); list.setAttribute('aria-label', tr('Profile 排序', 'Profile order')); section.append(list);
+    const orderTitle = document.createElement('h3');
+    orderTitle.textContent = tr('Profile 排序', 'Profile order');
+    const list = document.createElement('div');
+    list.className = 'home-settings-order-list';
+    list.setAttribute('aria-label', tr('Profile 排序', 'Profile order'));
+    section.append(orderTitle, list);
     const render = () => {
       list.replaceChildren(...order.map((name, index) => {
-        const row = document.createElement('div'); row.append(name + ' ');
+        const row = document.createElement('div');
+        row.className = 'home-settings-order-row';
+        const nameLabel = document.createElement('span');
+        nameLabel.textContent = name;
+        nameLabel.title = name;
+        row.append(nameLabel);
+        const controls = document.createElement('div');
+        controls.className = 'home-settings-order-actions';
         for (const direction of [-1, 1]) {
           const button = document.createElement('button'); button.type = 'button';
-          button.textContent = direction < 0 ? '↑' : '↓';
+          button.innerHTML = `<svg viewBox="0 0 16 16" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="${direction < 0 ? 'm4 10 4-4 4 4' : 'm4 6 4 4 4-4'}" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
           button.setAttribute('aria-label', name + ' ' + (direction < 0 ? tr('上移', 'Move up') : tr('下移', 'Move down')));
           button.disabled = index + direction < 0 || index + direction >= order.length;
           button.onclick = async () => {
@@ -48,8 +64,9 @@ export async function renderHomeSettings(panel: HTMLElement, fetchJSON: FetchJSO
             catch { status.textContent = tr('保存失败，请重试', 'Save failed. Retry.'); }
             finally { render(); }
           };
-          row.append(button);
+          controls.append(button);
         }
+        row.append(controls);
         return row;
       }));
     };

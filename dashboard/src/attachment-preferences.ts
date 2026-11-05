@@ -44,8 +44,10 @@ export function renderFolderUploadSetting(panel: HTMLElement, read: FetchJSON, p
   button.type = 'button'; button.className = 'workbench-chat-display-switch';
   button.dataset.testid = 'folder-upload-toggle'; button.setAttribute('role', 'switch');
   button.setAttribute('aria-label', label.textContent); button.setAttribute('aria-checked', 'false');
-  button.textContent = uiText('关闭', 'Off'); button.disabled = true;
-  const apply = (enabled: boolean) => { button.setAttribute('aria-checked', String(enabled)); button.textContent = enabled ? uiText('开启', 'On') : uiText('关闭', 'Off'); };
+  button.innerHTML = '<span class="workbench-chat-display-switch-label"></span><span class="workbench-chat-display-switch-track" aria-hidden="true"><span class="workbench-chat-display-switch-thumb"></span></span>';
+  const switchLabel = button.querySelector<HTMLElement>('.workbench-chat-display-switch-label')!;
+  switchLabel.textContent = uiText('关闭', 'Off'); button.disabled = true;
+  const apply = (enabled: boolean) => { button.setAttribute('aria-checked', String(enabled)); switchLabel.textContent = enabled ? uiText('开启', 'On') : uiText('关闭', 'Off'); };
   const error = document.createElement('span'); error.setAttribute('role', 'status');
   loadFolderUpload(read, profile).then(enabled => { apply(enabled); button.disabled = false; }).catch(() => { error.textContent = uiText('无法读取设置。', 'Could not load settings.'); });
   button.addEventListener('click', async () => {

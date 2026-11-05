@@ -64,3 +64,4 @@ import './task-control-tower.css';
 
 import { installMobileTabShell } from './mobile-tab-shell';
 installMobileTabShell();
+import './settings-layout.css';
