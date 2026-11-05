@@ -7,6 +7,25 @@
 .workbench-mobile-settings-header,
 .workbench-mobile-tab-header { font-family: var(--theme-font-sans, ui-sans-serif, system-ui, sans-serif); font-size: 14px; }
 
+.workbench-profiles,
+.workbench-shortcut-settings { box-sizing: border-box; width: 100%; max-width: 1080px; margin: 0 auto; padding: 24px clamp(20px, 3vw, 32px); font-size: 14px; line-height: 1.5; }
+.workbench-profiles h1,
+.workbench-shortcut-settings h1 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.25; }
+.workbench-profiles > header p,
+.workbench-shortcut-settings > p { margin: 0 0 16px; font-size: 13px; line-height: 1.5; color: var(--dashboard-muted); }
+.workbench-profiles .workbench-profile-grid { gap: 12px; margin-top: 16px; }
+.workbench-profiles .workbench-profile-card { gap: 6px; padding: 14px; border-radius: 7px; }
+.workbench-profiles .workbench-profile-card h2 { margin: 0; font-size: 15px; }
+.workbench-profiles button { min-height: 34px; padding: 6px 10px; border-radius: 6px; font-size: 13px; }
+.workbench-profiles .workbench-profile-display { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 8px; align-items: end; }
+.workbench-profiles .workbench-profile-display label { display: grid; gap: 4px; min-width: 0; font-size: 12px; }
+.workbench-profiles .workbench-profile-display input { box-sizing: border-box; width: 100%; min-width: 0; height: 34px; padding: 0 9px; border: 1px solid var(--dashboard-line); border-radius: 6px; font: inherit; color: var(--dashboard-ink); background: var(--dashboard-page-surface); }
+.workbench-profiles .workbench-profile-display > :is(small, p) { grid-column: 1 / -1; }
+.workbench-profiles .workbench-profile-actions { gap: 8px 12px; padding-top: 6px; }
+.workbench-settings-subpage.quota-settings { border: 0; border-radius: 0; }
+.workbench-settings-subpage.quota-settings > h2 { margin: 0 0 6px; font-size: 24px; font-weight: 650; line-height: 1.25; }
+.workbench-settings-subpage.quota-settings > .quota-subtitle { font-size: 13px; line-height: 1.5; }
+
 .workbench-settings-subpage {
   max-width: 1080px;
   padding: 24px clamp(20px, 3vw, 32px);
@@ -106,6 +125,16 @@
 .workbench-settings-subpage .workbench-model-alias-error:empty { display: none; }
 
 @media (max-width: 800px) {
+  .workbench-profiles,
+  .workbench-shortcut-settings { padding: 8px 0 16px; }
+  .workbench-profiles h1,
+  .workbench-shortcut-settings h1,
+  .workbench-settings-subpage.quota-settings > h2 { font-size: 22px; }
+  .workbench-profiles button,
+  .workbench-profiles .workbench-profile-display input,
+  .workbench-shortcut-settings select,
+  .workbench-settings-subpage.quota-settings button { min-height: 44px; }
+  .workbench-profiles .workbench-profile-display { grid-template-columns: minmax(0, 1fr); }
   .dashboard-settings-nav .workbench-settings-group a,
   .dashboard-settings-nav .workbench-settings-more-toggle { min-height: 44px; }
   .workbench-settings-subpage { padding: 8px 0 16px; font-size: 14px; scrollbar-gutter: auto; }
