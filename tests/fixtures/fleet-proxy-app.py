@@ -21,7 +21,7 @@ for _profile in ("default", "writer"):
     _store.upsert_session("preview", _profile, {
         "session_id": "codex-preview", "thread_id": "native-preview",
         "workspace_id": "default", "workspace_path": _session_home.name,
-        "execution_node_id": "dev-box",
+        "execution_node_id": "test-machine",
     })
 app.state.codex_bridge = SimpleNamespace(store=_store)
 atexit.register(_store.close)
