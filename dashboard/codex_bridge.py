@@ -3395,6 +3395,14 @@ def create_router(bridge: CodexBridge | None = None) -> APIRouter:
 
         return {"items": service.workspaces(profile, _user(request))}
 
+    @router.get("/session-target")
+    async def session_target(request: Request, conversation_id: str, profile: str = "default", device: str = ""):
+        from session_target import mapped_target
+        from fastapi.responses import JSONResponse
+        target = await asyncio.to_thread(mapped_target, service, _user(request), _safe(profile, "profile"),
+                                         _safe(conversation_id, "conversation_id"), device)
+        return JSONResponse(target, headers={"Cache-Control": "no-store"})
+
     @router.get("/sessions")
     async def sessions(request: Request, profile: str = "default", limit: int = 50, offset: int = 0, deleted: bool = False, recent: bool = False) -> dict[str, Any]:
         """Return a page of identity-scoped session mappings."""

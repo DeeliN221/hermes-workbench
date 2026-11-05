@@ -336,14 +336,13 @@ def test_attempt_precedence_stale_and_broken_spec_preservation(client, monkeypat
     assert row['spec_json']['prompt'] == '# Brief\n\nAdditional instructions'
 
 
-def test_thread_metadata_refreshes_and_overrides_planned_effort(client, monkeypatch, tmp_path):
+def test_unscoped_native_thread_does_not_authorize_session_or_supply_metadata(client, monkeypatch, tmp_path):
     import sqlite3
     home = tmp_path / 'codex'
     home.mkdir()
     db = sqlite3.connect(home / 'state_5.sqlite')
     db.execute('CREATE TABLE threads (id TEXT, model TEXT, reasoning_effort TEXT)')
     monkeypatch.setenv('FLEET_CODEX_HOME', str(home))
-    assert proxy._local_thread_metadata('fresh-thread') is None
     db.execute('INSERT INTO threads VALUES (?, ?, ?)', ('fresh-thread', 'actual-model', 'low'))
     db.commit()
     data = {'task': {'id': 'T-thread', 'status': 'running', 'assignee': 'W-one', 'conversation_id': 'fresh-thread',
@@ -351,9 +350,9 @@ def test_thread_metadata_refreshes_and_overrides_planned_effort(client, monkeypa
             'attempts': [{'started_at': '2026-01-01T00:00:00Z'}], 'decision': None}
     monkeypatch.setattr(transport.FleetClient, 'get', lambda *_: data)
     row = client.get(BASE + '/tasks/T-thread', headers=HEADERS).json()['task']
-    assert row['model_used'] == 'actual-model'
-    assert row['reasoning_effort'] == 'low'
-    assert row['conversation_local'] is True
+    assert 'model_used' not in row
+    assert row['reasoning_effort'] == 'high'
+    assert 'conversation_local' not in row
     assert row['stale'] is False
     db.close()
 
@@ -393,3 +392,20 @@ def test_incremental_cards_never_fetch_details(client, monkeypatch):
     assert sync("fast", "invalid").status_code == 422
     assert sync("done").status_code == 422
     assert all("spec_json" not in t and "attempts" not in t for t in first["tasks"])
+
+def test_delivery_artifacts_and_declarations_survive_projection(client, monkeypatch):
+    data = {'task': {'id': 'T-delivery', 'status': 'review', 'deliverables': 'PR/commit and screenshots'},
+            'attempts': [], 'decision': None,
+            'artifacts': [{'id': 'pr', 'kind': 'pr', 'name': 'PR #42', 'ref': 'https://github.com/example/repo/pull/42'},
+                          {'id': 'commit', 'kind': 'commit', 'sha': 'abc123', 'url': 'https://github.com/example/repo/commit/abc123'},
+                          {'id': 'report', 'kind': 'report', 'name': 'report.md', 'ref': '/private/report.md'}],
+            'links': [{'label': 'Preview', 'url': 'https://example.com/demo'}]}
+    monkeypatch.setattr(transport.FleetClient, 'get', lambda *_: data)
+    result = client.get(BASE + '/tasks/T-delivery', headers=HEADERS).json()
+    assert result['task']['deliverables'] == 'PR/commit and screenshots'
+    assert len(result['artifacts']) == 3
+    assert result['artifacts'][0]['external_url'].endswith('/pull/42')
+    assert result['artifacts'][1]['sha'] == 'abc123'
+    assert result['links'][0]['label'] == 'Preview'
+    assert '/private/report.md' not in json.dumps(result)
+    assert all('download_url' not in a for a in result['artifacts'])

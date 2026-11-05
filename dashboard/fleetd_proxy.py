@@ -1,11 +1,9 @@
 """Same-origin, authenticated, task console API for fleetd v1."""
 import json
 import os
-import sqlite3
 from datetime import datetime
-from pathlib import Path
 from fastapi import APIRouter, HTTPException, Request, Query
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from starlette.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from fleetd_client import FleetClient
@@ -74,42 +72,6 @@ def _attempt_metadata(attempt):
     return result
 
 
-def _local_thread_metadata(conversation_id):
-    """Read only model/effort hints from local Codex state databases."""
-    if not isinstance(conversation_id, str) or not conversation_id or len(conversation_id) > 200:
-        return None
-    homes = []
-    for raw in (os.getenv("FLEET_CODEX_HOME"), os.getenv("CODEX_HOME")):
-        if raw:
-            homes.append(Path(raw))
-    homes.append(Path.home() / ".codex")
-    homes.append(Path("/opt/data/.fleet-codex"))
-    seen = set()
-    for home in homes:
-        try:
-            resolved = str(home.expanduser().resolve())
-        except (OSError, RuntimeError):
-            continue
-        if resolved in seen:
-            continue
-        seen.add(resolved)
-        for database in sorted(Path(resolved).glob("state_*.sqlite")):
-            try:
-                connection = sqlite3.connect(f"file:{database}?mode=ro", uri=True, timeout=0.25)
-                try:
-                    row = connection.execute(
-                        "SELECT model, reasoning_effort FROM threads WHERE id=? LIMIT 1",
-                        (conversation_id,),
-                    ).fetchone()
-                finally:
-                    connection.close()
-            except (OSError, sqlite3.Error, ValueError):
-                continue
-            if row:
-                return {"model": str(row[0] or "").strip(), "reasoning_effort": str(row[1] or "").strip()}
-    return None
-
-
 def reply(value):
     return JSONResponse(value, headers={"Cache-Control": "no-store"})
 
@@ -140,7 +102,8 @@ def task(row):
               "created_at", "updated_at", "source_session_id", "source_profile", "source_session_kind",
               "conversation_id", "conversation_profile", "conversation_kind", "blocked_reason", "error",
               "capability", "model_used", "reasoning_effort", "duration_seconds", "completed_at",
-              "source_local", "conversation_local") if k in row}
+              "source_local", "conversation_local", "source_machine", "conversation_machine",
+              "deliverables", "final_deliverable", "final_deliverables", "delivery", "stage_report") if k in row}
     result.update(status=status, fleet_status=raw, revision=0,
                   priority="P" + str(row.get("priority", "")),
                   attempt_count=row.get("attempts", 0), server_lifecycle=True, read_only=True,
@@ -218,6 +181,32 @@ async def sync_tasks(request: Request):
     return reply(await run_in_threadpool(collect))
 
 
+def _delivery_artifact(value, task_id):
+    external = value.get("external_url") or value.get("url") or value.get("ref", "")
+    try:
+        parsed = urlsplit(external)
+        if parsed.scheme not in ("https", "http") or not parsed.hostname or parsed.username or parsed.password:
+            external = None
+    except (ValueError, TypeError, AttributeError):
+        external = None
+    artifact = {key: value.get(key) for key in ("kind", "name", "sha", "size", "content_type")}
+    artifact.update(id=str(value["id"]), task_id=task_id, external_url=external)
+    # v1 has no authenticated binary download route. Do not offer a false download.
+    return artifact
+
+
+@router.get("/session-target")
+def session_target(request: Request, conversation_id: str = Query(..., min_length=1, max_length=200),
+                   profile: str = "default", device: str = Query("", max_length=200), kind: str = ""):
+    from codex_bridge import _user, _safe
+    from session_target import resolve_target
+    user = _user(request)
+    if kind not in ("", "codex"):
+        return reply({"state": "unavailable"})
+    return reply(resolve_target(getattr(request.app.state, "codex_bridge", None), user,
+                                _safe(profile, "profile"), _safe(conversation_id, "conversation_id"), device))
+
+
 @router.get("/tasks/{task_id}")
 def detail(task_id: str):
     client = FleetClient()
@@ -284,16 +273,6 @@ def detail(task_id: str):
     row["attempt_count"] = len(attempts)
     if not row.get("conversation_id"):
         row["conversation_id"] = next((a["conversation_id"] for a in ordered if a.get("conversation_id")), None)
-    thread = _local_thread_metadata(row.get("conversation_id"))
-    if thread:
-        row["conversation_local"] = True
-        row["conversation_kind"] = "codex"
-        if thread.get("model") and not row.get("model_used"):
-            row["model_used"] = thread["model"]
-        if thread.get("reasoning_effort") and not row.get("reasoning_effort"):
-            row["reasoning_effort"] = thread["reasoning_effort"]
-    elif row.get("conversation_id"):
-        row["conversation_local"] = False
     if not row.get("reasoning_effort") and isinstance(spec, dict):
         effort = spec.get("reasoning_effort") or spec.get("model_reasoning_effort")
         if isinstance(effort, str) and effort.strip():
@@ -332,7 +311,8 @@ def detail(task_id: str):
             normalized_attempts[0]["machine"] = worker["machine"]
 
     row["attempts"] = normalized_attempts
-    return reply({"task": row, "open_decision": row["decision"], "artifacts": [],
+    return reply({"task": row, "open_decision": row["decision"], "artifacts": [_delivery_artifact(a, task_id) for a in data.get("artifacts", []) if isinstance(a, dict) and a.get("id")],
+                  "links": [a for a in data.get("links", []) if isinstance(a, dict) and isinstance(a.get("url"), str) and isinstance(a.get("label"), str)],
                   "review_notes": [{"text": e["payload"], "at": e.get("at", "")} for e in data.get("events", [])
                                    if e.get("type") == "task.note" and isinstance(e.get("payload"), str)],
                   "attempts": normalized_attempts})
