@@ -147,3 +147,29 @@ the note first, then returns the task to running. If the transition fails, the
 response says the note was saved and the drawer retains the draft for retry.
 Repeated feedback within the same review is not appended twice when fleetd's
 recent events contain the saved note. Worker clients can read it in task events.
+
+## Authentication expiry and machine probes
+
+Only `/health`, `/healthz` and static assets are public; version lists, update
+progress and Codex runtime status remain private. Loopback and bridge addresses
+are not identities: an access log source IP cannot distinguish a browser behind
+Caddy from a local poller. Correlate the proxy access log and poller configuration.
+Never add an IP-based authentication bypass.
+
+Configure Authelia's `forward_auth` to `copy_headers Remote-User` before importing
+`workbench_routes`. Clear incoming `Remote-User` before authentication, and ensure
+all `/api/plugins/workbench/*` routes go through the same authentication block.
+Authelia must overwrite the identity; do not derive it from client input.
+
+Machine pollers should use `/health` or `/healthz`. If private status is needed,
+set a distinct `HERMES_WORKBENCH_INTERNAL_STATUS_TOKEN` on the sidecar and send
+`X-Workbench-Status-Token` on GET/HEAD requests to exactly `/versions`,
+`/versions/update-status` or `/codex-runtime/status` under the Workbench API prefix.
+The token grants no mutation or other API access. Keep it out of browser code,
+URLs and access logs. Restart the sidecar when configuring it. The proxy strips
+this header from browser requests.
+
+Workbench pauses API network requests after a 401 or authentication redirect,
+shows one expiry notice, and resumes only after a successful manual retry.
+Reauthentication opens on explicit click; it does not erase local sessions or
+reload the current page. Failed writes are never automatically replayed.

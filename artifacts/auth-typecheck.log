@@ -1,0 +1,2 @@
+$ python3 scripts/check-typescript-source.py && tsc --noEmit
+Application TypeScript boundary verified

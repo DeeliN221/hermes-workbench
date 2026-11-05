@@ -1,3 +1,4 @@
+import { installAuthPollingGuard } from './auth-polling';
 /** Stable entry point: load the installed runtime and keep failures recoverable. */
 import { installKanbanDeleteBoardScope } from './kanban-delete-board-scope';
 import { loadCodexPreview } from './codex-snapshot-cache';
@@ -18,6 +19,7 @@ export function installSidecarLoader(): void {
   const state = host.__HERMES_WORKBENCH_SIDECAR__ || { status: 'idle' };
   host.__HERMES_WORKBENCH_SIDECAR__ = state;
   if (state.status === 'loaded' || state.status === 'loading') return;
+  installAuthPollingGuard();
   installKanbanDeleteBoardScope();
   const text = (zh: string, en: string) => document.documentElement.lang.toLowerCase().startsWith('zh') ? zh : en;
   const h = sdk.React.createElement;

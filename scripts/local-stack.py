@@ -85,6 +85,7 @@ http {{
  location /api/plugins/workbench/ {{
  proxy_set_header X-Hermes-Proxy-Secret local-acceptance-only;
  proxy_set_header Remote-User acceptance;
+ proxy_set_header X-Workbench-Status-Token "";
  proxy_set_header Upgrade $http_upgrade;
  proxy_set_header Connection $connection_upgrade;
  proxy_pass http://127.0.0.1:9451;

@@ -1,0 +1,187 @@
+{
+  "deployment": "local isolated subprocess; production NOT deployed",
+  "authenticated_poll_requests": 40,
+  "authenticated_401_count": 0,
+  "results": [
+    {
+      "path": "/healthz",
+      "status": 200
+    },
+    {
+      "path": "/health",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 401
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 401
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 401
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    },
+    {
+      "path": "/api/plugins/workbench/versions/update-status",
+      "status": 200
+    }
+  ]
+}

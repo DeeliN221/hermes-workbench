@@ -12,13 +12,14 @@ from datetime import datetime, timezone
 import hmac
 from contextlib import asynccontextmanager
 import json
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, HTMLResponse
 
 _MODULE_ROOT = Path(__file__).resolve().parent
 if str(_MODULE_ROOT) not in sys.path:
@@ -61,6 +62,20 @@ class TrustedProxyGate:
             value.strip().lower() for value in configured.split(",") if value.strip()
         }
 
+    def _internal_authorized(self, scope: dict[str, Any]) -> bool:
+        # Status-only machine credential. Never infer trust from a loopback IP.
+        if scope.get("type") != "http" or scope.get("method") not in {"GET", "HEAD"}:
+            return False
+        if scope.get("path") not in {
+            _API_PREFIX + "/versions", _API_PREFIX + "/versions/update-status",
+            _API_PREFIX + "/codex-runtime/status",
+        }:
+            return False
+        expected = os.environ.get("HERMES_WORKBENCH_INTERNAL_STATUS_TOKEN", "")
+        headers = dict(scope.get("headers", []))
+        supplied = headers.get(b"x-workbench-status-token", b"").decode("latin-1")
+        return bool(expected and supplied and hmac.compare_digest(expected.encode("utf-8"), supplied.encode("utf-8")))
+
     def _authorized(self, scope: dict[str, Any]) -> bool:
         """Validate both the unforgeable proxy secret and mapped user identity."""
 
@@ -74,7 +89,7 @@ class TrustedProxyGate:
             self.secret
             and supplied
             and self.allowed_users
-            and hmac.compare_digest(supplied, self.secret)
+            and hmac.compare_digest(supplied.encode("utf-8"), self.secret.encode("utf-8"))
             and remote_user in self.allowed_users
         )
 
@@ -89,6 +104,9 @@ class TrustedProxyGate:
         path = str(scope.get("path", ""))
         requires_auth = path == _API_PREFIX or path.startswith(f"{_API_PREFIX}/")
         if not requires_auth:
+            await self.app(scope, receive, send)
+            return
+        if self._internal_authorized(scope):
             await self.app(scope, receive, send)
             return
         if self._authorized(scope):
@@ -117,10 +135,30 @@ class TrustedProxyGate:
                 if mutation:
                     end_mutation()
             return
+        headers = dict(scope.get("headers", []))
+        missing = [name for key, name in ((b"x-hermes-proxy-secret", "proxy_secret"),
+                                          (b"remote-user", "remote_user")) if not headers.get(key)]
+        logging.getLogger(__name__).warning(
+            "workbench_auth_required path=%s peer=%s reason=%s", path,
+            (scope.get("client") or ("unknown",))[0],
+            "missing_" + "_and_".join(missing) if missing else "invalid_proxy_identity",
+        )
         if scope.get("type") == "websocket":
             await send({"type": "websocket.close", "code": 4401, "reason": "Unauthorized"})
             return
-        response = JSONResponse({"detail": "Unauthorized"}, status_code=401)
+        response_headers = {"Cache-Control": "no-store", "Vary": "Accept, Sec-Fetch-Mode"}
+        if headers.get(b"sec-fetch-mode") == b"navigate" or b"text/html" in headers.get(b"accept", b""):
+            # A manual same-origin navigation lets the authentication proxy start login.
+            response = HTMLResponse(
+                '<!doctype html><meta charset="utf-8"><title>登录已失效</title>'
+                '<p>登录已失效，请重新登录</p><a href="/">重新登录</a>',
+                status_code=401, headers=response_headers,
+            )
+        else:
+            response = JSONResponse(
+                {"code": "auth_required", "detail": "登录已失效，请重新登录"},
+                status_code=401, headers=response_headers,
+            )
         await response(scope, receive, send)
 
 
