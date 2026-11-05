@@ -186,10 +186,7 @@ export function createProjectNavigation(sdk: Record<string, any>) {
     const initialCollapsed = typeof document !== 'undefined'
       && document.documentElement.dataset.workbenchNavCollapsed === 'true';
     const [collapsed, setCollapsed] = useState(initialCollapsed);
-    const [railProjectId, setRailProjectId] = useState(undefined as string | undefined);
-    const [railTop, setRailTop] = useState(12);
     const historyTrigger = useRef(null);
-    const railFlyout = useRef(null as HTMLElement | null);
     const splitLayout = useRef(null as HTMLDivElement | null);
     const splitValue = useRef(projectSplit);
     const splitDrag = useRef(null as { pointerId: number; startY: number; startRatio: number; usable: number } | null);
@@ -204,26 +201,7 @@ export function createProjectNavigation(sdk: Record<string, any>) {
       return () => window.removeEventListener('workbench:nav-state', sync);
     }, []);
     useEffect(() => {
-      if (!collapsed) return undefined;
-      const close = (event: PointerEvent) => {
-        const target = event.target as Element | null;
-        if (target?.closest?.('[data-project-rail-folder]') || railFlyout.current?.contains(target as Node | null)) return;
-        setRailProjectId(undefined);
-      };
-      const key = (event: KeyboardEvent) => { if (event.key === 'Escape') setRailProjectId(undefined); };
-      document.addEventListener('pointerdown', close);
-      document.addEventListener('keydown', key);
-      return () => {
-        document.removeEventListener('pointerdown', close);
-        document.removeEventListener('keydown', key);
-      };
-    }, [collapsed]);
-    useEffect(() => {
-      if (!collapsed) setRailProjectId(undefined);
-    }, [collapsed]);
-    useEffect(() => {
       if (activeProjectId && activeProjectAvailable) {
-        if (collapsed) setRailProjectId(activeProjectId);
         const folder = folders.current.get(activeProjectId);
         if (folder) folder.open = true;
       }
@@ -317,7 +295,6 @@ export function createProjectNavigation(sdk: Record<string, any>) {
       },
       onDragEnd: endDrag,
     }, renderSession(session, false));
-    const railProject = groups.find(group => group.project.id === railProjectId);
     if (collapsed) {
       return h(sdk.React.Fragment, null,
         h('section', { className: 'project-rail', 'aria-label': sourceText("项目与临时会话", "Projects and temporary sessions") },
@@ -327,12 +304,16 @@ export function createProjectNavigation(sdk: Record<string, any>) {
               key: project.id, type: 'button', className: `project-rail-folder${activeProjectId === project.id ? ' is-active' : ''}`, 'data-project-rail-folder': project.id,
               'aria-current': activeProjectId === project.id ? 'true' : undefined,
               title: `${project.name} (${members.length})`, 'aria-label': sourceText(`项目：${project.name}，${members.length} 个会话`, `Project: ${project.name}, ${members.length} sessions`),
-              'aria-expanded': railProjectId === project.id,
-              onClick: (event: MouseEvent) => {
-                const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-                const flyoutHeight = Math.min(520, window.innerHeight * 0.62);
-                setRailTop(Math.max(12, Math.min(rect.top, window.innerHeight - flyoutHeight - 12)));
-                setRailProjectId((current: string | undefined) => current === project.id ? undefined : project.id);
+              onClick: () => {
+                // Keep project sessions in the sidebar instead of overlaying the chat.
+                document.querySelector<HTMLButtonElement>('.dashboard-nav-collapse')?.click();
+                window.requestAnimationFrame(() => {
+                  const folder = folders.current.get(project.id);
+                  if (folder) {
+                    folder.open = true;
+                    folder.scrollIntoView?.({ block: 'nearest' });
+                  }
+                });
               },
             }, projectMark(h, project), members.length ? h('span', { className: 'project-rail-count' }, members.length) : null))) : null,
           h('div', { className: 'project-rail-section project-rail-temporary' },
@@ -342,15 +323,6 @@ export function createProjectNavigation(sdk: Record<string, any>) {
             ...temporary.map(session => h('div', { key: session.id, className: 'project-rail-session' },
               h('span', { className: 'project-rail-session-icon', 'aria-hidden': true }, icon(bubblePath)),
               renderSession(session, false))))),
-        railProject ? h('div', { ref: railFlyout, className: 'project-rail-flyout', style: { top: `${railTop}px` },
-          role: 'dialog', 'aria-label': railProject.project.name },
-          h('header', null, h('strong', null, h('button', { type: 'button', 'aria-label': sourceText('编辑项目外观', 'Edit project appearance'), onClick: () => setEditing(railProject.project) }, projectMark(h, railProject.project)), railProject.project.name), h('button', { type: 'button',
-            'aria-label': sourceText("关闭项目列表", "Close project list"),
-            onClick: () => setRailProjectId(undefined) }, '×')),
-          h('div', { className: 'project-rail-flyout-list', onClickCapture: (event: MouseEvent) => {
-            if ((event.target as Element | null)?.closest?.('.codex-session-row')) setRailProjectId(undefined);
-          } }, railProject.sessions.length ? railProject.sessions.map(row)
-            : h('p', { className: 'project-empty' }, sourceText("此项目还没有会话", "No sessions in this project")))) : null,
         editor, notice ? h('p', { className: 'project-rail-notice', role: 'status' }, notice) : null);
     }
     return h(sdk.React.Fragment, null,

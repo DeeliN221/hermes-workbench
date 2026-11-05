@@ -39,6 +39,15 @@ it('renders folders for projects and bubbles for temporary sessions in the colla
   const folder = nodes.find(node => node.props?.className === 'project-rail-folder');
   expect(folder).toBeDefined();
   expect(folder.props['data-project-rail-folder']).toBe('research');
+  expect(nodes.some(node => node.props?.className === 'project-rail-flyout')).toBe(false);
+  const expand = document.createElement('button');
+  expand.className = 'dashboard-nav-collapse';
+  const clicked = vi.fn();
+  expand.addEventListener('click', clicked);
+  document.body.append(expand);
+  folder.props.onClick();
+  expect(clicked).toHaveBeenCalledOnce();
+  expand.remove();
   expect(descendants(folder).some(node => node.type === 'svg')).toBe(true);
   expect(nodes.filter(node => node.props?.className === 'project-rail-session')).toHaveLength(1);
   expect(renderSession).toHaveBeenCalledWith({ id: 'temporary-session', groupId: null }, false);

@@ -139,7 +139,7 @@
 }
 
 /* Desktop collapse keeps one icon column: folders for projects, bubbles for
-   temporary conversations. The flyout preserves the full session controls. */
+   temporary conversations. Folder clicks expand the sidebar session controls. */
 .project-rail {
   display: flex; flex-direction: column; align-items: center; gap: 8px;
   min-height: 0; padding: 4px 0 12px; overflow-y: auto; overflow-x: visible;
@@ -152,7 +152,7 @@
   width: 40px; height: 40px; border: 0; border-radius: 8px; padding: 0;
   color: var(--dashboard-ink); background: transparent; cursor: pointer;
 }
-.project-rail-folder:hover, .project-rail-folder[aria-expanded="true"],
+.project-rail-folder:hover,
 .project-rail-session-new:hover { color: var(--dashboard-ink); background: var(--dashboard-active); }
 .project-rail-folder:focus-visible, .project-rail-session-new:focus-visible,
 .project-rail-session .codex-session-row:focus-visible { outline: 2px solid var(--dashboard-accent); outline-offset: -2px; }
@@ -179,28 +179,6 @@
 .project-rail-session .codex-session-row-menu-toggle { display: none; }
 .project-rail-empty { margin: 4px 0; color: var(--dashboard-muted); font-size: 10px; }
 .project-rail-notice { margin: 0; padding: 4px 0; color: var(--dashboard-muted); font-size: 10px; text-align: center; }
-.project-rail-flyout {
-  position: fixed; left: calc(var(--dashboard-nav-width, 64px) + 8px); z-index: 90;
-  display: flex; flex-direction: column; width: min(300px, calc(100vw - var(--dashboard-nav-width, 64px) - 20px));
-  max-height: min(62vh, 520px); overflow: hidden;
-  border: 1px solid var(--dashboard-line); border-radius: 10px;
-  color: var(--dashboard-ink); background: var(--dashboard-nav-surface, #f5f8fa);
-  box-shadow: 0 14px 36px #0004;
-}
-.project-rail-flyout > header {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 9px 10px; border-bottom: 1px solid var(--dashboard-line-soft);
-}
-.project-rail-flyout > header strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
-.project-rail-flyout > header button {
-  flex: 0 0 auto; width: 26px; height: 26px; border: 0; border-radius: 6px;
-  color: var(--dashboard-muted); background: transparent; cursor: pointer; font-size: 18px; line-height: 1;
-}
-.project-rail-flyout > header button:hover { color: var(--dashboard-ink); background: var(--dashboard-active); }
-.project-rail-flyout-list { min-height: 0; overflow-y: auto; padding: 5px; }
-.project-rail-flyout-list .codex-session-row-wrap { border-radius: 6px; }
-.project-rail-flyout-list .codex-session-row { border-radius: 6px; }
-
 :root[data-workbench-shell="true"][data-workbench-theme="dark"][data-workbench-view="/chat"]
   .dashboard-chat-actions .codex-new-chat { color: var(--dashboard-ink); }
 
