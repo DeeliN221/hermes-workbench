@@ -25,16 +25,31 @@ export class Store {
       for (const session of data.sessions) this.sessions.set(session.id, session);
     } catch (e) { if (e.code !== 'ENOENT') { await this.close(); throw e; } }
   }
-  async save() {
-    const data = JSON.stringify({version: 1, sessions: [...this.sessions.values()]});
-    const write = this.writes.then(async () => {
-      const temporary = join(this.directory, 'metadata.json.tmp');
-      const handle = await open(temporary, 'w', 0o600);
-      try { await handle.writeFile(data); await handle.sync(); } finally { await handle.close(); }
-      await rename(temporary, join(this.directory, 'metadata.json'));
-      const dir = await open(this.directory, 'r'); try { await dir.sync(); } finally { await dir.close(); }
+  snapshot() { return JSON.parse(JSON.stringify({version:1,sessions:[...this.sessions.values()]})); }
+  async writeSnapshot(data) {
+    const temporary = join(this.directory, 'metadata.json.tmp');
+    const handle = await open(temporary, 'w', 0o600);
+    try { await handle.writeFile(JSON.stringify(data)); await handle.sync(); } finally { await handle.close(); }
+    await rename(temporary, join(this.directory, 'metadata.json'));
+    const dir = await open(this.directory, 'r'); try { await dir.sync(); } finally { await dir.close(); }
+  }
+  enqueue(work) {
+    const operation=this.writes.then(work);this.writes=operation.catch(()=>{});return operation;
+  }
+  save() { return this.enqueue(()=>this.writeSnapshot(this.snapshot())); }
+  commitDelivery(id,record) {
+    return this.enqueue(async()=>{
+      const meta=this.sessions.get(id);const existing=(meta.deliveries??[]).find(x=>x.idempotency_key===record.idempotency_key);
+      if(existing){
+        if(existing.hash!==record.hash)throw new RuntimeError(409,'runtime/delivery-conflict','Delivery key already has a different payload or attempt');
+        return {record:existing,created:false};
+      }
+      const snapshot=this.snapshot();const target=snapshot.sessions.find(x=>x.id===id);
+      target.deliveries=[...(target.deliveries??[]),record];
+      await this.writeSnapshot(snapshot);
+      // Publish only after both the file and directory durability barriers.
+      meta.deliveries=target.deliveries;return {record,created:true};
     });
-    this.writes = write.catch(() => {}); return write;
   }
   async close() {
     await this.writes;

@@ -44,6 +44,7 @@ export class FakePeer extends EventEmitter {
     if (method === 'cancel') { session.running = false; return {accepted: true}; }
     throw Error(`Unexpected method ${method}`);
   }
+  async confirmRequest(id,requestId) {return this.native.get(id).requests.has(requestId);}
   async registerContext() {}
   follow(id, signal) {
     const session = this.native.get(id); const q = new Queue(signal); session.streams.push(q);

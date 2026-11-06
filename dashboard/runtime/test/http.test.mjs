@@ -106,3 +106,25 @@ test('model HTTP control returns native selection, validates scope and refreshes
   assert.equal((await f.call(`/sessions/${id}/model`,{model:'test-model',provider:'wrong'})).status,400);
   assert.equal((await f.call(`/sessions/${id}/model`,{model:'test-model',service_tier:'priority'})).status,422);
 });
+
+test('Fleet delivery HTTP persists scoped source/epoch and emits a cursorless notification without a prompt',async t=>{
+ const f=await fixture(t);const owner={user_id:'fleet-user',profile_id:'p',project_id:'j'};
+ const session=(await f.call('/sessions',{...owner,cwd:tmpdir()})).value;const id=session.id;const query='?'+new URLSearchParams(owner);
+ const controller=new AbortController();t.after(()=>controller.abort());
+ const stream=await fetch(`${f.url}/api/runtime/sessions/${id}/events`,{headers:f.headers,signal:controller.signal});const reader=stream.body.getReader();const state={text:''};await nextEvent(reader,state);
+ const input={source:'fleet',epoch:7,idempotency_key:'task-attempt',task_id:'task',attempt_id:'attempt',kind:'question',content:'Fleet question; this is not a native interaction',metadata:{value:1}};
+ const calls=f.peer.promptCalls;const receipt=await f.call(`/sessions/${id}/deliveries${query}`,input);assert.equal(receipt.status,202);assert.equal(receipt.value.durable,true);assert.equal(receipt.value.epoch,7);
+ const event=(await nextEvent(reader,state)).event;assert.equal(event.type,'delivery.received');assert.equal(event.cursor,undefined);assert.equal(event.data.delivery.source,'fleet');assert.equal(event.sequence,2);
+ assert.equal((await f.call(`/sessions/${id}/deliveries${query}`)).value.deliveries.length,1);
+ assert.equal((await f.call(`/sessions/${id}/deliveries/task-attempt${query}`)).value.epoch,7);
+ assert.equal((await f.call(`/sessions/${id}/snapshot`)).value.deliveries[0].source,'fleet');assert.equal(f.peer.promptCalls,calls);
+ assert.equal((await f.call(`/sessions/${id}/deliveries`,input)).status,400);
+ assert.equal((await f.call(`/sessions/${id}/deliveries${query}`,{...input,epoch:6})).status,409);controller.abort();
+});
+
+test('receipt GET alone upgrades transient acceptance after native confirmation, without another prompt',async t=>{
+ const f=await fixture(t);const id=f.session.id;f.peer.confirmRequest=async()=>false;
+ const accepted=await f.call(`/sessions/${id}/messages`,{request_id:'poll-only',content:'scheduled'});assert.equal(accepted.value.durable,false);
+ const count=f.peer.promptCalls;f.peer.confirmRequest=async()=>({durable:true,cursor:9,source:'agent/inbox/spliced'});
+ const receipt=await f.call(`/sessions/${id}/requests/poll-only`);assert.equal(receipt.value.durable,true);assert.equal(receipt.value.native_evidence.cursor,9);assert.equal(f.peer.promptCalls,count);
+});

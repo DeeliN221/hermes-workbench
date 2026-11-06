@@ -6,7 +6,7 @@ import {fileURLToPath} from 'node:url';
 import {mkdir, readFile, writeFile, rename, readdir, symlink, lstat} from 'node:fs/promises';
 import {normalizeContext, contextIdentity} from './context.mjs';
 export const name = 'workbench-context-presets';
-export const inject = ['agentPresets', 'connection'];
+export const inject = ['agentPresets', 'connection', 'sessionPersistence'];
 export async function apply(ctx, config) {
   const require = createRequire(config.cli);
   const yaml = require('js-yaml');
@@ -76,6 +76,31 @@ export async function apply(ctx, config) {
     const saved = JSON.parse(await readFile(join(root, entry, 'context.json'), 'utf8'));
     await register(saved, false);
   }
+  ctx.effect(() => ctx.connection.fetch.register({path:'/api/workbench/requests/confirm',methods:['POST'],requestBody:'buffered',
+    fetch:async request=>{
+      try {
+        const input=await request.json();
+        if(typeof input.session_id!=='string'||typeof input.request_id!=='string'||input.session_id.length>200||input.request_id.length>200)
+          return Response.json({error:{code:'runtime/invalid-request'}},{status:400});
+        // Native prompt() synchronously queues but does not await persistence.
+        // The public persistence flush is the documented fsync barrier.
+        await ctx.sessionPersistence.flush();
+        const handle=await ctx.sessionPersistence.open(input.session_id,'read');
+        try {
+          for(let offset=0;;offset+=512){
+            const {events}=await handle.read(offset,512);
+            for(const event of events){
+              const messages=event.type==='user/message'?[event.data]:event.type==='agent/inbox/spliced'?(event.data.inserted??[]):[];
+              if(messages.some(m=>m.source?.kind==='user'&&m.source.rpcId===input.request_id))
+                return Response.json({session_id:input.session_id,request_id:input.request_id,accepted:true,durable:true,cursor:event.seq,source:event.type});
+            }
+            if(events.length<512)break;
+          }
+        } finally {await handle.close();}
+        return Response.json({session_id:input.session_id,request_id:input.request_id,accepted:false,durable:false});
+      } catch {return Response.json({error:{code:'runtime/request-durability-unconfirmed'}},{status:503});}
+    },
+  }));
   ctx.effect(() => ctx.connection.fetch.register({path: '/api/workbench/context/status', methods: ['GET'], requestBody: 'buffered',
     fetch: async () => Response.json({status: 'ready'}),
   }));

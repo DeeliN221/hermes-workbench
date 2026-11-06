@@ -132,6 +132,14 @@ export class DshPeer extends EventEmitter {
     }
     throw new RuntimeError(503, 'dsh/context-service-unavailable', 'DSH context extension is unavailable');
   }
+  async confirmRequest(sessionId,requestId) {
+    await this.connect();
+    const response=await this.fetchHost('/api/workbench/requests/confirm',{method:'POST',headers:{'content-type':'application/json'},
+      body:JSON.stringify({session_id:sessionId,request_id:requestId}),signal:AbortSignal.timeout(10000)});
+    const result=await response.json();
+    return result.session_id===sessionId&&result.request_id===requestId&&result.durable===true&&result.accepted===true?
+      {durable:true,cursor:result.cursor,source:result.source}:false;
+  }
   async registerContext(meta) {
     await this.connect(); await this.ensureContextService();
     const response = await this.fetchHost('/api/workbench/context', {method: 'POST',

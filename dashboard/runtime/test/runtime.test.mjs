@@ -84,7 +84,7 @@ test('restart rebuilds native content and recovers durable request identity and 
 
 test('unsupported attachments fail before admission; no silent success', async t => {
   const f = await setup(); t.after(() => f.close()); const s = await f.runtime.create(input);
-  await assert.rejects(f.runtime.message(s.id, {content: 'hi', attachments: [{type: 'file'}]}), {status: 415});
+  await assert.rejects(f.runtime.message(s.id, {content: 'hi', attachments: [{type: 'file'}]}), {status: 400});
   for (const attachments of [[{type: 'image', data: 'unused'}], {}])
     await assert.rejects(f.runtime.message(s.id, {content: 'hi', attachments}), {status: 400});
   assert.equal(f.peer.promptCalls, 0); assert.equal(f.runtime.capabilities().capabilities.attachments.images, true);

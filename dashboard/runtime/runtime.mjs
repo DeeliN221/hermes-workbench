@@ -3,6 +3,8 @@ import {randomUUID, createHash} from 'node:crypto';
 import {isAbsolute, resolve} from 'node:path';
 import {stat} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
+import {workspaceReferences, referenceText} from './workspace-references.mjs';
+import {deliveryInput, deliveryReceipt} from './deliveries.mjs';
 import {imageParts} from './images.mjs';
 import {normalizeContext, contextIdentity} from './context.mjs';
 import {Projection} from './projection.mjs';
@@ -22,6 +24,7 @@ const createKey = (owner, requestId) => JSON.stringify([owner.user_id, owner.pro
 export class Runtime extends EventEmitter {
   constructor({peer, store, provider, model}) {
     super(); this.peer = peer; this.store = store; this.provider = provider; this.model = model;
+    this.referenceMaxEntries=Number(process.env.WORKBENCH_DSH_REFERENCE_MAX_ENTRIES??2048);
     this.creations = new Map(); this.provisionOperations = new Map(); this.modelOperations = new Map();
     for (const meta of store.sessions.values()) if (meta.creation) this.creations.set(createKey(meta, meta.creation.request_id), meta);
     this.epoch = randomUUID(); this.monitors = new Map(); this.interactions = new Map(); this.operations = new Map(); this.closed = false;
@@ -59,7 +62,7 @@ export class Runtime extends EventEmitter {
       queue: true, steer: true, cancel: true, request_idempotency: true,
       tools: {execution: true, results: true},
       interactions: {approvals: true, questions: true, timed_questions: false},
-      attachments: {images: true, files: false}, context: {memory: true, skills: true, mcp_stdio: true, mcp_http: true},
+      attachments: {images: true, files: true, folders: true, file_transport: 'workspace-reference', native_file_uploads: false}, deliveries: true, context: {memory: true, skills: true, mcp_stdio: true, mcp_http: true},
     }};
   }
   get(id, scope = {}) {
@@ -262,7 +265,8 @@ export class Runtime extends EventEmitter {
             m.active = true; this.settle(m);
             this.publish(meta.id, {type: 'snapshot', cursor: frame.cursor, data: this.currentSnapshot(m), generation});
           } else if (m.active && frame.type === 'event') {
-            for (const event of m.projection.durable(frame.event)) this.publish(meta.id, {...event, generation});
+            for (const event of m.projection.durable(frame.event)) this.publish(meta.id, {...event,
+              ...(event.type==='message.committed'?{data:this.decorateMessage(meta,event.data)}:{}),generation});
           } else if (m.active && frame.type === 'assistant-stream') {
             for (const event of m.projection.live(frame.frame, generation)) this.publish(meta.id, {...event, generation});
           }
@@ -282,9 +286,14 @@ export class Runtime extends EventEmitter {
   currentSnapshot(m, state) {
     const interactions = [...this.interactions.values()].filter(x => x.session_id === m.id).map(x => x.public);
     m.projection.session = sessionRef(this.get(m.id));
-    return m.projection.snapshot({interactions, inbox: state?.queue ?? [],
+    const snapshot=m.projection.snapshot({interactions, inbox: state?.queue ?? [],
       ...(!this.peer.connected || !m.active ? {status: 'disconnected'}
         : state?.running && !['error', 'cancelled'].includes(m.projection.status) ? {status: 'running'} : {})});
+    const meta=this.get(m.id);
+    snapshot.messages=snapshot.messages.map(message=>this.decorateMessage(meta,message));
+    snapshot.inbox=snapshot.inbox.map(item=>({...item,...(meta.requests[item.rpcId]?.attachments?.length?{attachments:meta.requests[item.rpcId].attachments}:{})}));
+    snapshot.deliveries=(meta.deliveries??[]).map(({hash,...record})=>({...record,delivery_id:record.id,durable:true}));
+    return snapshot;
   }
   async snapshot(id, scope) {
     const meta = this.get(id, scope); const m = await this.ensure(meta);
@@ -294,42 +303,62 @@ export class Runtime extends EventEmitter {
   }
   publish(id, event) { this.emit('event', {...event, session_id: id,
     connection_generation: `${this.epoch}:${event.generation ?? this.peer.generation}`}); }
-  normalizeMessage(input) {
+  decorateMessage(meta,message) {
+    const refs=meta.requests[message.request_id]?.attachments;
+    return refs?.length?{...message,attachments:[...(message.attachments??[]),...refs]}:message;
+  }
+  async normalizeMessage(input,meta) {
     this.rejectTier(input);
-    const attachments = imageParts(input.attachments);
+    if(input.attachments!==undefined&&!Array.isArray(input.attachments))throw new RuntimeError(400,'runtime/invalid-attachments','attachments must be an array');
+    const list=input.attachments??[];
+    const files=list.filter(a=>a&&['file','folder'].includes(a.type));
+    const attachments=imageParts(list.filter(a=>!a||!['file','folder'].includes(a.type)));
+    const refs=files.length?await workspaceReferences(meta.cwd,files,{maxEntries:this.referenceMaxEntries}):undefined;
     if (input.content !== undefined && (typeof input.content !== 'string' || input.content.length > 200000))
       throw new RuntimeError(400, 'runtime/invalid-content', 'content must be text');
-    if (!input.content?.trim() && !attachments.length)
-      throw new RuntimeError(400, 'runtime/invalid-content', 'A message requires text or an image');
+    if (!input.content?.trim() && !attachments.length && !refs?.references.length)
+      throw new RuntimeError(400, 'runtime/invalid-content', 'A message requires text, an image, or a workspace reference');
     const mode = input.mode ?? 'queue';
     if (!['queue', 'steer'].includes(mode)) throw new RuntimeError(400, 'runtime/invalid-mode', 'mode must be queue or steer');
-    return {content: input.content ?? '', mode, ...(attachments.length ? {attachments} : {})};
+    return {content: input.content ?? '', mode, ...(attachments.length ? {attachments} : {}),
+      ...(refs?{references:refs.references,reference_root:refs.root}:{})};
   }
   async message(id, input, scope) {
-    const meta = this.get(id, scope); const normalized = this.normalizeMessage(input);
+    const meta = this.get(id, scope); const normalized = await this.normalizeMessage(input,meta);
     if (input.request_id && input.client_request_id && input.request_id !== input.client_request_id)
       throw new RuntimeError(400, 'runtime/request-alias-conflict', 'Request identity aliases disagree');
     const requestId = input.request_id ?? input.client_request_id ?? randomUUID(); nonempty(requestId, 'request_id', 200);
-    const hash = fingerprint(normalized); const existing = meta.requests[requestId];
+    const hash = fingerprint(normalized); const existing = Object.hasOwn(meta.requests,requestId)?meta.requests[requestId]:undefined;
     if (existing && existing.hash !== hash) throw new RuntimeError(409, 'runtime/request-conflict', 'request_id already has different content');
     if (!existing) {
-      meta.requests[requestId] = {hash, input: normalized, status: 'intended'};
+      Object.defineProperty(meta.requests,requestId,{value:{hash,input:normalized,status:'intended',durable:false,
+        ...(normalized.references?{attachments:normalized.references}:{})},enumerable:true,writable:true,configurable:true});
       await this.store.save();
     }
     await this.submit(meta, requestId, normalized);
-    return {request_id: requestId, session_id: id, accepted: true, status: 'accepted'};
+    return this.receipt(id,requestId,scope);
   }
   async submit(meta, requestId, input) {
     const key = `${meta.id}:${requestId}`;
     if (this.operations.has(key)) return this.operations.get(key);
     const operation = (async () => {
       const record = meta.requests[requestId];
-      if (record?.status === 'accepted') return;
-      await this.ensure(meta);
+      if (record?.status === 'accepted'&&record.durable===true) return;
+      await this.store.save(); await this.ensure(meta);
+      const refs=input.references?.length?await workspaceReferences(meta.cwd,input.references,
+        {maxEntries:this.referenceMaxEntries,expectedRoot:input.reference_root}):undefined;
       const result = await this.peer.call('prompt', {sessionId: meta.id, requestId, mode: input.mode,
-        content: [...(input.content?.trim() ? [{type: 'text', text: input.content}] : []), ...(input.attachments ?? [])]});
+        content: [...(input.content?.trim() ? [{type: 'text', text: input.content}] : []),
+          ...(refs?[{type:'text',text:referenceText(refs.references)}]:[]),...(input.attachments ?? [])]});
       if (result.accepted !== true) throw new RuntimeError(502, 'dsh/not-accepted', 'DSH did not accept the message');
-      record.status = 'accepted'; delete record.input; await this.store.save();
+      let evidence;
+      try {evidence=await this.peer.confirmRequest(meta.id,requestId);}catch { /* acceptance stays retryable until its native durability barrier is confirmed */ }
+      const durable=evidence===true||evidence?.durable===true;
+      const accepted={...record,status:'accepted',durable,
+        ...(durable&&evidence&&typeof evidence==='object'?{native_evidence:{cursor:evidence.cursor,event_type:evidence.source}}:{})};
+      if(durable)delete accepted.input;
+      meta.requests[requestId]=accepted;
+      try {await this.store.save();}catch(e){meta.requests[requestId]=record;throw e;}
     })();
     this.operations.set(key, operation);
     try { return await operation; } finally { this.operations.delete(key); }
@@ -338,12 +367,57 @@ export class Runtime extends EventEmitter {
     const meta = this.get(id, scope);
     const record = Object.hasOwn(meta.requests, requestId) ? meta.requests[requestId] : undefined;
     if (!record) throw new RuntimeError(404, 'runtime/request-not-found', 'Request not found in scope');
-    return {request_id: requestId, session_id: id, status: record.status, accepted: record.status === 'accepted'};
+    const durable=record.durable===true&&!this.operations.has(`${id}:${requestId}`)&&!this.operations.has(`receipt:${id}:${requestId}`);
+    return {request_id: requestId, session_id: id, status: record.status, accepted: record.status === 'accepted',durable,...(durable&&record.native_evidence?{native_evidence:record.native_evidence}:{}),...(!durable?{retryable:true}:{})};
+  }
+  async refreshReceipt(id,requestId,scope) {
+    const meta=this.get(id,scope);const receipt=this.receipt(id,requestId,scope);
+    if(receipt.durable||!receipt.accepted||this.operations.has(`${id}:${requestId}`))return receipt;
+    const key=`receipt:${id}:${requestId}`;
+    if(this.operations.has(key)){await this.operations.get(key);return this.receipt(id,requestId,scope);}
+    const operation=(async()=>{
+      let evidence;
+      try {evidence=await this.peer.confirmRequest(id,requestId);}catch{return;}
+      const durable=evidence===true||evidence?.durable===true;
+      if(!durable)return;
+      const before=meta.requests[requestId];const accepted={...before,durable:true,
+        ...(evidence&&typeof evidence==='object'?{native_evidence:{cursor:evidence.cursor,event_type:evidence.source}}:{})};
+      delete accepted.input;meta.requests[requestId]=accepted;
+      try{await this.store.save();}catch(e){meta.requests[requestId]=before;throw e;}
+    })();
+    this.operations.set(key,operation);
+    try{await operation;}finally{this.operations.delete(key);}
+    return this.receipt(id,requestId,scope);
+  }
+  deliveryScope(id,scope={}) {
+    for(const name of ['user_id','profile_id','project_id'])if(typeof scope[name]!=='string'||!scope[name])
+      throw new RuntimeError(400,'runtime/delivery-scope-required','Deliveries require full trusted user/profile/project scope');
+    return this.get(id,scope);
+  }
+  listDeliveries(id,scope,key) {
+    const meta=this.deliveryScope(id,scope);
+    const records=(meta.deliveries??[]).filter(x=>key===undefined||x.idempotency_key===key).map(({hash,...record})=>({...record,delivery_id:record.id,durable:true}));
+    if(key!==undefined&&!records.length)throw new RuntimeError(404,'runtime/delivery-not-found','Delivery not found');
+    return key===undefined?{session_id:id,deliveries:records}:records[0];
+  }
+  async delivery(id,input,scope) {
+    const meta=this.deliveryScope(id,scope);
+    const existing=(meta.deliveries??[]).find(x=>x.idempotency_key===input.idempotency_key);
+    if(existing&&['source','epoch','task_id','attempt_id','kind','content'].some(key=>existing[key]!==input[key]))
+      throw new RuntimeError(409,'runtime/delivery-conflict','Delivery key already has a different payload or epoch/attempt');
+    const normalized=deliveryInput(input);const hash=fingerprint(canonical(normalized));
+    const record={...normalized,id:'delivery-'+fingerprint([id,normalized.idempotency_key]),hash,created_at:new Date().toISOString()};
+    const result=await this.store.commitDelivery(id,record);
+    if(result.created){const {hash,...value}=result.record;this.publish(id,{type:'delivery.received',data:{delivery:{...value,delivery_id:value.id,durable:true}}});}
+    return deliveryReceipt(result.record,id);
   }
   async cancel(id, scope) {
     const meta = this.get(id, scope); await this.ensure(meta);
     const result = await this.peer.call('cancel', {sessionId: id});
     if (!result.accepted) throw new RuntimeError(502, 'dsh/not-accepted', 'DSH did not accept cancellation');
+    for(const [requestId,pending] of this.interactions)if(pending.session_id===id){
+      this.interactions.delete(requestId);this.publish(id,{type:'interaction.resolved',generation:pending.generation,data:{request_id:requestId,status:'cancelled'}});
+    }
     // DSH cancels only the active turn; never clear its inbox or our durable intents.
     return {session_id: id, accepted: true, status: 'cancelling'};
   }

@@ -107,7 +107,7 @@ try {
   assert.equal(resumedTurn.snapshot.messages.filter(m => m.request_id === queuedId).length, 1);
   const bad = await fetch(new URL(`/api/runtime/sessions/${id}/messages`, base), {
     method: 'POST', headers: {...authHeaders, 'content-type': 'application/json'}, body: JSON.stringify({content: 'image', attachments: [{type: 'file'}]}),
-  }); assert.equal(bad.status, 415); result.checks.files_explicitly_unsupported = true;
+  }); assert.equal(bad.status, 400); result.checks.invalid_workspace_reference_rejected = true;
   const snapshot = await call(`/sessions/${id}/snapshot`);
   const reconnect = new AbortController();
   const resumed = await fetch(new URL(`/api/runtime/sessions/${id}/events?cursor=${snapshot.cursor}`, base), {signal: reconnect.signal, headers: authHeaders});

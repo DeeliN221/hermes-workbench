@@ -48,7 +48,7 @@ test('receipt alias is canonical and intended records never claim acceptance on 
   await assert.rejects(f.runtime.message(s.id,{content:'hello',request_id:'a',client_request_id:'b'}),{status:400});
   const call=f.peer.call.bind(f.peer);f.peer.call=async(method,request)=>method==='prompt'?{accepted:false}:call(method,request);
   await assert.rejects(f.runtime.message(s.id,{content:'failed',request_id:'failed'}),{status:502});
-  assert.deepEqual(f.runtime.receipt(s.id,'failed'),{request_id:'failed',session_id:s.id,status:'intended',accepted:false});
+  assert.deepEqual(f.runtime.receipt(s.id,'failed'),{request_id:'failed',session_id:s.id,status:'intended',accepted:false,durable:false,retryable:true});
 });
 
 test('context data is validated, owner-scoped, literal and maps HTTP MCP without executing expressions',()=>{

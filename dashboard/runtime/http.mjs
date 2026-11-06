@@ -63,7 +63,10 @@ async function sse(req, res, runtime, id, scope, url) {
     // buffered events and transient chunks already represented by this snapshot.
     write({type: 'snapshot', session_id: id, cursor: snapshot.cursor, data: snapshot});
     opening = false;
-    for (const event of buffered) if (Number.isInteger(event.cursor) && event.cursor > snapshot.cursor) write(event);
+    for (const event of buffered) {
+      if (Number.isInteger(event.cursor) && event.cursor > snapshot.cursor) write(event);
+      else if(event.type==='delivery.received'&&!snapshot.deliveries.some(x=>x.id===event.data.delivery.id))write(event);
+    }
     heartbeat = setInterval(() => { if (!closed) res.write(': heartbeat\n\n'); }, 15000);
     heartbeat.unref();
   } catch (e) { cleanup(); throw e; }
@@ -90,8 +93,14 @@ export async function startHttp(runtime, {port = 38472, allowedOrigins = [], aut
         if (req.method === 'GET') return json(res, 200, runtime.list(scope));
         if (req.method === 'POST') return json(res, 201, await runtime.create(await body(req)));
       }
+      const delivery=url.pathname.match(/^\/api\/runtime\/sessions\/([^/]+)\/deliveries(?:\/([^/]+))?$/);
+      if(delivery){
+        const id=decodeURIComponent(delivery[1]);
+        if(req.method==='GET')return json(res,200,runtime.listDeliveries(id,scope,delivery[2]===undefined?undefined:decodeURIComponent(delivery[2])));
+        if(req.method==='POST'&&delivery[2]===undefined)return json(res,202,await runtime.delivery(id,await body(req),scope));
+      }
       const receipt = url.pathname.match(/^\/api\/runtime\/sessions\/([^/]+)\/requests\/([^/]+)$/);
-      if (req.method === 'GET' && receipt) return json(res, 200, runtime.receipt(decodeURIComponent(receipt[1]), decodeURIComponent(receipt[2]), scope));
+      if (req.method === 'GET' && receipt) return json(res, 200, await runtime.refreshReceipt(decodeURIComponent(receipt[1]), decodeURIComponent(receipt[2]), scope));
       const match = url.pathname.match(/^\/api\/runtime\/sessions\/([^/]+)\/(snapshot|events|messages|model|cancel|interactions\/([^/]+))$/);
       if (match) {
         const id = decodeURIComponent(match[1]); runtime.get(id, scope);
