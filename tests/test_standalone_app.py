@@ -135,7 +135,13 @@ def test_create_send_stream_refresh_cancel_interactions(tmp_path):
         assert client.get(base + '/snapshot').json()['interactions'] == []
 
 
-def test_missing_bridge_services_and_configuration(tmp_path):
+def test_missing_bridge_services_and_configuration(tmp_path, monkeypatch):
+    original_import = __import__("importlib").import_module
+    def absent(name, package=None):
+        if name == ".standalone_services":
+            raise ModuleNotFoundError("Isolated missing service fixture", name="dashboard.standalone_services")
+        return original_import(name, package)
+    monkeypatch.setattr("dashboard.standalone_app.importlib.import_module", absent)
     app = create_app(home=tmp_path / 'state', workspace_root=tmp_path / 'workspace', allow_missing_services=True)
     client = TestClient(app)
     login(app, client)
@@ -327,9 +333,28 @@ def test_attachment_adapter_forwards_canonical_images_and_restores_opaque_cards(
         result = client.post(f'/api/runtime/sessions/{sid}/messages', json={'content': 'inspect', 'request_id': 'image-request', 'attachments': ['image-1']})
         assert result.status_code == 200
         assert bridge.state.sessions[sid]['last_message_payload']['attachments'] == [canonical]
+        assert client.post(f'/api/runtime/sessions/{sid}/messages', json={'content': 'changed', 'request_id': 'image-request', 'attachments': ['image-1']}).status_code == 409
         restored = client.get(f'/api/runtime/sessions/{sid}/snapshot').json()['messages'][0]
         assert restored['attachments'][0]['attachmentId'] == 'image-1'
         assert 'fixture-base64' not in __import__('json').dumps(restored)
+        # Reconnection starts with an upstream snapshot whose native image IDs
+        # differ from service attachment IDs. Both SSE frame shapes need the
+        # same presentation as the authenticated REST snapshot.
+        native = {**restored, 'content': 'inspect + internal staged references', 'attachments': [{'attachmentId': 'sha256:native-image'}]}
+        events = [
+            {'type': 'snapshot', 'session_id': sid, 'data': {'session': {'id': sid}, 'messages': [native]}},
+            {'type': 'message.committed', 'session_id': sid, 'data': {'message': native}},
+        ]
+        class AttachmentStream(httpx.AsyncBaseTransport):
+            async def handle_async_request(self, request):
+                return httpx.Response(200, text=''.join('data: ' + __import__('json').dumps(event) + '\n\n' for event in events))
+        stream_app = create_app(home=tmp_path / 'state', workspace_root=tmp_path / 'workspaces', runtime_url='http://localhost', transport=AttachmentStream())
+        stream_client = TestClient(stream_app)
+        login(stream_app, stream_client)
+        frames = stream_client.get(f'/api/runtime/sessions/{sid}/events').text
+        assert 'sha256:native-image' not in frames
+        assert frames.count('"attachmentId": "image-1"') == 2
+        assert 'internal staged references' not in frames
 
 
 def test_workspace_layout_changes_fail_closed(tmp_path):
@@ -347,3 +372,95 @@ def test_browser_create_request_id_is_idempotent_and_user_scoped(tmp_path):
     assert first.status_code == 200
     assert client.post('/api/runtime/sessions', json=body).json()['id'] == first.json()['id']
     assert len(bridge.state.sessions) == 1
+
+
+def test_durable_scheduled_receipt_and_fleet_notification_are_distinct_from_inference(tmp_path):
+    app, client, bridge = setup(tmp_path, services_module=fixture_module.create_services_fixture())
+    login(app, client)
+    sid = create_session(client)
+    ctx = app.state.store.session_context('local-owner', 'default', sid)
+    with client:
+        send = app.state.services.runtime['scheduled_input']
+        receipt = client.portal.call(send, ctx, sid, {'text': 'slow', 'request_id': 'schedule-once'})
+        assert receipt == {'request_id': 'schedule-once', 'status': 'accepted', 'durable': True}
+        assert client.get(f'/api/runtime/sessions/{sid}/snapshot').json()['status'] == 'running'
+        client.portal.call(send, ctx, sid, {'text': 'slow', 'request_id': 'schedule-once'})
+        assert len(bridge.state.sessions[sid]['requests']) == 1
+        persist = app.state.services.runtime['persist_delivery']
+        delivery = {'id': 'd1', 'task_id': 'task-1', 'attempt_id': 'attempt-1', 'epoch': 1, 'text': 'Background result', 'origin': {**{k: ctx[k] for k in ('user_id','profile_id','project_id')}, 'session_id': sid, 'runtime': 'dsh'}}
+        assert client.portal.call(persist, ctx, sid, delivery, 'fleet-delivery:d1') == {'persisted': True}
+        client.portal.call(persist, ctx, sid, delivery, 'fleet-delivery:d1')
+        snapshot = client.get(f'/api/runtime/sessions/{sid}/snapshot').json()
+        assert len(snapshot['deliveries']) == 1
+        assert snapshot['deliveries'][0]['source'] == 'fleet'
+        assert len(bridge.state.sessions[sid]['requests']) == 1
+        assert not any(message['role'] == 'assistant' for message in snapshot['messages'])
+        body_delivery = {**delivery, 'id': 'd2', 'payload': {'result': 'Actual worker result', 'evidence_json': 'internal details'}}
+        body_delivery.pop('text')
+        client.portal.call(persist, ctx, sid, body_delivery, 'fleet-delivery:d2')
+        rows = client.get(f'/api/runtime/sessions/{sid}/snapshot').json()['deliveries']
+        assert rows[-1]['content'] == 'Actual worker result'
+        assert 'internal details' not in rows[-1]['content']
+        client.portal.call(persist, ctx, sid, {**body_delivery, 'id': 'd3', 'payload': {'status': 'done', 'result': ''}}, 'fleet-delivery:d3')
+        row = client.get(f'/api/runtime/sessions/{sid}/snapshot').json()['deliveries'][-1]
+        assert row['content'] == 'Fleet task status: done. No result text was returned by the worker.'
+        with pytest.raises(Exception) as changed:
+            client.portal.call(persist, ctx, sid, {**delivery, 'text': 'changed'}, 'fleet-delivery:d1')
+        assert getattr(changed.value, 'status_code', None) == 409
+
+
+def test_health_is_authenticated_and_requires_live_runtime_and_complete_assets(tmp_path):
+    app, client, bridge = setup(tmp_path)
+    assert client.get('/health').status_code == 401
+    login(app, client)
+    app.state.services_available = False
+    assert client.get('/health').status_code == 503  # an unavailable service is not ready
+    ready, c, ready_bridge = setup(tmp_path / 'ready', services_module=fixture_module.create_services_fixture())
+    login(ready, c)
+    assets = tmp_path / 'built-assets'
+    (assets / 'assets').mkdir(parents=True)
+    (assets / 'standalone.html').write_text('<script src="/assets/app.js"></script>')
+    (assets / 'assets/app.js').write_text('// explicit build fixture')
+    ready.state.assets_root = assets
+    result = c.get('/health')
+    assert result.status_code == 200, result.text
+    assert result.json() == {'status': 'ready', 'runtime': 'dsh'}
+    ready_bridge.state.runtime_status = 'reconnecting'
+    assert c.get('/health').status_code == 503
+
+
+def test_delivery_ack_withheld_for_scope_mismatch_or_nondurable_upstream(tmp_path):
+    app, client, bridge = setup(tmp_path, services_module=fixture_module.create_services_fixture())
+    login(app, client)
+    sid = create_session(client)
+    ctx = app.state.store.session_context('local-owner', 'default', sid)
+    delivery = {'id': 'd1', 'task_id': 'task-1', 'attempt_id': 'attempt-1', 'epoch': 1, 'text': 'Result', 'origin': {**{k: ctx[k] for k in ('user_id','profile_id','project_id')}, 'session_id': sid, 'runtime': 'dsh'}}
+    with client:
+        persist = app.state.services.runtime['persist_delivery']
+        with pytest.raises(Exception) as denied:
+            client.portal.call(persist, ctx, sid, {**delivery, 'origin': {**delivery['origin'], 'user_id': 'forged'}}, 'delivery-one')
+        assert denied.value.status_code == 403
+        assert not bridge.state.sessions[sid].get('deliveries')
+        # A successful HTTP receipt without durable storage must never allow ACK.
+        bridge.state.notification_durable = False
+        with pytest.raises(Exception) as pending:
+            client.portal.call(persist, ctx, sid, delivery, 'delivery-one')
+        assert pending.value.status_code == 502
+
+
+def test_scheduled_input_waits_for_durable_journal_and_reuses_pending_identity(tmp_path):
+    app, client, bridge = setup(tmp_path, services_module=fixture_module.create_services_fixture())
+    login(app, client)
+    sid = create_session(client)
+    ctx = app.state.store.session_context('local-owner', 'default', sid)
+    bridge.state.input_durable = False
+    with client:
+        send = app.state.services.runtime['scheduled_input']
+        with pytest.raises(Exception) as pending:
+            client.portal.call(send, ctx, sid, {'text': 'slow', 'request_id': 'pending-scheduled'})
+        assert pending.value.status_code == 503
+        assert len(bridge.state.sessions[sid]['requests']) == 1
+        bridge.state.input_durable = True
+        receipt = client.portal.call(send, ctx, sid, {'text': 'slow', 'request_id': 'pending-scheduled'})
+        assert receipt['durable'] is True
+        assert len(bridge.state.sessions[sid]['requests']) == 1

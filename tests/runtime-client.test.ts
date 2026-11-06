@@ -126,3 +126,18 @@ it('restores one process card per tool call when durable messages and snapshot t
   expect(value.messages).toHaveLength(1);
   expect(value.messages[0]).toMatchObject({ id: 'tool:call-overlap', role: 'tool', toolName: 'read_file', result: 'Tool result' });
 });
+
+it('keeps durable Fleet notifications separate from assistant replies and ongoing inference', () => {
+  const projection = initialized();
+  projection.apply(event('state', 1, { status: 'running' }, 'model-attempt'));
+  const delivery = { delivery_id: 'delivery-1', source: 'fleet', task_id: 'task-1', attempt_id: 'worker-attempt', epoch: 2, kind: 'result', content: 'Actual background result' };
+  projection.apply(event('delivery.received', 2, { delivery }, 'worker-attempt'));
+  projection.apply(event('delivery.received', 3, { delivery }, 'worker-attempt'));
+  expect(projection.value?.messages).toHaveLength(1);
+  expect(projection.value?.messages[0]).toMatchObject({ role: 'notification', delivery: { source: 'fleet', task_id: 'task-1', epoch: 2 } });
+  expect(projection.value?.turnId).toBe('s1');
+  expect(projection.attempt).toBe('model-attempt');
+  const restored = projectSnapshot({ ...snapshot('idle'), deliveries: [delivery] });
+  expect(restored.messages.filter(message => message.role === 'assistant')).toHaveLength(0);
+  expect(restored.messages[0].id).toBe(projection.value?.messages[0].id);
+});

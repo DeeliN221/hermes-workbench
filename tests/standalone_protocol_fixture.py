@@ -26,7 +26,7 @@ def create_fixture():
 
     @app.get('/api/runtime/capabilities')
     async def capabilities():
-        return {'runtime': 'dsh', 'fixture': True, 'interactions': True, 'cancel': True}
+        return {'runtime': 'dsh', 'status': getattr(app.state, 'runtime_status', 'ready'), 'fixture': True, 'capabilities': {'durable_scheduled_input': True}, 'interactions': True, 'cancel': True}
 
     @app.get('/api/runtime/models')
     async def models():
@@ -51,7 +51,7 @@ def create_fixture():
         return app.state.sessions[ident]
 
     def snapshot(s):
-        return {k: s[k] for k in ('session', 'messages', 'cursor', 'interactions', 'inbox', 'status')} | {'tools': s.get('tools', [])}
+        return {k: s[k] for k in ('session', 'messages', 'cursor', 'interactions', 'inbox', 'status')} | {'tools': s.get('tools', []), 'deliveries': s.get('deliveries', [])}
 
     @app.get('/api/runtime/sessions/{ident}/snapshot')
     async def read(ident: str):
@@ -123,6 +123,25 @@ def create_fixture():
             asyncio.create_task(finish(s, body['content'], s['attempt']))
         return {'request_id': rid, 'session_id': ident, 'accepted': True, 'status': 'accepted'}
 
+    @app.get('/api/runtime/sessions/{ident}/requests/{request_id}')
+    async def receipt(ident: str, request_id: str):
+        session = get(ident)
+        return {'session_id': ident, 'request_id': request_id, 'accepted': True, 'status': 'accepted', 'durable': request_id in session['requests'] and getattr(app.state, 'input_durable', True)}
+
+    @app.post('/api/runtime/sessions/{ident}/deliveries')
+    async def notify(ident: str, request: Request):
+        session = get(ident)
+        payload = await request.json()
+        rows = session.setdefault('deliveries', [])
+        old = next((row for row in rows if row['idempotency_key'] == payload['idempotency_key']), None)
+        if old and any(old.get(k) != v for k,v in payload.items()):
+            raise HTTPException(409, 'Notification identity changed')
+        if not old:
+            old = {**payload, 'delivery_id': 'notification-' + str(len(rows) + 1)}
+            rows.append(old)
+            emit(session, 'delivery.received', {'delivery': old})
+        return {'delivery_id': old['delivery_id'], 'session_id': ident, 'idempotency_key': payload['idempotency_key'], 'accepted': True, 'durable': getattr(app.state, 'notification_durable', True), 'status': 'persisted'}
+
     @app.post('/api/runtime/sessions/{ident}/cancel')
     async def cancel(ident: str):
         s = get(ident)
@@ -169,6 +188,9 @@ def create_services_fixture():
             self.data = json.loads(self.path.read_text()) if self.path.exists() else {'memory': {}, 'tasks': {}}
             self.bindings = []
             self.submissions = 0
+            async def task(ctx, ident):
+                return next(({'id': receipt['task_id'], 'status': receipt['status'], 'origin': receipt['origin']} for receipt in self.data['tasks'].values() if receipt['task_id'] == ident), {})
+            self.fleet = SimpleNamespace(task=task)
             self.archives = SimpleNamespace(list=lambda *args, **kwargs: [])
         def save(self):
             self.path.write_text(json.dumps(self.data))

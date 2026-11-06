@@ -7,6 +7,7 @@ import type { FetchJSON } from './workbench-api';
 import './standalone-host.css';
 import { createStandalonePages } from './standalone-pages';
 import { createWorkbenchLauncher } from './workbench-launcher';
+import { createArchivePage } from './standalone-archives';
 import { currentProfile } from './profile-scope';
 
 const h = React.createElement;
@@ -99,6 +100,7 @@ const hostSDK = { React, hooks: React, fetchJSON, buildWsUrl: async (path: strin
   return url.href;
 } };
 const { MemoryPage, MCPPage, Configuration, ModelsPage, FilesPage, ShellPage, IntegrationsPage } = createStandalonePages(hostSDK);
+const ArchivesPage = createArchivePage(hostSDK);
 const Launcher = createWorkbenchLauncher(hostSDK);
 function Host() {
   const [, update] = React.useState(0);
@@ -112,8 +114,8 @@ function Host() {
   const path = location.pathname;
   const home = ['/', '/home', '/sessions', '/kanban'].includes(path);
   const terminal = path === '/chat' && new URLSearchParams(location.search).get('workbench') === 'terminal';
-  const native = terminal || ['/config', '/models', '/memory', '/mcp', '/plugins', '/files'].includes(path);
-  const Page = terminal ? ShellPage : path === '/models' ? ModelsPage : path === '/memory' ? MemoryPage : path === '/mcp' ? MCPPage : path === '/plugins' ? IntegrationsPage : path === '/files' ? FilesPage : Configuration;
+  const native = terminal || ['/config', '/models', '/memory', '/mcp', '/plugins', '/files', '/history'].includes(path);
+  const Page = terminal ? ShellPage : path === '/history' ? ArchivesPage : path === '/models' ? ModelsPage : path === '/memory' ? MemoryPage : path === '/mcp' ? MCPPage : path === '/plugins' ? IntegrationsPage : path === '/files' ? FilesPage : Configuration;
   return h(React.Fragment, null,
     home ? h('header', { className: 'standalone-overview-header' }, h(Launcher), h('strong', null, 'Workbench'), h('a', { href: '/chat?profile=' + encodeURIComponent(currentProfile()) + '&new=1' }, 'New conversation'), h('a', { href: '/profiles' }, 'Profiles')) : null,
     native ? h('div', { className: 'standalone-shell' },

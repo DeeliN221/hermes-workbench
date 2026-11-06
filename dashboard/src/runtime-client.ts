@@ -5,7 +5,7 @@ import { normalizeSession } from './codex-api';
 import { record, text } from './api-values';
 
 export type RuntimeEvent = { type: string; session_id: string; cursor?: string | number; sequence?: number; attempt_id?: string; data: Record<string, unknown> };
-export type RuntimeSnapshot = { session: Record<string, unknown>; messages: { id: string; role: string; content: string; timestamp?: number; request_id?: string; status?: string; attachments?: Record<string, unknown>[]; tool?: Record<string, unknown> }[]; cursor: string | number; interactions: Record<string, unknown>[]; inbox: Record<string, unknown>[]; status: string; error?: string; tools?: Record<string, unknown>[]; streaming?: { attempt_id: string; content: string; message_id?: string } };
+export type RuntimeSnapshot = { session: Record<string, unknown>; messages: { id: string; role: string; content: string; timestamp?: number; request_id?: string; status?: string; attachments?: Record<string, unknown>[]; tool?: Record<string, unknown> }[]; cursor: string | number; interactions: Record<string, unknown>[]; inbox: Record<string, unknown>[]; status: string; deliveries?: Record<string, unknown>[]; error?: string; tools?: Record<string, unknown>[]; streaming?: { attempt_id: string; content: string; message_id?: string } };
 export type Presentation = ReturnType<typeof projectSnapshot>;
 export const sessionURL = (profile: string, session: string) => `/api/runtime/sessions/${encodeURIComponent(session)}`;
 export const scoped = (url: string, profile: string) => `${url}${url.includes('?') ? '&' : '?'}profile_id=${encodeURIComponent(profile)}`;
@@ -13,6 +13,13 @@ export const scoped = (url: string, profile: string) => `${url}${url.includes('?
 export function projectInteraction(value: Record<string, unknown>) {
   return { ...value, id: text(value.id ?? value.request_id), kind: value.kind || 'approval',
     questions: value.questions, text: [text(value.prompt ?? value.reason, 'DSH interaction requires a response'), text(value.command)].filter(Boolean).join('\n') };
+}
+export function projectFleetNotification(value: Record<string, unknown>): ChatMessage {
+  const id = text(value.delivery_id ?? value.id);
+  if (value.source !== 'fleet' || !id || !value.task_id || !value.attempt_id || !Number.isInteger(value.epoch) || typeof value.content !== 'string') throw new Error('Invalid persisted Fleet notification');
+  return { id: 'fleet-notification:' + id, role: 'notification', content: value.content,
+    delivery: { source: 'fleet', id, task_id: value.task_id, attempt_id: value.attempt_id, epoch: value.epoch, kind: value.kind },
+    observedAt: typeof value.timestamp === 'number' ? value.timestamp : undefined };
 }
 export function projectSnapshot(snapshot: RuntimeSnapshot) {
   if (!snapshot.session?.id || !Array.isArray(snapshot.messages)) throw new Error('Incomplete DSH session snapshot');
@@ -37,7 +44,7 @@ export function projectSnapshot(snapshot: RuntimeSnapshot) {
   const tools: ChatMessage[] = (snapshot.tools || []).filter(tool => !persisted.some(message => message.id === 'tool:' + text(tool.call_id))).map(tool => ({ id: 'tool:' + text(tool.call_id), role: 'tool', toolName: text(tool.name, 'Tool'), content: typeof tool.content === 'string' ? tool.content : JSON.stringify(tool.content ?? ''), input: tool.arguments, result: tool.content, status: tool.type === 'tool/call' ? 'running' : ['failed', 'error'].includes(text(tool.status)) ? 'failed' : 'completed', turnId: text(tool.attempt_id, String(snapshot.session.id)) }));
   const streaming: ChatMessage[] = snapshot.streaming?.content ? [{ id: snapshot.streaming.message_id || snapshot.streaming.attempt_id, turnId: snapshot.streaming.attempt_id, role: 'assistant', content: snapshot.streaming.content, status: 'running' }] : [];
   return {
-    messages: [...persisted, ...inbox, ...tools, ...streaming],
+    messages: [...persisted, ...inbox, ...tools, ...streaming, ...(snapshot.deliveries || []).map(projectFleetNotification)],
     session: normalizeSession({ ...snapshot.session, status: snapshot.status }),
     runtimeError: snapshot.error || (['failed', 'error'].includes(snapshot.status) ? 'DSH session failed. Check runtime diagnostics.' : ''),
     next: 0, cursor: snapshot.cursor, readSeq: 0, lastCompletedSeq: 0,
@@ -74,6 +81,14 @@ export class RuntimeProjection {
     const eventKey = event.cursor === undefined ? '' : `${event.cursor}:${event.type}:${text(event.data.id ?? record(event.data.message).id ?? record(event.data.tool).call_id)}`;
     if (eventKey && this.seen.has(eventKey)) return this.value;
     if (event.sequence !== undefined && event.sequence <= this.sequence) return this.value;
+    if (event.type === 'delivery.received') {
+      const message = projectFleetNotification(record(event.data.delivery));
+      this.value = { ...this.value, messages: [...this.value.messages.filter(row => row.id !== message.id), message] };
+      if (event.sequence !== undefined) this.sequence = event.sequence;
+      if (eventKey) this.seen.add(eventKey);
+      if (event.cursor !== undefined) this.value.cursor = event.cursor;
+      return this.value;
+    }
     if (event.attempt_id && this.retired.has(event.attempt_id)) return this.value;
     if (event.attempt_id && this.attempt && event.attempt_id !== this.attempt) {
       if (event.type !== 'state' || !['running', 'accepted'].includes(text(event.data.status))) return this.value;

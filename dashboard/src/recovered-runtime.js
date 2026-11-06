@@ -1,3 +1,4 @@
+import { createScheduleRuntimeFields } from './standalone-schedule-fields';
 import { createRuntimeTaskReceipts } from './runtime-task-receipts';
 import { standalone, runtimeUI } from './runtime-mode';
 import { readRuntimeSnapshot, subscribeRuntime } from './runtime-client';
@@ -7529,6 +7530,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return i;
   }
   async function h_(i, e, t, flatSession = !1) {
+    if (standalone) return { sessionId: t, ...await readRuntimeSnapshot(i, e, t) };
     const r = await _m(i, e, t, flatSession);
     return FR(r);
   }
@@ -7536,6 +7538,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const e = i.React,
       { TranscriptTimeline: t } = Jb(i);
     function r({ transcript: n, collapsed = false }) {
+      if (standalone && Array.isArray(n.messages)) return e.createElement('div', { className: 'standalone-runtime-history', 'data-session-id': n.sessionId }, n.messages.map(message => e.createElement(T5, { key: message.id, React: e, message })));
       return e.createElement(
         "div",
         {
@@ -9605,6 +9608,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           : null;
   }
   function T5({ React: i, message: e, detail = "standard" }) {
+    if (standalone && e.role === "notification" && e.delivery?.source === "fleet") return W(i, "article", { className: "runtime-fleet-notification", role: "status", "data-notification-id": e.delivery.id },
+      W(i, "header", null, "Fleet task ", e.delivery.kind === "question" ? "question" : e.delivery.kind === "notice" ? "notice" : "result"),
+      W(i, "a", { href: `/kanban?profile=${encodeURIComponent(currentProfile())}&task=${encodeURIComponent(e.delivery.task_id)}` }, e.delivery.task_id),
+      W(i, Ki, { React: i, content: e.content, streaming: false }),
+      W(i, "small", null, `Attempt ${e.delivery.attempt_id} · epoch ${e.delivery.epoch}`));
     if (e.role === "tool") {
       const t =
           e.result == null
@@ -13499,6 +13507,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     const e = String(i?.status ?? "").trim();
     return e
       ? {
+          accepted: runtimeText("输入已持久保存", "Input durably accepted"),
           claimed: runtimeText("已领取", "Claimed"),
           running: runtimeText("执行中", "Running"),
           completed: runtimeText("完成", "Completed"),
@@ -13508,14 +13517,14 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       : "";
   }
   function M0(i) {
-    return String(i.title || T0(i));
+    return String(i.title || (standalone && i.name) || T0(i));
   }
   function D0(i) {
     return String(i.id || "");
   }
   function Rd(i) {
     return i.kind === "session"
-      ? i.run.started_at || i.run.last_active || i.run.ended_at
+      ? i.run.started_at || i.run.last_active || i.run.ended_at || (standalone && (i.run.accepted_at || i.run.scheduled_at))
       : i.execution.finished_at ||
           i.execution.started_at ||
           i.execution.claimed_at;
@@ -13546,6 +13555,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     });
   }
   function K5(i) {
+    const ScheduleRuntimeFields = standalone ? createScheduleRuntimeFields(i) : null;
     const e = i.React,
       t = (r, n, ...s) => Qs(e, r, n, ...s);
     return function (n) {
@@ -13633,6 +13643,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               runtimeText(`调度器时区：${n.timezoneLabel}`, `Scheduler timezone: ${n.timezoneLabel}`),
             ),
           ),
+          standalone ? t(ScheduleRuntimeFields, { form: o, onChange: a, profile: n.profile || "default" }) : null,
           t(
             "details",
             { className: "dashboard-cron-advanced" },
@@ -14270,12 +14281,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                             const le = J.kind === "session",
                               we = le ? M0(J.run) : D0(J.execution),
                               Re = le
-                                ? J.run.ended_at
+                                ? standalone ? String(J.run.status || "unknown") : J.run.ended_at
                                   ? "completed"
                                   : "running"
                                 : String(J.execution.status || "unknown"),
                               Ye = le
-                                ? J.run.ended_at
+                                ? standalone ? Ad(J.run) : J.run.ended_at
                                   ? runtimeText("完成", "Completed")
                                   : runtimeText("执行中", "Running")
                                 : Ad(J.execution);
@@ -14380,7 +14391,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               r(
                 "p",
                 null,
-                C ? runtimeText("请稍候", "Please wait") : runtimeText("创建一个任务，让 Hermes 按计划执行工作。", "Create a job for Hermes to run on a schedule."),
+                C ? runtimeText("请稍候", "Please wait") : runtimeText("创建一个任务，让 Hermes 按计划执行工作。", standalone ? "Create a job for the selected runtime to run on a schedule." : "Create a job for Hermes to run on a schedule."),
               ),
               C
                 ? null
@@ -14489,6 +14500,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         T && te
           ? r(n, {
               mode: T,
+              profile: owner,
               draft: te,
               timezoneLabel: $0(T === "edit" ? z : null),
               error: q,

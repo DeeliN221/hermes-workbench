@@ -44,3 +44,9 @@ html[data-standalone=true]:is([data-workbench-view="/"], [data-workbench-view="/
 @media (min-width: 801px) {
   html[data-standalone=true][data-workbench-view="/skills"]:not([data-workbench-accessory]) .dashboard-owned-page { left: calc(var(--dashboard-nav-width) + var(--dashboard-settings-width)); }
 }
+.runtime-task-card form { display: grid; gap: 8px; margin: 12px 0; }
+.runtime-task-card textarea { display: block; width: 100%; padding: 8px; background: var(--mc-surface); color: inherit; border: 1px solid var(--mc-line-soft); }
+.runtime-task-card button { padding: 6px 10px; font: inherit; color: inherit; background: var(--mc-surface); border: 1px solid var(--mc-line-soft); cursor: pointer; }
+.runtime-fleet-notification { border-left: 3px solid var(--mc-accent); background: var(--mc-active); padding: 14px; margin: 14px 0; }
+.runtime-fleet-notification header { font-weight: 600; margin-bottom: 8px; }
+.runtime-fleet-notification small { display: block; color: var(--mc-muted); }

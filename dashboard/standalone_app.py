@@ -73,7 +73,7 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             current = identity.get('user_id')
             if policy.mode == 'trusted-proxy' and current not in policy.users or policy.mode == 'local' and current != 'local-owner':
                 raise HTTPException(403, 'Lifecycle user is not authorized')
-            return store.context(current, identity['profile_id'], identity['project_id'])
+            return routed_context(store.context(current, identity['profile_id'], identity['project_id']))
         if services and callable(getattr(services, 'start_background', None)):
             services.start_background(load_authorized_context)
         try:
@@ -89,7 +89,7 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
 
     @app.middleware('http')
     async def authenticated(request: Request, call_next):
-        if request.url.path.startswith('/api/') or policy.mode == 'trusted-proxy':
+        if request.url.path.startswith('/api/') or request.url.path == '/health' or policy.mode == 'trusted-proxy':
             try:
                 current = policy.verify(headers=request.headers, scheme=request.url.scheme,
                     path=request.url.path, method=request.method,
@@ -154,6 +154,10 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             raise HTTPException(404, 'Unknown profile') from None
         return value
 
+    def routed_context(ctx):
+        routing = {key: os.environ[env] for key, env in [('machine', 'WORKBENCH_FLEET_MACHINE'), ('capability', 'WORKBENCH_FLEET_CAPABILITY')] if os.environ.get(env)}
+        return {**ctx, **({'fleet': routing} if routing else {})}
+
     def resolve_context(request):
         profile_id = profile(request)
         session = request.path_params.get('session_id') or request.query_params.get('session_id') or request.query_params.get('session')
@@ -163,8 +167,8 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
                 bound = store.session_context(request.state.user_id, profile_id, session)
                 if project and project != bound['project_id']:
                     raise HTTPException(404, 'Session outside project')
-                return bound
-            return store.context(request.state.user_id, profile_id, project or 'default')
+                return routed_context(bound)
+            return routed_context(store.context(request.state.user_id, profile_id, project or 'default'))
         except KeyError:
             raise HTTPException(404, 'Unknown project or session') from None
 
@@ -323,7 +327,10 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
 
     @app.get('/api/runtime/capabilities')
     async def runtime_capabilities():
-        return await upstream('GET', 'capabilities')
+        capability = await upstream('GET', 'capabilities')
+        if app.state.services_available:
+            app.state.services.runtime['capabilities'].update(capability.get('capabilities', {}))
+        return capability
 
     @app.get('/api/runtime/models')
     async def runtime_models():
@@ -420,11 +427,32 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
     async def owned_snapshot(ctx, session_id):
         require_owned(ctx, session_id)
         result = await upstream('GET', f'sessions/{session_id}/snapshot', params=runtime_scope(ctx))
+        return present_snapshot(ctx, session_id, result)
+
+    def present_message(ctx, session_id, message):
         cards = store.document(ctx['user_id'], ctx['profile_id'], 'attachment-cards:' + session_id)
-        for message in result.get('messages', []):
-            if message.get('request_id') in cards:
-                message['attachments'] = cards[message['request_id']]
-        return result
+        request_id = message.get('request_id')
+        if request_id in cards:
+            message = {**message, 'attachments': cards[request_id]}
+            originals = store.document(ctx['user_id'], ctx['profile_id'], 'attachment-text:' + session_id)
+            if request_id in originals:
+                message['content'] = originals[request_id]
+        return message
+
+    def present_snapshot(ctx, session_id, snapshot):
+        return {**snapshot, 'messages': [present_message(ctx, session_id, message) for message in snapshot.get('messages', [])]}
+
+    def present_event(ctx, session_id, event):
+        if event.get('type') == 'snapshot':
+            return {**event, 'data': present_snapshot(ctx, session_id, event['data'])}
+        if event.get('type') == 'message.committed':
+            data = event['data']
+            if isinstance(data.get('message'), dict):
+                data = {**data, 'message': present_message(ctx, session_id, data['message'])}
+            else:
+                data = present_message(ctx, session_id, data)
+            return {**event, 'data': data}
+        return event
 
     async def owned_ref(ctx, session_id):
         return (await owned_snapshot(ctx, session_id))['session']
@@ -442,9 +470,61 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             if data.get('request_id'):
                 saved = store.document(ctx['user_id'], ctx['profile_id'], 'attachment-cards:' + session_id)
                 rows = [app.state.services.attachments.record(ctx, session_id, aid) for aid in attachment_ids]
-                saved[data['request_id']] = [{'attachmentId': row['id'], 'mediaType': row['mimeType'], 'name': row['name'], 'kind': row['kind'], 'size': row.get('size'), 'fileCount': row.get('fileCount')} for row in rows]
+                cards = [{'attachmentId': row['id'], 'mediaType': row['mimeType'], 'name': row['name'], 'kind': row['kind'], 'size': row.get('size'), 'fileCount': row.get('fileCount')} for row in rows]
+                originals = store.document(ctx['user_id'], ctx['profile_id'], 'attachment-text:' + session_id)
+                if data['request_id'] in saved and (saved[data['request_id']] != cards or data['request_id'] in originals and originals[data['request_id']] != data.get('content', '')):
+                    raise HTTPException(409, 'Attachment request_id already used for another message')
+                saved[data['request_id']] = cards
                 store.document(ctx['user_id'], ctx['profile_id'], 'attachment-cards:' + session_id, saved)
+                originals[data['request_id']] = data.get('content', '')
+                store.document(ctx['user_id'], ctx['profile_id'], 'attachment-text:' + session_id, originals)
         return await upstream('POST', f'sessions/{session_id}/messages', params=runtime_scope(ctx), body=data)
+
+    async def scheduled_input(ctx, session_id, payload):
+        require_owned(ctx, session_id)
+        request_id = payload.get('request_id')
+        if not isinstance(request_id, str) or not request_id:
+            raise HTTPException(422, 'Stable scheduled request_id required')
+        await owned_send(ctx, session_id, payload)
+        from urllib.parse import quote
+        for attempt in range(6):
+            receipt = await upstream('GET', f'sessions/{session_id}/requests/{quote(request_id, safe="")}', params=runtime_scope(ctx))
+            if receipt.get('request_id') != request_id or receipt.get('session_id') != session_id:
+                raise HTTPException(502, 'Scheduled receipt identity mismatch')
+            if receipt.get('durable') is True:
+                return {'request_id': request_id, 'status': 'accepted', 'durable': True}
+            if attempt < 5:
+                await asyncio.sleep(.2)
+        raise HTTPException(503, 'Scheduled input has no durable receipt yet; the same request will be reconciled')
+
+    async def persist_delivery(ctx, session_id, delivery, idempotency_key):
+        require_owned(ctx, session_id)
+        expected = {**runtime_scope(ctx), 'session_id': session_id, 'runtime': 'dsh'}
+        if delivery.get('origin') != expected:
+            raise HTTPException(403, 'Delivery origin outside authenticated session')
+        content = delivery.get('content', delivery.get('text'))
+        if content is None:
+            body = delivery.get('payload', delivery.get('body', {}))
+            if isinstance(body, dict):
+                content = next((body[key] for key in ('result', 'summary', 'message', 'question', 'reason') if isinstance(body.get(key), str) and body[key].strip()), None)
+                if content is None:
+                    status = str(body.get('status', 'updated'))
+                    content = 'Fleet task status: ' + status + '. No result text was returned by the worker.'
+            else:
+                content = str(body)
+        if not isinstance(content, str):
+            raise HTTPException(502, 'Fleet notification content must be text')
+        kind = delivery.get('kind', 'result')
+        if kind not in ('result', 'question', 'notice'):
+            kind = 'notice'
+        payload = {'idempotency_key': idempotency_key, 'source': 'fleet',
+                   'task_id': delivery['task_id'], 'attempt_id': delivery['attempt_id'],
+                   'epoch': delivery['epoch'], 'kind': kind, 'content': content,
+                   'metadata': {'fleet_delivery_id': delivery['id']}}
+        receipt = await upstream('POST', f'sessions/{session_id}/deliveries', params=runtime_scope(ctx), body=payload)
+        if receipt.get('session_id') != session_id or receipt.get('idempotency_key') != idempotency_key or receipt.get('durable') is not True or receipt.get('status') != 'persisted' or not receipt.get('delivery_id'):
+            raise HTTPException(502, 'Notification is not durably persisted; Fleet ACK withheld')
+        return {'persisted': True}
 
     background_locks = {}
 
@@ -486,7 +566,15 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
     async def session_tasks(session_id: str, request: Request):
         user = request.state.user_id
         ctx = resolve_context(request)
-        return {'tasks': list(store.document(user, ctx['profile_id'], 'background:' + session_id).values())}
+        rows = list(store.document(user, ctx['profile_id'], 'background:' + session_id).values())
+        for row in rows:
+            if app.state.services_available:
+                try:
+                    task = await app.state.services.fleet.task(ctx, row['receipt']['task_id'])
+                    row['current'] = {k: task.get(k) for k in ('id', 'status', 'attempts', 'revision')}
+                except HTTPException as error:
+                    row['status_error'] = str(error.detail)
+        return {'tasks': rows}
 
     @app.get('/api/runtime/sessions/{session_id}/snapshot')
     async def snapshot(session_id: str, request: Request):
@@ -514,10 +602,27 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             raise HTTPException(result.status_code, 'DSH event stream rejected')
         async def stream():
             try:
-                async for chunk in result.aiter_bytes():
+                frame = []
+                async for line in result.aiter_lines():
                     if await request.is_disconnected():
                         break
-                    yield chunk
+                    if line:
+                        frame.append(line)
+                        continue
+                    if not frame:
+                        continue
+                    data_lines = [line[5:].lstrip(' ') for line in frame if line.startswith('data:')]
+                    if data_lines:
+                        try:
+                            event = present_event(ctx, session_id, json.loads('\n'.join(data_lines)))
+                        except (ValueError, KeyError, TypeError):
+                            # Preserve malformed protocol data for the client's explicit error path.
+                            pass
+                        else:
+                            frame = [line for line in frame if not line.startswith('data:')]
+                            frame.append('data: ' + json.dumps(event, ensure_ascii=False))
+                    yield '\n'.join(frame) + '\n\n'
+                    frame = []
             finally:
                 await result.aclose()
                 await client.aclose()
@@ -670,9 +775,23 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             raise
         app.state.services_available = False
     else:
-        callbacks = {'create_session': create_owned_session, 'send_message': owned_send, 'snapshot': owned_snapshot, 'get_session': owned_ref, 'capabilities': {}}
+        callbacks = {'create_session': create_owned_session, 'send_message': owned_send, 'snapshot': owned_snapshot, 'get_session': owned_ref, 'scheduled_input': scheduled_input, 'persist_delivery': persist_delivery, 'capabilities': {}}
         router = services.create_services_router(resolve_context, home / 'services', runtime=callbacks)
         app.state.services = router.services
+        fleet_url = os.environ.get('WORKBENCH_FLEET_URL')
+        if fleet_url:
+            from .standalone_domains.fleet import FleetHTTP
+            def fleet_token():
+                path = os.environ.get('WORKBENCH_FLEET_TOKEN_FILE')
+                if not path:
+                    raise HTTPException(503, 'Fleet credential file is unconfigured')
+                return private_secret_file(path)
+            def review_token():
+                path = os.environ.get('WORKBENCH_FLEET_REVIEW_TOKEN_FILE')
+                if not path:
+                    raise HTTPException(503, 'Fleet review credential file is unconfigured')
+                return private_secret_file(path)
+            app.state.services.fleet.transport = FleetHTTP(fleet_url, fleet_token, review_token)
         app.state.services_available = True
         app.include_router(router, prefix=PREFIX)
         app.include_router(services.create_extra_router(services=router.services, archives=True, schedules=True))
@@ -682,6 +801,25 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         raise HTTPException(503, 'Standalone service unavailable: ' + path)
 
     assets = Path(__file__).parent / 'standalone-dist'
+    app.state.assets_root = assets
+
+    @app.get('/health')
+    async def health():
+        build_root = app.state.assets_root
+        index = build_root / 'standalone.html'
+        if not index.is_file() or not app.state.services_available:
+            raise HTTPException(503, 'Workbench assets or services unavailable')
+        html = index.read_text()
+        refs = re.findall(r'(?:src|href)=["\'](/assets/[^"\']+)["\']', html)
+        if not refs or any(not (build_root / ref.lstrip('/')).is_file() for ref in refs):
+            raise HTTPException(503, 'Workbench build assets incomplete')
+        try:
+            capability = await runtime_capabilities()
+        except HTTPException:
+            raise HTTPException(503, 'DSH runtime is unavailable') from None
+        if capability.get('runtime') != 'dsh' or capability.get('status') != 'ready':
+            raise HTTPException(503, 'DSH runtime is not ready')
+        return {'status': 'ready', 'runtime': 'dsh'}
 
     @app.get('/{path:path}')
     async def frontend(path: str):
