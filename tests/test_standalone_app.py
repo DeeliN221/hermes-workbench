@@ -537,3 +537,49 @@ def test_chat_display_preferences_survive_restart_and_stay_scoped(tmp_path):
     response = restarted.get(endpoint)
     assert response.json() == selected
     assert response.headers['cache-control'] == 'no-store'
+
+
+def test_native_create_conflicts_remain_authoritative_after_host_restart(tmp_path):
+    app, client, bridge = setup(tmp_path)
+    login(app, client)
+    body = {'request_id': 'stable-creation', 'title': 'Original', 'model': 'protocol-fixture', 'reasoning_effort': 'low'}
+    first = client.post('/api/runtime/sessions', json=body)
+    assert first.status_code == 200
+    sid = first.json()['id']
+    assert client.post('/api/runtime/sessions', json=body).json()['id'] == sid
+    for key, value in [('title', 'Changed'), ('model', 'different-model'), ('reasoning_effort', 'high')]:
+        assert client.post('/api/runtime/sessions', json={**body, key: value}).status_code == 409
+    app.state.store.close()
+    app = create_app(home=tmp_path / 'state', workspace_root=tmp_path / 'workspaces', runtime_url='http://localhost', transport=httpx.ASGITransport(app=bridge), runtime_token='fixture-only-credential', allow_missing_services=True)
+    client = TestClient(app)
+    login(app, client)
+    assert client.post('/api/runtime/sessions', json=body).json()['id'] == sid
+    assert len(bridge.state.sessions) == 1
+    # Effective server context is also part of the native fingerprint.
+    client.put('/api/profiles/default/description', json={'description': 'Changed profile context'})
+    assert client.post('/api/runtime/sessions', json=body).status_code == 409
+
+
+def test_native_model_controls_are_scoped_persisted_and_forwarded_before_input(tmp_path):
+    app, client, bridge = setup(tmp_path)
+    login(app, client)
+    ref = client.post('/api/runtime/sessions', json={'model': 'protocol-fixture', 'reasoning_effort': 'low'}).json()
+    sid = ref['id'];base = '/api/runtime/sessions/' + sid
+    assert ref['reasoning_effort'] == 'low' and ref['model'] == 'protocol-fixture'
+    assert client.post(base + '/model', json={'reasoning_effort': 'high'}).status_code == 200
+    assert client.get(base + '/snapshot').json()['session']['reasoning_effort'] == 'high'
+    other = client.post('/api/profiles', json={'name': 'Other'}).json()['name']
+    count = len(bridge.state.requests)
+    assert client.post(base + '/model?profile_id=' + other, json={'model': 'changed'}).status_code == 404
+    assert len(bridge.state.requests) == count
+    assert client.post(base + '/model', json={'user_id': 'spoofed'}).status_code == 422
+    with client:
+        response = client.post(base + '/messages', json={'content': 'slow', 'request_id': 'controls-first', 'model': 'protocol-fixture', 'reasoning_effort': 'low'})
+        assert response.status_code == 200
+        assert bridge.state.sessions[sid]['session']['reasoning_effort'] == 'low'
+        before = len(bridge.state.sessions[sid]['messages'])
+        # A control change during an active turn fails before adding another input.
+        rejected = client.post(base + '/messages', json={'content': 'must not arrive', 'request_id': 'controls-changed', 'reasoning_effort': 'high'})
+        assert rejected.status_code == 409
+        assert len(bridge.state.sessions[sid]['messages']) == before
+        assert client.post(base + '/messages', json={'content': 'queued', 'request_id': 'same-controls', 'model': 'protocol-fixture', 'reasoning_effort': 'low'}).status_code == 200

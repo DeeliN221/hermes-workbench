@@ -12,6 +12,7 @@ def create_fixture():
     app = FastAPI()
     app.state.sessions = {}
     app.state.requests = []
+    app.state.creations = {}
 
     @app.middleware('http')
     async def record(request, next_handler):
@@ -39,11 +40,32 @@ def create_fixture():
     @app.post('/api/runtime/sessions')
     async def create(request: Request):
         body = await request.json()
+        key = tuple(body.get(k) for k in ('user_id', 'profile_id', 'project_id', 'request_id'))
+        if body.get('request_id') and key in app.state.creations:
+            previous = app.state.creations[key]
+            if previous['payload'] != body:
+                raise HTTPException(409, 'Creation request changed')
+            return app.state.sessions[previous['id']]['session']
         ident = 'fixture-' + str(len(app.state.sessions) + 1)
         ref = {k: body[k] for k in ('profile_id', 'project_id')}
         ref.update(id=ident, runtime='dsh', title=body.get('title') or 'Protocol fixture conversation')
         app.state.sessions[ident] = {'session': ref, 'messages': [], 'cursor': '0', 'interactions': [], 'inbox': [], 'status': 'idle', 'events': [], 'attempt': 0, 'requests': set(), 'cwd': body['cwd'], 'creation_payload': body}
+        ref.update({k: body[k] for k in ('model', 'reasoning_effort') if k in body})
+        ref['provider'] = 'fixture-provider'
+        if body.get('request_id'):
+            app.state.creations[key] = {'payload': body, 'id': ident}
         return ref
+
+    @app.post('/api/runtime/sessions/{ident}/model')
+    async def model_controls(ident: str, request: Request):
+        session = get(ident)
+        body = await request.json()
+        if session['status'] == 'running':
+            raise HTTPException(409, 'Model change while running')
+        if any(not isinstance(v, str) or not v for v in body.values()):
+            raise HTTPException(422, 'Invalid model controls')
+        session['session'].update(body)
+        return session['session']
 
     def get(ident):
         if ident not in app.state.sessions:

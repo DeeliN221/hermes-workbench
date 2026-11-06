@@ -10687,6 +10687,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           if (!k || B) return;
           if (standalone) {
             const active = () => L === X.current && Y.current === k;
+            let hydratedControls = false;
             return subscribeRuntime(i.fetchJSON, M, k, {
               update: view => {
                 if (!active()) return;
@@ -10694,6 +10695,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 Go.current = Vn.current;
                 Hl(""); _i(false);
                 if (view.runtimeError) Pt(view.runtimeError);
+                if (!hydratedControls && view.session) {
+                  hydratedControls = true;
+                  if (view.session.model) Wd(view.session.model);
+                  if (view.session.reasoningEffort) zd(view.session.reasoningEffort);
+                }
                 ht(previous => {
                   const incoming = view.messages;
                   const pending = previous.filter(message => message.role === "user" && ["pending", "accepted"].includes(message.status) && !incoming.some(candidate => sameMessage(candidate, message)));
@@ -11636,7 +11642,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         modelLabel = tc?.label || Bt || runtimeText("正在读取模型…", "Loading models…"),
         defaultModelLabel = ai.find((L) => L.isDefault)?.label,
-        mv = [modelLabel + (pv && _n ? " fast" : ""), standalone ? "" : Kd[Fi] || Fi].filter(Boolean).join(" · "),
+        mv = [modelLabel + (pv && _n ? " fast" : ""), standalone && !tc?.efforts.length ? "" : Kd[Fi] || Fi].filter(Boolean).join(" · "),
         Ov = k
           ? Jt ||
             (ei?.workspacePath

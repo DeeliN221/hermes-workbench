@@ -19,6 +19,7 @@ export interface CodexSession {
   color: string;
   /** The user-supplied title, or null when the session still shows its derived default. */
   customTitle?: string | null;
+  model?: string; provider?: string; reasoningEffort?: string;
   /** 'user' = titled by hand, 'auto' = first-message title, null = neither yet. */
   titleSource?: 'user' | 'auto' | null;
 }
@@ -61,7 +62,7 @@ export function normalizeSession(value: unknown): CodexSession | null {
   const updatedRaw = row.updatedAt ?? row.updated_at ?? row.timestamp;
   const updatedAtEpoch = typeof updatedRaw === 'number' || typeof updatedRaw === 'string' && /^\d+(?:\.\d+)?$/.test(updatedRaw)
     ? Number(updatedRaw) * (Number(updatedRaw) < 1e12 ? 1000 : 1) : 0;
-  return { id, threadId: text(row.threadId ?? row.thread_id) || undefined, title: text(row.title ?? row.name ?? row.summary, id),
+  return { id, ...(row.model ? { model: text(row.model) } : {}), ...(row.provider ? { provider: text(row.provider) } : {}), ...(row.reasoning_effort ? { reasoningEffort: text(row.reasoning_effort) } : {}), threadId: text(row.threadId ?? row.thread_id) || undefined, title: text(row.title ?? row.name ?? row.summary, id),
     workspace: text(row.workspaceName ?? row.workspace_name, path.split('/').filter(Boolean).at(-1) || path || uiText('默认工作区', 'Default workspace')),
     workspaceId: text(row.workspaceId ?? row.workspace_id), workspacePath: path,
     favorite: row.favorite === true || row.favourited === true || row.isFavorite === true,
@@ -202,7 +203,7 @@ export async function markCodexSessionRead(read: FetchJSON, profile: string, ses
 }
 export async function createCodexSession(read: FetchJSON, profile: string, options: SessionOptions) {
   if (standalone) {
-    const row = await read<unknown>('/api/runtime/sessions', json('POST', { profile_id: profile, project_id: options.workspaceId || 'default', model: options.model, request_id: options.sessionId }));
+    const row = await read<unknown>('/api/runtime/sessions', json('POST', { profile_id: profile, project_id: options.workspaceId || 'default', model: options.model, reasoning_effort: options.effort || undefined, request_id: options.sessionId }));
     const session = normalizeSession(row);
     if (!session) throw new Error('DSH returned no valid session');
     return session;
@@ -218,7 +219,7 @@ export async function sendCodexMessage(read: FetchJSON, profile: string, session
   if (standalone) {
     let result: Record<string, unknown>;
     try {
-      result = record(await read(scoped(sessionURL(profile, session) + '/messages', profile), json('POST', { content, request_id: requestId, attachments: options.attachmentIds || [], mode: options.expectedTurnId ? 'steer' : 'queue' })));
+      result = record(await read(scoped(sessionURL(profile, session) + '/messages', profile), json('POST', { content, request_id: requestId, model: options.model || undefined, reasoning_effort: options.effort || undefined, attachments: options.attachmentIds || [], mode: options.expectedTurnId ? 'steer' : 'queue' })));
     } catch (error) {
       if (typeof record(error).status === 'number') throw new CodexSendError(Number(record(error).status), String(error));
       throw error;

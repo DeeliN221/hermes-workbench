@@ -199,7 +199,7 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         return {**row, **row['settings'], 'workspaceId': row['id'], 'workspacePath': str((store.user_workspace(user) / row['relative_path']).resolve())}
 
     def session_view(ctx, row):
-        row = {k: value for k, value in row.items() if k in ('id', 'runtime', 'profile_id', 'project_id', 'title', 'status', 'created_at', 'updated_at')}
+        row = {k: value for k, value in row.items() if k in ('id', 'runtime', 'profile_id', 'project_id', 'title', 'status', 'created_at', 'updated_at', 'model', 'provider', 'reasoning_effort')}
         metadata = store.document(ctx['user_id'], ctx['profile_id'], 'session:' + row['id'])
         return {**row, 'groupId': ctx['project_id'], 'workspaceId': ctx['project_id'], 'workspacePath': ctx['workspace'], **metadata}
 
@@ -372,14 +372,10 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
                 raise HTTPException(422, 'Invalid session request_id')
             key = (ctx['user_id'], ctx['profile_id'], ctx['project_id'], request_id)
             async with creation_locks.setdefault(key, asyncio.Lock()):
-                saved = store.document(ctx['user_id'], ctx['profile_id'], 'creation:' + ctx['project_id'])
-                if request_id in saved:
-                    require_owned(ctx, saved[request_id]['id'])
-                    return saved[request_id]
-                ref = await create_session_context(ctx, payload)
-                saved[request_id] = ref
-                store.document(ctx['user_id'], ctx['profile_id'], 'creation:' + ctx['project_id'], saved)
-                return ref
+                # The bridge owns the durable fingerprint, including effective
+                # profile context. Reconcile every retry there so changed input
+                # cannot bypass its conflict check through a host cache.
+                return await create_session_context(ctx, payload)
         return await create_session_context(ctx, payload)
 
     async def create_session_context(ctx, payload):
@@ -411,6 +407,11 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             model = model.get('default')
         if model:
             data['model'] = model
+        effort = payload.get('reasoning_effort', project['settings'].get('reasoning_effort', config.get('reasoning_effort')))
+        if effort is not None:
+            if not isinstance(effort, str) or not effort.strip():
+                raise HTTPException(422, 'Invalid reasoning effort')
+            data['reasoning_effort'] = effort
         if payload.get('title'):
             data['title'] = payload['title']
         if payload.get('request_id'):
@@ -420,7 +421,8 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             raise HTTPException(502, 'Invalid DSH session reference')
         if not re.fullmatch(r'[A-Za-z0-9_-]{1,128}', str(row['id'])):
             raise HTTPException(502, 'Invalid DSH session identifier')
-        store.bind_session(ctx, row['id'])
+        if not store.owns_session(ctx, row['id']):
+            store.bind_session(ctx, row['id'])
         if app.state.services_available:
             app.state.services.bind_session(ctx, row)
         return row
@@ -637,11 +639,16 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
     async def runtime_action(session_id: str, action: str, request: Request):
         user = request.state.user_id
         ctx = resolve_context(request)
-        if action != 'messages' and action != 'cancel' and not (action.startswith('interactions/') and len(action.split('/')) == 2):
+        if action not in ('messages', 'cancel', 'model') and not (action.startswith('interactions/') and len(action.split('/')) == 2):
             raise HTTPException(404)
         data = await request.json() if action != 'cancel' else {}
+        if not isinstance(data, dict):
+            raise HTTPException(422, 'Expected an object')
+        require_owned(ctx, session_id)
+        if action == 'model' and (not data or any(k not in ('model', 'reasoning_effort') for k in data)):
+            raise HTTPException(422, 'Invalid model controls')
         if action == 'messages':
-            allowed = ('content', 'attachments', 'request_id', 'mode')
+            allowed = ('content', 'attachments', 'request_id', 'mode', 'model', 'reasoning_effort')
             data = {k: data[k] for k in allowed if k in data}
             if data.get('mode', 'queue') not in ('queue', 'steer') or not isinstance(data.get('content'), str):
                 raise HTTPException(422, 'Invalid message')
@@ -651,6 +658,12 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
                 if data.get('attachments'):
                     raise HTTPException(422, 'Background attachments are unavailable; send in foreground')
                 return {**await background_submit(ctx, session_id, data['content'], data.get('request_id')), 'execution': 'background'}
+            controls = {k: data.pop(k) for k in ('model', 'reasoning_effort') if k in data}
+            if controls:
+                current = await upstream('GET', f'sessions/{session_id}/snapshot', params=runtime_scope(ctx))
+                settings = current.get('session', {})
+                if any(settings.get(k) != v for k, v in controls.items()):
+                    await upstream('POST', f'sessions/{session_id}/model', params=runtime_scope(ctx), body=controls)
             return await owned_send(ctx, session_id, data)
         return await upstream('POST', f'sessions/{session_id}/{action}', params=runtime_scope(ctx), body=data)
 

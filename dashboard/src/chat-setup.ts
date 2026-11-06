@@ -34,7 +34,7 @@ export async function loadChatSetup(read: FetchJSON, profile: string): Promise<[
     const [catalog, config] = await Promise.all([read<Models>('/api/runtime/models'), read<unknown>(`/api/config?profile=${encodeURIComponent(profile)}`)]);
     const data = catalogRows(catalog).filter(row => !catalog.default?.provider || (row as Record<string, unknown>).provider === catalog.default.provider).map(row => {
       const model = row as Record<string, unknown>;
-      return { ...model, id: model.id, displayName: model.label || model.name || model.id, isDefault: model.isDefault ?? model.is_default ?? model.id === catalog.default?.model, supportedReasoningEfforts: [], defaultReasoningEffort: '' };
+      return { ...model, id: model.id, displayName: model.label || model.name || model.id, isDefault: model.isDefault ?? model.is_default ?? model.id === catalog.default?.model, supportedReasoningEfforts: ((model.reasoning as { efforts?: { id: string }[] } | undefined)?.efforts || []).map(effort => ({ reasoningEffort: effort.id })), defaultReasoningEffort: '' };
     });
     return [{ data }, config];
   }
