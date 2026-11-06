@@ -1,8 +1,8 @@
 import { uiText as sourceText } from './ui-locale';
+import { cachedChatDisplayPreferences, ensureChatDisplayPreferences } from './chat-display-preferences';
+import { currentProfile } from './profile-scope';
 import './user-message-ball.css';
 
-const STORAGE_KEY = 'workbench.user-message-ball.v1';
-const CHANGE_EVENT = 'hermes-workbench:user-message-ball-change';
 const LAYER_ATTR = 'data-workbench-user-message-layer';
 const BALL_ATTR = 'data-workbench-user-message-ball';
 const PANEL_ATTR = 'data-workbench-user-message-panel';
@@ -29,23 +29,6 @@ type Navigator = {
   composer: HTMLElement | null;
   resize: ResizeObserver | null;
 };
-
-export function readUserMessageBallEnabled(): boolean {
-  try {
-    return window.localStorage.getItem(STORAGE_KEY) !== 'false';
-  } catch {
-    return true;
-  }
-}
-
-export function writeUserMessageBallEnabled(enabled: boolean): void {
-  try {
-    window.localStorage.setItem(STORAGE_KEY, String(enabled));
-  } catch {
-    /* Private browsing can reject storage; the control still updates this page. */
-  }
-  window.dispatchEvent(new CustomEvent(CHANGE_EVENT, { detail: enabled }));
-}
 
 function chatVisible(): boolean {
   const workbench = document.querySelector<HTMLElement>('.dashboard-persistent-workbench');
@@ -86,33 +69,6 @@ function scrollToMessage(id: string, list: HTMLElement): void {
   void node.offsetWidth;
   node.classList.add(JUMP_CLASS);
   window.setTimeout(() => node.classList.remove(JUMP_CLASS), 1600);
-}
-
-/** Render the enable/disable control on the Chat display settings page. */
-export function renderUserMessageBallSetting(container: HTMLElement): void {
-  const section = document.createElement('section');
-  section.className = 'workbench-chat-display-toggle';
-  section.dataset.testid = 'user-message-ball-setting';
-  section.innerHTML = '<div class="workbench-chat-display-toggle-copy"><strong></strong><span></span></div><button type="button" class="workbench-chat-display-switch" role="switch" data-testid="user-message-ball-toggle"><span class="workbench-chat-display-switch-label"></span><span class="workbench-chat-display-switch-track" aria-hidden="true"><span class="workbench-chat-display-switch-thumb"></span></span></button>';
-  const title = section.querySelector('strong')!;
-  title.textContent = sourceText('用户消息悬浮球', 'User message navigator');
-  const description = section.querySelector('.workbench-chat-display-toggle-copy span')!;
-  description.textContent = sourceText('在对话右侧快速跳转到任意用户消息。', 'Jump to any user message from the chat corner.');
-  const button = section.querySelector<HTMLButtonElement>('[data-testid="user-message-ball-toggle"]')!;
-  const label = button.querySelector<HTMLElement>('.workbench-chat-display-switch-label')!;
-
-  const sync = () => {
-    const enabled = readUserMessageBallEnabled();
-    button.setAttribute('aria-checked', String(enabled));
-    label.textContent = enabled ? sourceText('已开启', 'On') : sourceText('已关闭', 'Off');
-  };
-  button.addEventListener('click', () => {
-    writeUserMessageBallEnabled(!readUserMessageBallEnabled());
-    sync();
-  });
-  sync();
-
-  container.append(section);
 }
 
 const navigators = new Map<HTMLElement, Navigator>();
@@ -227,10 +183,12 @@ function refresh(navigator: Navigator, enabled: boolean): void {
   const list = navigator.center.querySelector<HTMLElement>(LIST_SELECTOR);
   const composer = navigator.center.querySelector<HTMLElement>(COMPOSER_SELECTOR);
   observePane(navigator, list, composer);
+  const mobile = window.matchMedia?.('(max-width: 800px)').matches === true;
 
   if (!enabled || !chatVisible() || !list) {
     navigator.entries = [];
     navigator.ball.hidden = true;
+    delete navigator.ball.dataset.count;
     setOpen(navigator, false);
     return;
   }
@@ -239,11 +197,14 @@ function refresh(navigator: Navigator, enabled: boolean): void {
   navigator.entries = entries;
   if (!entries.length) {
     navigator.ball.hidden = true;
+    delete navigator.ball.dataset.count;
     setOpen(navigator, false);
     return;
   }
 
-  navigator.ball.hidden = false;
+  // Mobile keeps the trigger in the rail; the hidden pane button remains the
+  // single owner of count, panel state and per-pane scroll behavior.
+  navigator.ball.hidden = mobile;
   if (navigator.ball.dataset.count !== String(entries.length)) {
     navigator.ball.dataset.count = String(entries.length);
   }
@@ -267,9 +228,15 @@ export function installUserMessageBall(): void {
   let frame = 0;
   let observer: MutationObserver | null = null;
   let disposed = false;
+  let requestedProfile = '';
 
   const sync = () => {
-    const enabled = readUserMessageBallEnabled();
+    const profile = currentProfile();
+    if (profile !== requestedProfile) {
+      requestedProfile = profile;
+      void ensureChatDisplayPreferences(profile).catch(() => {});
+    }
+    const enabled = cachedChatDisplayPreferences(profile).userMessageNavigatorEnabled;
     const seen = new Set<HTMLElement>();
     for (const pane of Array.from(document.querySelectorAll<HTMLElement>(PANE_SELECTOR))) {
       const center = pane.querySelector<HTMLElement>(CENTER_SELECTOR);
@@ -326,7 +293,8 @@ export function installUserMessageBall(): void {
     document.addEventListener('click', onDocumentClick);
     document.addEventListener('keydown', onKeydown);
     window.addEventListener('resize', schedule);
-    window.addEventListener(CHANGE_EVENT, schedule);
+    window.addEventListener('workbench:chat-display-preferences-change', schedule);
+    window.addEventListener('popstate', schedule);
     sync();
   };
 
@@ -336,7 +304,8 @@ export function installUserMessageBall(): void {
     document.removeEventListener('click', onDocumentClick);
     document.removeEventListener('keydown', onKeydown);
     window.removeEventListener('resize', schedule);
-    window.removeEventListener(CHANGE_EVENT, schedule);
+    window.removeEventListener('workbench:chat-display-preferences-change', schedule);
+    window.removeEventListener('popstate', schedule);
     if (frame) window.cancelAnimationFrame(frame);
     for (const navigator of navigators.values()) destroyNavigator(navigator);
     navigators.clear();

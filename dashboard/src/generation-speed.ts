@@ -1,4 +1,5 @@
 import { uiText } from './ui-locale';
+import { useChatDisplayPreferences } from './chat-display-preferences';
 import './generation-speed.css';
 
 export interface GenerationMetrics {
@@ -32,9 +33,11 @@ export function generationSpeedDetails(metrics?: GenerationMetrics): string {
     : `${metrics.outputTokens} output tokens.`;
   return `${definition} ${counts} ${reasoning}.`;
 }
-/** Native details supports hover, keyboard and touch without a global overlay. */
-export function GenerationSpeed({ React, metrics }: { React: any; metrics?: GenerationMetrics }) {
+/** Keep TPS as a hidden measurement source; the optional mobile rail renders it. */
+export function GenerationSpeed({ React, metrics, sdk, profile }: { React: any; metrics?: GenerationMetrics; sdk: { hooks: any; fetchJSON: any }; profile: string }) {
+  const preferences = useChatDisplayPreferences(sdk, profile);
   const h = React.createElement, details = generationSpeedDetails(metrics);
+  if (!preferences.generationSpeedEnabled) return null;
   return h('details', { className: 'codex-generation-speed', 'data-testid': 'codex-generation-speed' },
     h('summary', { title: details, 'aria-label': `${generationSpeedLabel(metrics)}. ${details}` }, generationSpeedLabel(metrics)),
     h('span', { className: 'codex-generation-tooltip', role: 'tooltip' }, details));

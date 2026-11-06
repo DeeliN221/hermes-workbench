@@ -162,3 +162,7 @@
   22%, 62% { box-shadow: 0 0 0 4px color-mix(in srgb, var(--codex-accent, var(--dashboard-accent, #0b9da5)) 26%, transparent); }
   100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--codex-accent, var(--dashboard-accent, #0b9da5)) 0%, transparent); }
 }
+
+@media (max-width: 800px) {
+  .workbench-user-message-ball { display: none !important; }
+}
