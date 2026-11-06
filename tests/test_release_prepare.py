@@ -43,14 +43,18 @@ def prepared_case():
         if os.geteuid() == 0:
             for path in [base, *base.rglob('*')]:
                 os.chown(path, uid, gid, follow_symlinks=False)
-        env = {**os.environ, 'HERMES_WORKBENCH_RUNTIME_UID': str(uid),
-               'HERMES_WORKBENCH_RUNTIME_GID': str(gid), 'WORKBENCH_RELEASE_HOME': str(store.root)}
+        env = {'HERMES_WORKBENCH_RUNTIME_UID': str(uid),
+               'HERMES_WORKBENCH_RUNTIME_GID': str(gid), 'WORKBENCH_RELEASE_HOME': str(store.root),
+               'PYTHONDONTWRITEBYTECODE': '1'}
         yield store, data, env, uid, gid
 
 
 def invoke(case, *, checksum=None, source=SOURCE, env=None):
     _, data, configured, _, _ = case
-    return subprocess.run([sys.executable, '-c', SCRIPT, '--version', '1.0.0',
+    # A per-user uv interpreter can have a private standard-library directory.
+    # The service image's system Python remains accessible after dropping root.
+    interpreter = '/usr/bin/python3' if os.geteuid() == 0 else sys.executable
+    return subprocess.run([interpreter, '-c', SCRIPT, '--version', '1.0.0',
                            '--sha256', checksum or hashlib.sha256(data).hexdigest(),
                            '--source-commit', source], input=data, capture_output=True,
                           env=env or configured, timeout=15)
@@ -93,6 +97,17 @@ def test_inaccessible_state_is_reported_before_staging(prepared_case):
         assert not store.target('1.0.0').exists()
     finally:
         store.job.chmod(0o600)
+
+
+@pytest.mark.skipif(os.geteuid() != 0, reason='requires a real root-owned private state file')
+def test_root_owned_state_is_rejected_after_dropping_root(prepared_case):
+    store, _, _, _, _ = prepared_case
+    before = store.job.read_bytes()
+    os.chown(store.job, 0, 0)
+    result = invoke(prepared_case)
+    assert result.returncode != 0 and b'not owned by the runtime identity' in result.stderr
+    assert store.job.read_bytes() == before and store.job.stat().st_uid == 0
+    assert not store.target('1.0.0').exists()
 
 
 def test_wrong_runtime_identity_cannot_write_shared_state(prepared_case):
