@@ -27,7 +27,7 @@ import termios
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -1864,6 +1864,39 @@ def get_home_preferences(request: Request):
 def put_home_preferences(request: Request, body: HomePreferencesBody, profile: str = 'default'):
     from codex_bridge import _user
     return _home_preferences(_user(request), profile, body)
+
+
+class ExecutionPreferencesBody(BaseModel):
+    mode: Literal['foreground', 'background']
+
+
+def _execution_profile(profile: str) -> str:
+    _clean_identifier(profile, label="Profile", maximum=_MAX_PROFILE_LENGTH)
+    if "/" in profile or "\\" in profile or profile in (".", ".."):
+        raise HTTPException(422, "Invalid profile")
+    return profile
+
+
+@router.get('/execution-preferences')
+def get_execution_preferences(request: Request, profile: str = 'default'):
+    from codex_bridge import _user
+    from execution_preferences import current_mode
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"mode": current_mode(_user(request), _execution_profile(profile))}, headers={"Cache-Control": "no-store"})
+
+
+@router.put('/execution-preferences')
+def put_execution_preferences(request: Request, body: ExecutionPreferencesBody, profile: str = 'default'):
+    from codex_bridge import _user
+    user, profile = _user(request), _execution_profile(profile)
+    connection = _open_organization_db()
+    try:
+        with connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS execution_preferences (owner TEXT NOT NULL, profile TEXT NOT NULL, mode TEXT NOT NULL, PRIMARY KEY(owner, profile))")
+            connection.execute("INSERT INTO execution_preferences VALUES (?, ?, ?) ON CONFLICT(owner, profile) DO UPDATE SET mode=excluded.mode", (user, profile, body.mode))
+        return {"mode": body.mode}
+    finally:
+        connection.close()
 
 
 def _home_layout(user: str, profile: str | None = None, body: HomeLayoutBody | None = None):

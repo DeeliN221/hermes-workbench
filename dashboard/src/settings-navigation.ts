@@ -31,6 +31,7 @@ export function settingsNavSections(): SettingsNavSection[] {
       collapsible: true,
       items: [
         ['/config', uiText('常规', 'General')],
+        ['/config?workbench=execution', uiText('任务执行', 'Task execution')],
         ['/config?workbench=display', uiText('聊天显示', 'Chat display'), 'data-workbench-chat-display-link'],
         ['/config?workbench=models', uiText('模型显示', 'Model visibility'), 'data-workbench-model-link'],
         ['/config?workbench=shortcuts', uiText('快捷键', 'Keyboard shortcuts')],

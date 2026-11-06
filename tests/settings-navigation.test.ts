@@ -24,15 +24,15 @@ it('groups settings into preferences, agent, and one collapsed more section', ()
     ['more', true],
   ]);
   const hrefs = sections.flatMap(section => section.items).map(([href]) => href);
-  expect(hrefs).toHaveLength(17);
-  expect(new Set(hrefs).size).toBe(17);
+  expect(hrefs).toHaveLength(18);
+  expect(new Set(hrefs).size).toBe(18);
   // Every settings page from the flat navigation stays reachable after regrouping.
   expect(hrefs).toEqual(expect.arrayContaining([
-    '/config', '/config?workbench=display', '/config?workbench=models', '/config?workbench=shortcuts',
+    '/config', '/config?workbench=execution', '/config?workbench=display', '/config?workbench=models', '/config?workbench=shortcuts',
     '/profiles', '/models', '/config?workbench=allowances', '/env', '/config?workbench=versions',
     '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/logs', '/docs',
   ]));
-  expect(sections[1].items.map(([, label]) => label)).toEqual(['General', 'Chat display', 'Model visibility', 'Keyboard shortcuts']);
+  expect(sections[1].items.map(([, label]) => label)).toEqual(['General', 'Task execution', 'Chat display', 'Model visibility', 'Keyboard shortcuts']);
   expect(sections[3].items.map(([href]) => href)).toEqual([
     '/env', '/logs', '/plugins', '/mcp', '/channels', '/webhooks', '/pairing', '/system', '/docs',
   ]);

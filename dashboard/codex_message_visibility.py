@@ -1,7 +1,7 @@
-"""Separate durable user input from private attachment context at the RPC boundary.
+"""Separate durable user input from private turn context at the RPC boundary.
 
 Codex turn/start and turn/steer accept input blocks, not hidden messages. Keep a
-separate hidden message in the bridge request and flatten it only on the wire.
+separate attachment/execution context in the bridge request and flatten it only on the wire.
 Never expose the native echo (which may join those blocks) as display content.
 """
 from __future__ import annotations
@@ -11,6 +11,7 @@ import re
 from typing import Any
 
 _CONTEXT = "_attachmentContext"
+_EXECUTION = "_executionContext"
 _ATTACHMENTS = "_attachments"
 _VERSION = "_messageVisibility"
 _LEGACY = re.compile(
@@ -35,10 +36,12 @@ def split_payload(payload: dict) -> tuple[list, list]:
     if not isinstance(inputs, list):
         return [], []
     context = payload.get(_CONTEXT)
+    execution = payload.get(_EXECUTION)
+    execution_content = execution.get("content", []) if isinstance(execution, dict) and execution.get("hidden") is True else []
     if isinstance(context, dict) and context.get("hidden") is True:
-        return inputs, context.get("content", [])
+        return inputs, context.get("content", []) + execution_content
     if payload.get(_VERSION) == 1:
-        return inputs, []
+        return inputs, execution_content
     # Older bridge versions appended distinct generated blocks. Only remove a
     # trailing block with the exact generated grammar AND managed-storage path;
     # the first block always belongs to the user, even if it resembles a hint.
@@ -46,13 +49,13 @@ def split_payload(payload: dict) -> tuple[list, list]:
     hidden = []
     while len(visible) > 1 and isinstance(visible[-1], dict) and _LEGACY.fullmatch(str(visible[-1].get("text", ""))):
         hidden.insert(0, visible.pop())
-    return visible, hidden
+    return visible, hidden + execution_content
 
 
 def wire_payload(payload: dict) -> dict:
     """Adapt private bridge metadata to the supported Codex input schema."""
     visible, hidden = split_payload(payload)
-    return {**{k: v for k, v in payload.items() if k not in {_CONTEXT, _ATTACHMENTS, _VERSION}}, "input": visible + hidden}
+    return {**{k: v for k, v in payload.items() if k not in {_CONTEXT, _EXECUTION, _ATTACHMENTS, _VERSION}}, "input": visible + hidden}
 
 
 def input_text(value: Any) -> str:
@@ -139,7 +142,7 @@ class MessageProjection:
                 result["attachments"] = result[_ATTACHMENTS]
         output = {}
         for key, item in result.items():
-            if key in {_CONTEXT, _ATTACHMENTS, _VERSION}:
+            if key in {_CONTEXT, _EXECUTION, _ATTACHMENTS, _VERSION}:
                 continue
             # Request rows store these JSON envelopes as strings. Preserve the
             # API shape while projecting their nested messages too.
