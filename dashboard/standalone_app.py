@@ -647,6 +647,9 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         require_owned(ctx, session_id)
         if action == 'model' and (not data or any(k not in ('model', 'reasoning_effort') for k in data)):
             raise HTTPException(422, 'Invalid model controls')
+        if action == 'model' and 'model' not in data:
+            current = await upstream('GET', f'sessions/{session_id}/snapshot', params=runtime_scope(ctx))
+            data = {'model': current.get('session', {}).get('model'), **data}
         if action == 'messages':
             allowed = ('content', 'attachments', 'request_id', 'mode', 'model', 'reasoning_effort')
             data = {k: data[k] for k in allowed if k in data}
@@ -663,7 +666,7 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
                 current = await upstream('GET', f'sessions/{session_id}/snapshot', params=runtime_scope(ctx))
                 settings = current.get('session', {})
                 if any(settings.get(k) != v for k, v in controls.items()):
-                    await upstream('POST', f'sessions/{session_id}/model', params=runtime_scope(ctx), body=controls)
+                    await upstream('POST', f'sessions/{session_id}/model', params=runtime_scope(ctx), body={'model': settings.get('model'), **controls})
             return await owned_send(ctx, session_id, data)
         return await upstream('POST', f'sessions/{session_id}/{action}', params=runtime_scope(ctx), body=data)
 

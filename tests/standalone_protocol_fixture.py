@@ -62,7 +62,7 @@ def create_fixture():
         body = await request.json()
         if session['status'] == 'running':
             raise HTTPException(409, 'Model change while running')
-        if any(not isinstance(v, str) or not v for v in body.values()):
+        if not isinstance(body.get('model'), str) or any(not isinstance(v, str) or not v for v in body.values()):
             raise HTTPException(422, 'Invalid model controls')
         session['session'].update(body)
         return session['session']

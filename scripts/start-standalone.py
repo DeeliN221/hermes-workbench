@@ -383,6 +383,18 @@ class Supervisor:
     def cleanup(self):
         # Retain PGIDs even after bridge SIGKILL: its Host still belongs to this owned group.
         groups = {child.pid: child for child in self.children}
+        def leader_alive(group):
+            child = groups[group]
+            if child.poll() is not None:
+                return False
+            # Darwin can report EPERM while a killed leader is becoming reapable.
+            # Give only our Popen child a bounded exit grace, never ignore a live leader.
+            try:
+                child.wait(timeout=min(self.config['stop_timeout'], 0.2))
+                return False
+            except subprocess.TimeoutExpired:
+                return True
+
         def send(sig):
             for group in groups:
                 try:
@@ -392,7 +404,7 @@ class Supervisor:
                 except PermissionError:
                     # Darwin can report EPERM for an empty, just-reaped process group.
                     # A live owned leader must always remain signalable.
-                    if groups[group].poll() is None:
+                    if leader_alive(group):
                         raise ReleaseError('An owned process group could not be stopped')
         send(signal.SIGTERM)
         deadline = time.monotonic() + self.config['stop_timeout']
@@ -407,7 +419,7 @@ class Supervisor:
                 except ProcessLookupError:
                     pass
                 except PermissionError:
-                    if groups[group].poll() is None:
+                    if leader_alive(group):
                         raise ReleaseError('An owned process group could not be inspected')
             if not remaining:
                 break
@@ -470,8 +482,10 @@ class Supervisor:
                         self.stop_event.wait(min(0.25 * (attempt + 1), 1))
                 return 0 if self.stopping else 1
             finally:
-                self.cleanup()
-                self.status('stopped' if self.stopping else 'failed')
+                try:
+                    self.cleanup()
+                finally:
+                    self.status('stopped' if self.stopping else 'failed')
 
 
 def main(argv=None):

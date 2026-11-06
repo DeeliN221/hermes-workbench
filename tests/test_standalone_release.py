@@ -526,3 +526,33 @@ def test_release_requires_explicit_external_frozen_install_path(tmp_path):
         path.write_text(json.dumps(config))
         with pytest.raises(start.ReleaseError, match='outside the immutable candidate'):
             start.load_config(path)
+
+
+@pytest.mark.parametrize('leader_exits', [True, False])
+def test_darwin_group_permission_race_reaps_only_owned_child(tmp_path, monkeypatch, leader_exits):
+    _, raw = config_file(tmp_path)
+    supervisor = start.Supervisor(raw)
+    class Child:
+        pid = 987654
+        returncode = None
+        def poll(self):
+            return self.returncode
+        def wait(self, timeout):
+            assert 0 < timeout <= 5
+            if not leader_exits:
+                raise subprocess.TimeoutExpired('owned-child', timeout)
+            self.returncode = -signal.SIGKILL
+            return self.returncode
+    child = Child()
+    supervisor.children = [child]
+    def denied(group, sig):
+        assert group == child.pid
+        raise PermissionError('Darwin empty process group race')
+    monkeypatch.setattr(start.os, 'killpg', denied)
+    if leader_exits:
+        supervisor.cleanup()
+        assert supervisor.children == []
+    else:
+        with pytest.raises(start.ReleaseError, match='could not be stopped'):
+            supervisor.cleanup()
+        assert supervisor.children == [child]
