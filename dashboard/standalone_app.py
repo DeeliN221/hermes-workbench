@@ -739,6 +739,7 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         'execution-preferences': {'mode': 'foreground'},
         'home-layout': {'columns': 3, 'sessions_per_profile': 3},
         'chat-display': {}, 'attachment-preferences': {'folderUploadEnabled': True},
+        'chat-display-preferences': {'generationSpeedEnabled': False, 'userMessageNavigatorEnabled': False},
         'model-display': {'mode': 'hidden', 'hidden': [], 'visible': [], 'aliases': {}, 'revision': 1},
         'home-prompts': {'prompts': []}, 'profile-order': {'order': []}, 'kanban-geometry': {'geometry': {'x': .1, 'y': .1, 'width': .8, 'height': .8}},
     }
@@ -755,6 +756,11 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         saved = store.preferences(user, p)
         if request.method != 'GET':
             data = await request.json()
+            if setting == 'chat-display-preferences':
+                defaults = preference_defaults[setting]
+                if not isinstance(data, dict) or any(k not in defaults or type(v) is not bool for k, v in data.items()):
+                    raise HTTPException(422, 'Invalid chat display preferences')
+                data = {**defaults, **data}
             if setting == 'execution-preferences' and data.get('mode') not in ('foreground', 'background'):
                 raise HTTPException(422, 'Invalid execution mode')
             if setting == 'kanban-geometry':
@@ -764,6 +770,8 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
             saved[setting] = data
             store.preferences(user, p, saved)
         value = saved.get(setting, preference_defaults.get(setting, {}))
+        if setting == 'chat-display-preferences':
+            return JSONResponse(value, headers={'Cache-Control': 'no-store'})
         return {'preferences': value} if setting == 'model-display' else value
 
     for setting_name in [*preference_defaults, 'profile-display', 'preferences']:

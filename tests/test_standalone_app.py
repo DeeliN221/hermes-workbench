@@ -515,3 +515,25 @@ def test_fleet_origin_hydration_keeps_current_user_scope_and_fails_closed(tmp_pa
         return {'tasks': [{'id': 'missing'}]} if path == '/tasks' else {'task': {'id': 'different'}}
     app.state.services.fleet.transport = FleetOriginTransport(mismatched_detail)
     assert client.get('/api/plugins/workbench/fleet/tasks').status_code == 502
+
+
+def test_chat_display_preferences_survive_restart_and_stay_scoped(tmp_path):
+    app, client, _ = setup(tmp_path)
+    endpoint = '/api/plugins/workbench/chat-display-preferences'
+    assert client.get(endpoint).status_code == 401
+    login(app, client)
+    defaults = {'generationSpeedEnabled': False, 'userMessageNavigatorEnabled': False}
+    assert client.get(endpoint).json() == defaults
+    selected = {'generationSpeedEnabled': True, 'userMessageNavigatorEnabled': True}
+    assert client.put(endpoint, json=selected).json() == selected
+    assert client.put(endpoint, json={'generationSpeedEnabled': 'false'}).status_code == 422
+    other = client.post('/api/profiles', json={'name': 'Separate'}).json()['name']
+    assert client.get(endpoint, params={'profile': other}).json() == defaults
+    app.state.store.bootstrap('separate-owner')
+    assert app.state.store.preferences('separate-owner', 'default') == {}
+    app.state.store.close()
+    restarted_app, restarted, _ = setup(tmp_path)
+    login(restarted_app, restarted)
+    response = restarted.get(endpoint)
+    assert response.json() == selected
+    assert response.headers['cache-control'] == 'no-store'
