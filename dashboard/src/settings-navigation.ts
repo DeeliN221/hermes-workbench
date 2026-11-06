@@ -1,3 +1,4 @@
+import { standalone } from './runtime-mode';
 import { uiText } from './ui-locale';
 
 /** One settings link: target href, visible label, and optional legacy marker attribute. */
@@ -43,6 +44,7 @@ export function settingsNavSections(): SettingsNavSection[] {
       items: [
         ['/profiles', uiText('配置档案', 'Profiles')],
         ['/models', uiText('模型', 'Models')],
+        ...(standalone ? [['/history', 'Read-only history'], ['/memory', uiText('记忆', 'Memory')], ['/skills', uiText('技能', 'Skills')], ['/plugins', uiText('集成', 'Integrations')], ['/mcp', uiText('外部工具', 'External tools')]] as SettingsNavItem[] : []),
         ['/config?workbench=allowances', uiText('订阅额度', 'Subscription allowances')],
       ],
     },

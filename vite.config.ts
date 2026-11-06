@@ -87,7 +87,7 @@ function dashboardSDKBoundary(): Plugin {
 }
 
 /** Ship Pele as a same-origin lazy asset instead of inflating the main IIFE. */
-function selfHostedDiagramRuntimes(): Plugin {
+export function selfHostedDiagramRuntimes(): Plugin {
   return {
     name: 'self-hosted-diagram-runtimes',
     apply: 'build',
@@ -108,6 +108,7 @@ function selfHostedDiagramRuntimes(): Plugin {
 export default defineConfig({
   // 独立插件只发布自身 bundle，不复制任何宿主应用的静态资源。
   publicDir: false,
+  define: { __WORKBENCH_STANDALONE__: false },
   plugins: [dashboardSDKBoundary(), selfHostedDiagramRuntimes()],
   build: {
     outDir: path.resolve(integrationRoot, 'dashboard/dist'),
