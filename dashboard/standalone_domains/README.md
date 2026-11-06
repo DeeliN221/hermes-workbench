@@ -3,7 +3,9 @@
 These modules contain the business services for the independent FastAPI host.
 They import neither Hermes nor a Codex runtime, start nothing on import, and
 never discover a home directory, open a credential file, or import history
-without an explicit selection. All storage is below the host's `storage_root`.
+without an explicit selection. Service state and original uploads stay below
+the host's `storage_root`; selected file inputs are copied into the authorized
+session workspace as described below.
 
 ```text
 Authenticated host resolver
@@ -146,10 +148,27 @@ support the selected configurations before using them.
   from the already bounded, safely read bytes. Four images maximum; 8 MiB per
   image and 16 MiB total. PNG/JPEG/GIF/WebP structures are checked; SVG, malformed
   image signatures and non-image impersonation fail explicitly.
-- Non-images remain scoped `{type:"file",id,path,name,mimeType,size}` read-tool
-  descriptors; folders also have `kind="folder"`. The host must register only
-  these verified attachment paths with the DSH read-tool allowlist. Image records
-  contain no local path. There is no URL fetch or frontend-supplied path.
+- The same `resolve_inputs` call prepares non-images as
+  `{type:"file",path:absolute_path,name,mimeType}` or
+  `{type:"folder",path:absolute_directory,name}`. **The trusted context's
+  `workspace` must be that authorized session's actual DSH `cwd`**; the host
+  resolver/session lookup must establish this before calling. No extra app call
+  or broader read-tool allowlist is needed. The bridge can apply its existing
+  within-cwd validation and durably preserve these references in the user message.
+  These descriptors are local readable inputs, not upstream upload receipts.
+- Copies live under `.workbench-inputs/session_<scope-and-session-hash>/<attachment-id>`.
+  Files use a `content` leaf; folders preserve their uploaded relative layout.
+  The isolated database records server directory ownership and source SHA-256s.
+  Existing unowned directories/files, replaced directories, symlinks, hard links,
+  changed copies and added folder entries fail closed. Successful repeated
+  preparation, including after restart, verifies hashes without rewriting files.
+  An interrupted partial preparation is a conflict, never permission to adopt
+  unknown data. Originals and existing project files are never rewritten.
+- A whole selection is authorized and read before staging: at most 100 file
+  entries and 20 MiB total, with the stricter image limits above. Images retain
+  their inline shape and no local path. No frontend path or URL is fetched.
+  Names and all file/folder contents remain **untrusted user attachment data**;
+  the runtime must not promote embedded instructions to system/tool authority.
 - `/shell` is a real PTY with raw input, JSON resize `{type:"resize",cols,rows}`,
   legacy `ESC[RESIZE:cols;rows]`, and `{type:"cancel"}` (SIGINT). Dimensions must
   be 20–500 columns / 5–200 rows; input frames are capped at 64 KiB. Disconnect
@@ -187,6 +206,19 @@ absolute paths must be under that workspace or resolver-provided `import_roots`.
 There is no automatic history scan. Source bytes are SHA-256 hashed; source,
 hash, original document/records, message IDs, timestamps and record indexes are
 retained. Reimporting the same bytes/source in the same scope is idempotent.
+An explicit reimport refreshes older derived provenance/display fields while
+preserving the archive ID, title, and original import date.
+Codex `session_meta.payload.id`, native metadata timestamps and parent/fork
+lineage are extracted. Canonical `response_item` messages take precedence over
+duplicate `event_msg` user/agent messages; events are a fallback only when no
+canonical messages exist. Tool calls/results, compaction/replacement histories
+and all other original records remain in `records`/`original_document` with
+display messages pointing to their original `record_index`. Content blocks
+retain their native structure. Hermes exports support plain metadata or a
+`session` envelope with `messages`, including tool-call records and compression
+parents. `source_metadata`, `source_metadata_records`, `source_lineage`,
+`source_lineage_records` and `source_timestamps` preserve native provenance;
+they confer no DSH ownership. Malformed recognized records reject the import.
 
 GET `/archives?q=` lists/searches; the extra router offers the existing
 profiles/sessions list, search, detail, messages (offset/latest), export and
@@ -356,7 +388,10 @@ and deterministically exercises leases/failure/retry/outbox over real HTTP,
 without starting an AI worker or model call. It cancels its own task and marks
 its own worker offline during cleanup, without listing/mutating others' tasks.
 
-Validated: **79 focused tests plus one real-daemon test**, including real triage
+The incremental input/provenance regression run passes **112 focused tests**;
+the opt-in real-daemon test is skipped for this change (no credentials/network
+or model calls). The baseline previously passed **79 focused tests plus one
+real-daemon test**, including real triage
 creation/dispatch, lost dispatch receipt, restart idempotence, actual
 `attempts[0].lease_epoch` and originless delivery shapes, stale advancement with
 `limit=1`, and current delivery persisted to an independent SQLite history
@@ -368,7 +403,7 @@ foreground accepted-versus-completed semantics.
 
 **Host composition still belongs to the app/runtime owners:** mount both routers,
 combine native/archive session lists, wrap native session/history callbacks,
-register non-image attachment read descriptors, and call lifecycle startup and
+pass prepared attachment descriptors to the bridge, and call lifecycle startup and
 shutdown with a reauthorizing context loader. The real Fleet contract is verified;
 actual DSH inference and AI-worker execution are intentionally not started by
 this suite. No deployment, daily service restart, production task/configuration,

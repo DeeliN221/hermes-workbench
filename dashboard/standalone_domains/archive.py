@@ -7,6 +7,7 @@ from pathlib import Path
 
 from fastapi import Request
 
+from .archive_formats import project_transcript
 from .core import MAX_UPLOAD, body, bounded_text, digest, fail, resolve, scope
 from .files import Tree
 
@@ -58,53 +59,23 @@ class Archives:
             else:
                 fail(403, "Import path is outside allowed roots")
         data = Tree(root, forbidden=(self.store.root,)).read(relative, MAX_UPLOAD)
+
+        def invalid_constant(value):
+            raise ValueError("Non-JSON numeric constant")
+
         try:
             text = data.decode("utf-8")
             try:
-                original = json.loads(text)
+                original = json.loads(text, parse_constant=invalid_constant)
             except ValueError:
                 original = [
-                    json.loads(line) for line in text.splitlines() if line.strip()
+                    json.loads(line, parse_constant=invalid_constant)
+                    for line in text.splitlines()
+                    if line.strip()
                 ]
-        except (ValueError, UnicodeError):
+        except (ValueError, UnicodeError, RecursionError):
             fail(422, "Transcript must be UTF-8 JSON or JSONL")
-        records = (
-            original.get(
-                "messages",
-                [original] if original.get("type") or original.get("role") else None,
-            )
-            if isinstance(original, dict)
-            else original
-        )
-        if (
-            not isinstance(records, list)
-            or not records
-            or len(records) > 50000
-            or any(not isinstance(r, dict) for r in records)
-        ):
-            fail(422, "Transcript requires nonempty message records")
-        messages = []
-        for index, record in enumerate(records):
-            payload = record.get("payload", record)
-            if not isinstance(payload, dict):
-                continue
-            role = payload.get("role")
-            if role not in ("user", "assistant", "system", "tool", "developer"):
-                continue
-            content = payload.get("content", payload.get("text", ""))
-            messages.append(
-                {
-                    **payload,
-                    "id": str(payload.get("id", f"record-{index}")),
-                    "role": role,
-                    "content": content,
-                    "timestamp": record.get("timestamp", payload.get("timestamp")),
-                    "record_index": index,
-                    "original_record": record,
-                }
-            )
-        if not messages:
-            fail(422, "No supported transcript messages found")
+        records, messages, provenance = project_transcript(original, source)
         source_hash = digest(data)
         aid = "archive_" + digest((source + ":" + source_hash).encode())[:40]
         from datetime import datetime, timezone
@@ -118,12 +89,7 @@ class Archives:
             "resumable": False,
             "title": bounded_text(title, 500) or f"{source} archive",
             "source_hash": source_hash,
-            "source_id": str(original.get("id", original.get("session_id", "")))
-            if isinstance(original, dict)
-            else "",
-            "created_at": original.get("created_at")
-            if isinstance(original, dict)
-            else records[0].get("timestamp"),
+            **provenance,
             "imported_at": datetime.now(timezone.utc).isoformat(),
             "records": records,
             "messages": messages,
@@ -133,6 +99,17 @@ class Archives:
         with self.store.transaction() as db:
             existing = self.store.get(scope(c), "archives", aid, None, db)
             if existing:
+                # An explicit reimport also repairs older display/provenance
+                # projections while retaining the archive identity/title/date.
+                for key in (
+                    *provenance,
+                    "records",
+                    "messages",
+                    "original_document",
+                    "message_count",
+                ):
+                    existing[key] = row[key]
+                self.store.put(scope(c), "archives", aid, existing, db)
                 return self.summary(existing)
             self.store.put(scope(c), "archives", aid, row, db)
         return self.summary(row)

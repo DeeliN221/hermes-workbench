@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 
-import json
 import base64
+import json
 import uuid
 from pathlib import Path
 from urllib.parse import urlencode
 
 from fastapi import Request
 
-from .core import MAX_UPLOAD, check_hints, fail, identifier, resolve, scope, upload_form
+from .attachment_staging import stage_attachment
+from .core import (
+    MAX_UPLOAD,
+    check_hints,
+    fail,
+    identifier,
+    resolve,
+    scope,
+    upload_form,
+    validate_context,
+)
 from .files import Tree, binary, parts, raster
-from .images import image_media, MAX_IMAGE, MAX_IMAGE_TOTAL, MAX_IMAGES
+from .images import MAX_IMAGE, MAX_IMAGE_TOTAL, MAX_IMAGES, image_media
 
 
 class Attachments:
@@ -52,6 +62,7 @@ class Attachments:
         return card
 
     async def resolve_inputs(self, context, session_id, attachment_ids):
+        context = validate_context(context)
         await self.services.require_session(context, session_id)
         if (
             not isinstance(attachment_ids, list)
@@ -63,23 +74,27 @@ class Attachments:
         root = self.store.directory(context, "attachments")
         result = []
         image_count, image_total = 0, 0
+        total, count = 0, 0
+        staged = []
+
+        def read(tree, path):
+            nonlocal total, count
+            count += 1
+            if count > 100:
+                fail(413, "Selected attachments exceed 100 files")
+            data = tree.read(path, MAX_UPLOAD - total)
+            total += len(data)
+            return data
+
         for aid in attachment_ids:
             row = self.record(context, session_id, aid)
             tree = Tree(root / row["id"])
             if row["kind"] == "folder":
-                for path in row["paths"]:
-                    tree.read(path, MAX_UPLOAD)
-                result.append(
-                    {
-                        "type": "file",
-                        "id": aid,
-                        "path": str(root / aid),
-                        "name": row["name"],
-                        "kind": "folder",
-                    }
-                )
+                files = {path: read(tree, path) for path in row["paths"]}
+                staged.append((len(result), row, files))
+                result.append(None)
             else:
-                data = tree.read("content", MAX_UPLOAD)
+                data = read(tree, "content")
                 mime = raster(data)
                 is_image = (
                     mime is not None
@@ -118,16 +133,13 @@ class Attachments:
                         }
                     )
                 else:
-                    result.append(
-                        {
-                            "type": "file",
-                            "id": aid,
-                            "path": str(root / aid / "content"),
-                            "mimeType": row["mimeType"],
-                            "name": row["name"],
-                            "size": len(data),
-                        }
-                    )
+                    staged.append((len(result), row, {"content": data}))
+                    result.append(None)
+        # Authorize and validate the entire selection before any workspace writes.
+        for index, row, files in staged:
+            result[index] = stage_attachment(
+                self.store, context, session_id, row, files
+            )
         return result
 
 

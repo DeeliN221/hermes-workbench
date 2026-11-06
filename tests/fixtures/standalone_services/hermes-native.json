@@ -1,0 +1,19 @@
+{
+  "session": {
+    "id": "hermes-child",
+    "parent_session_id": "hermes-parent",
+    "root_session_id": "hermes-root",
+    "source": "cli",
+    "created_at": 1756713600,
+    "updated_at": 1756713650,
+    "end_reason": "compression",
+    "compression_count": 2,
+    "model_config": {"model": "example"}
+  },
+  "messages": [
+    {"id": 101, "role": "user", "content": "Read the fixture.", "created_at": 1756713601},
+    {"id": 102, "role": "assistant", "content": null, "tool_calls": [{"id": "tool-1", "type": "function", "function": {"name": "read_file", "arguments": "{\"path\":\"sample.txt\"}"}}], "timestamp": 1756713602},
+    {"id": 103, "role": "tool", "content": "Synthetic tool output", "tool_call_id": "tool-1", "timestamp": 1756713603},
+    {"id": 104, "role": "assistant", "content": "The fixture is readable.", "timestamp": 1756713604}
+  ]
+}
