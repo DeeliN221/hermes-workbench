@@ -34,7 +34,9 @@
     "stack:check": "python3 scripts/local-stack.py check",
     "stack:stop": "python3 scripts/local-stack.py stop",
     "test:browser:review": "node tests/browser/review-delivery-sessions.mjs",
-    "test:browser:home-layout": "node tests/browser/home-layout.mjs"
+    "test:browser:home-layout": "node tests/browser/home-layout.mjs",
+    "build:standalone": "vite build --config vite.standalone.config.ts",
+    "start:standalone": "uv run --no-project --with-requirements requirements-dev.txt python -m dashboard.standalone_app"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",

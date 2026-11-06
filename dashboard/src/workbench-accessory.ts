@@ -5,7 +5,7 @@ export type AccessoryKind = 'settings' | 'kanban' | 'cron' | 'terminal' | 'achie
 
 const SETTINGS_PATHS = new Set([
   '/config', '/profiles', '/models', '/env', '/plugins', '/mcp', '/channels',
-  '/webhooks', '/pairing', '/system', '/logs', '/docs', '/skills',
+  '/webhooks', '/pairing', '/system', '/logs', '/docs', '/skills', '/memory',
 ]);
 
 export function accessoryPanelOpen(search: string): boolean {

@@ -1,3 +1,6 @@
+import { createRuntimeTaskReceipts } from './runtime-task-receipts';
+import { standalone, runtimeUI } from './runtime-mode';
+import { readRuntimeSnapshot, subscribeRuntime } from './runtime-client';
 import { requestedHomeLayout, consumeHomeRequest, paneWorkspaceProfile, rememberHomePaneOwner, revealActiveHomePane } from './home-session-selection';
 import { rememberKanbanReturn } from './kanban-navigation';
 import { useFolderUpload } from './attachment-preferences';
@@ -31,7 +34,7 @@ import './codex-user-input.css';
 import { createLanguageControl } from './language-control';
 import { useWorkbenchLocale } from './workbench-locale';
 import { uiText as runtimeText } from './ui-locale';
-import { createWorkbenchDialog, OPEN_WORKBENCH } from './workbench-launcher';
+import { createWorkbenchDialog, createWorkbenchLauncher, OPEN_WORKBENCH } from './workbench-launcher';
 import { accessoryKind, accessoryPanelOpen, withAccessoryPanel, withoutAccessoryPanel } from './workbench-accessory';
 import { MODEL_ALIASES_CHANGE_EVENT, installModelAliasSync } from './model-aliases';
 import { createQuotaSettings } from './quota-dashboard';
@@ -1351,6 +1354,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       "/logs",
       "/plugins",
       "/mcp",
+      ...(standalone ? ["/memory", "/terminal"] : []),
       "/channels",
       "/webhooks",
       "/pairing",
@@ -2079,7 +2083,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             ((le.binaryType = "arraybuffer"),
               (v.current = le),
               (le.onopen = () => {
-                if (!N && (H("open"), lt(), o === "chat" && !c && u)) {
+                if (!N && (H("open"), lt(), !standalone && o === "chat" && !c && u)) {
                   const we = `hermes.workbench.initial-input.${a}.${l}`;
                   try {
                     window.sessionStorage.getItem(we) !== "sent" &&
@@ -2112,7 +2116,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           return (
             (async () => {
               const J =
-                  o === "chat" ? "/api/pty" : "/api/plugins/workbench/shell",
+                  o === "chat" && !standalone ? "/api/pty" : "/api/plugins/workbench/shell",
                 le = {
                   channel: `workbench-${o}-${l}`,
                   profile: lx(o, a),
@@ -2123,7 +2127,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               try {
                 const we = i.buildWsUrl(J, le),
                   Re =
-                    o === "chat"
+                    o === "chat" && !standalone
                       ? i
                           .buildWsUrl("/api/events", { channel: le.channel })
                           .catch(() => null)
@@ -2403,6 +2407,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       "/kanban",
       "/logs",
       "/mcp",
+      ...(standalone ? ["/memory", "/terminal"] : []),
       "/models",
       "/pairing",
       "/plugins",
@@ -2580,6 +2585,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       a = e.skills(i),
       { ProfileAction, ProfilesPage } = createProfileControls(i),
       WorkbenchDialog = createWorkbenchDialog(i),
+      WorkbenchLauncher = standalone ? createWorkbenchLauncher(i) : null,
       LanguageControl = createLanguageControl(i),
       ShortcutSettings = createShortcutSettings(i),
       ChatDisplaySettings = createChatDisplaySettings(i),
@@ -2983,6 +2989,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             "nav",
             { className: "dashboard-nav-primary", "aria-label": runtimeText("主要功能", "Main features") },
             l("div", { className: "dashboard-nav-toolbar" },
+              standalone ? l(WorkbenchLauncher) : null,
               l(ProfileAction, { profile: F, className: "dashboard-nav-profile" }),
               l("button", {
                 type: "button", className: "dashboard-nav-collapse",
@@ -8339,7 +8346,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       );
     };
   }
-  const Lt = "/api/plugins/workbench/codex";
+  const Lt = runtimeUI;
   // PURPOSE: Keep a compact per-session snapshot so Tab/session switches paint
   // immediately while the authoritative Codex snapshot refreshes in background.
   const codexSnapshotCache = new Map();
@@ -8390,6 +8397,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return encodeURIComponent(i);
   }
   async function wd(i, e, t) {
+    if (standalone) return readRuntimeSnapshot(i, e, t);
     const r = await i(
       `${Lt}/session?profile=${tt(e)}&session_id=${tt(t)}&after=0&limit=200&defer_persistence=true`,
     );
@@ -8397,6 +8405,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return s0(r, t);
   }
   async function previewCodexSession(i, e, t) {
+    if (standalone) return null;
     const r = await i(
       `${Lt}/session/preview?profile=${tt(e)}&session_id=${tt(t)}&turns=8`,
     );
@@ -8457,6 +8466,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     };
   }
   function ws(i) {
+    if (standalone) return i.content;
     return visibleChatText(i);
   }
   function s5(i) {
@@ -9125,6 +9135,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
   }
   function Wo(i) {
     if (!i) return null;
+    if (standalone) return i;
     const e = i.params && typeof i.params == "object" ? i.params : {},
       t = String(i.method || "").toLowerCase(),
       r = [
@@ -9692,6 +9703,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
     return Transcript;
   }
   function A5(i) {
+    const RuntimeTaskReceipts = standalone ? createRuntimeTaskReceipts(i) : null;
     const e = i.React,
       {
         useCallback: t,
@@ -10663,6 +10675,30 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         r(() => {
           const L = X.current;
           if (!k || B) return;
+          if (standalone) {
+            const active = () => L === X.current && Y.current === k;
+            return subscribeRuntime(i.fetchJSON, M, k, {
+              update: view => {
+                if (!active()) return;
+                Vn.current += 1;
+                Go.current = Vn.current;
+                Hl(""); _i(false);
+                if (view.runtimeError) Pt(view.runtimeError);
+                ht(previous => {
+                  const incoming = view.messages;
+                  const pending = previous.filter(message => message.role === "user" && ["pending", "accepted"].includes(message.status) && !incoming.some(candidate => sameMessage(candidate, message)));
+                  return [...incoming, ...pending];
+                });
+                Wi(view.turnId); Nt(!!view.turnId);
+                if (!view.turnId) Wr(false);
+                Fr(view.pendingApprovals.at(-1) || null);
+                if (view.session) $ (sessions => sessions.map(session => session.id === k ? { ...session, ...view.session } : session));
+                rememberCodexSnapshot(`${M}\0${k}`, view);
+              },
+              error: error => { if (active()) { Pt(String(error)); Wr(false); } },
+              open: () => { if (active()) Pt(previous => /event stream|unavailable|reconnecting/.test(previous) ? "" : previous); },
+            });
+          }
           let U = !1;
           const updates = createChatEventBatch(events => {
             if (L === X.current && Y.current === k)
@@ -11213,6 +11249,12 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 },
                 Yd,
               );
+            if (standalone && Xt.status === "background") {
+              ji.current.get(At)?.requestId === ne && ji.current.delete(At);
+              if (Ke()) { Nt(!!steeringTurnId); Wi(steeringTurnId); ht(messages => messages.filter(message => message.id !== ne)); }
+              window.dispatchEvent(new Event("workbench:background-task"));
+              return;
+            }
             if (Xt.accepted || Xt.status === "accepted" || Xt.status === "completed")
               kanbanChatContext.current.acknowledge(Me, messageWithCard);
             if (
@@ -11224,7 +11266,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             (Xt.turnId && Wi(Xt.turnId),
               ht((St) =>
                 St.map((mi) =>
-                  mi.id === ne
+                  mi.id === ne && !(standalone && mi.status === "completed")
                     ? {
                         ...mi,
                         submissionError: Xt.error,
@@ -11314,7 +11356,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 Fr(Wo(ne.pendingApprovals.at(-1)));
             } catch (ne) {
               if (ee === X.current) {
-                if (ne.requestDeliveryUnknown) Fr(null);
+                if (ne.requestDeliveryUnknown || ne.interactionExpired) Fr(null);
                 Pt(String(ne));
               }
             } finally {
@@ -11572,7 +11614,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         tc =
           ai.find((L) => L.id === Bt) ||
           (Bt ? void 0 : ai.find((L) => L.isDefault)),
-        XM = tc?.efforts.length ? tc.efforts : ["low", "medium", "high"],
+        XM = tc?.efforts.length ? tc.efforts : standalone ? [] : ["low", "medium", "high"],
         pv = !!(tc?.supportsFast && tc.fastServiceTier),
         Kd = {
           none: runtimeText("无", "None"),
@@ -11584,7 +11626,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         },
         modelLabel = tc?.label || Bt || runtimeText("正在读取模型…", "Loading models…"),
         defaultModelLabel = ai.find((L) => L.isDefault)?.label,
-        mv = [modelLabel + (pv && _n ? " fast" : ""), Kd[Fi] || Fi].filter(Boolean).join(" · "),
+        mv = [modelLabel + (pv && _n ? " fast" : ""), standalone ? "" : Kd[Fi] || Fi].filter(Boolean).join(" · "),
         Ov = k
           ? Jt ||
             (ei?.workspacePath
@@ -12243,6 +12285,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                         type: "button",
                         className: "codex-setting-row",
                         onClick: () => ye("effort"),
+                        disabled: standalone && !tc?.efforts.length,
+                        title: standalone && !tc?.efforts.length ? "Reasoning is configured by the DSH runtime" : undefined,
                         "aria-label": runtimeText("选择推理深度", "Select reasoning effort"),
                       },
                       st(e, "reasoning"),
@@ -12886,6 +12930,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                       runtimeText("开始一段新的对话", "Start a new conversation"),
                     )
                   : W(e, Transcript, { messages: It, detail: chatDetail }),
+            standalone && k && !B ? W(e, RuntimeTaskReceipts, { profile: M, session: k }) : null,
             B ? null : rD,
           ),
           (yn?.kind === "user-input" || asyncQuestions) ? W(e, "button", {
@@ -13253,7 +13298,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           "data-pane-count": m.length,
           "data-active-pane-id": g,
           role: "region",
-          "aria-label": runtimeText("Codex 多窗格工作台", "Codex multi-pane workspace"),
+          "aria-label": standalone ? runtimeText("DSH 多窗格工作台", "DSH multi-pane workspace") : runtimeText("Codex 多窗格工作台", "Codex multi-pane workspace"),
         },
         ...m.map((F, j) =>
           W(
@@ -13532,7 +13577,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             t(
               "p",
               null,
-              runtimeText("字段沿用 Hermes 原生调度语义，保存时只提交当前配置身份。", "Fields use Hermes native scheduling. Saving submits only the selected profile identity."),
+              runtimeText("字段沿用 Hermes 原生调度语义，保存时只提交当前配置身份。", standalone ? "Jobs use the selected profile and project. Schedules default to UTC; use an explicit offset for one-time jobs." : "Fields use Hermes native scheduling. Saving submits only the selected profile identity."),
             ),
           ),
           t(
@@ -15669,7 +15714,7 @@ ${_e.description}`
               }
               return await i.fetchJSON("/api/plugins/workbench/capabilities");
             })()
-              .then((p) => S && h(p?.codexChat === !0 ? "enabled" : "disabled"))
+              .then((p) => S && h((standalone ? p?.runtimeChat : p?.codexChat) === !0 ? "enabled" : "disabled"))
               .catch(() => S && h("error")),
             () => {
               S = !1;

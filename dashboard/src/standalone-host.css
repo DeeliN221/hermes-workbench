@@ -1,0 +1,46 @@
+html, body, #root { margin: 0; min-height: 100%; font-family: system-ui, sans-serif; }
+body { background: var(--mc-surface, #faf9f5); color: var(--mc-ink, #262a24); }
+* { box-sizing: border-box; }
+button, input, textarea, select { font: inherit; }
+.standalone-shell { display: flex; height: 100dvh; }
+.standalone-page { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.standalone-page > header { display: flex; justify-content: space-between; align-items: center; padding: 12px 20px; }
+.standalone-page > main { display: flex; flex: 1; min-height: 0; overflow: auto; }
+.standalone-config { position: relative; flex: 1; padding: 20px; }
+.standalone-config textarea { display: block; width: 100%; color: inherit; background: transparent; }
+.standalone-auth { padding: 24px; }
+#standalone-preference-error { position: fixed; bottom: 0; left: 0; z-index: 9999; background: #fee; color: #800; padding: 12px; }
+.fixed { position: fixed; }.inset-0 { inset: 0; }[class~="z-[100]"] { z-index:100; }[class~="z-[200]"] { z-index:200; }.z-2 { z-index:2; }
+.standalone-domain { max-width: 1100px; width: 100%; margin: 0 auto; padding: 20px; color: var(--mc-ink); }
+.standalone-domain h1 { font-size: 20px; margin-top: 0; }
+.standalone-domain h2 { font-size: 16px; }
+.standalone-domain label { display: flex; flex-direction: column; gap: 6px; margin: 12px 0; }
+.standalone-domain label:has(input[type=checkbox]) { flex-direction: row; align-items: center; }
+.standalone-domain :is(input, select, textarea, button) { background: var(--mc-surface); color: inherit; border: 1px solid var(--mc-line, #a7a69a); border-radius: 3px; padding: 8px; max-width: 100%; }
+.standalone-domain textarea { width: 100%; font-family: var(--theme-font-mono, monospace); }
+.standalone-domain button { cursor: pointer; }
+.standalone-domain button:disabled { opacity: .5; cursor: default; }
+.standalone-actions, .standalone-tabs { display: flex; gap: 8px; flex-wrap: wrap; }
+.standalone-tabs [aria-pressed=true] { border-color: var(--mc-accent); background: var(--mc-active); }
+.standalone-domain-list { list-style: none; padding: 0; }
+.standalone-domain-list li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--mc-line-soft); }
+.standalone-domain a { color: var(--mc-accent); }
+.standalone-file-columns { display: grid; grid-template-columns: minmax(150px, 1fr) 3fr; gap: 16px; }
+.standalone-shell-page { height: 100dvh; display: flex; flex-direction: column; }
+.standalone-terminal { flex: 1; min-height: 280px; }
+.standalone-overview-header { position: fixed; z-index: 90; inset: 0 0 auto; height: 54px; display: flex; gap: 18px; align-items: center; padding: 8px 20px; background: var(--mc-surface); border-bottom: 1px solid var(--mc-line-soft); }
+.standalone-overview-header .workbench-launcher { border: 0; background: transparent; color: inherit; width: 36px; height: 36px; cursor: pointer; }
+.standalone-overview-header a { color: inherit; font-size: 13px; }
+html[data-standalone=true]:is([data-workbench-view="/"], [data-workbench-view="/home"], [data-workbench-view="/sessions"], [data-workbench-view="/kanban"]) .dashboard-owned-page { top: 54px; }
+.runtime-task-receipts article { border: 1px solid var(--mc-line-soft); padding: 12px; margin: 12px 0; }
+@media(max-width:800px) {
+  .standalone-overview-header { display: none; }
+  html[data-standalone=true]:is([data-workbench-view="/"], [data-workbench-view="/home"], [data-workbench-view="/sessions"], [data-workbench-view="/kanban"]) .dashboard-owned-page { top: 48px; }
+  .standalone-domain { padding: 12px; }
+  .standalone-file-columns { grid-template-columns: 1fr; }
+}
+.standalone-page > header:empty { padding: 0; height: 0; }
+.standalone-domain { font-size: 14px; }
+@media (min-width: 801px) {
+  html[data-standalone=true][data-workbench-view="/skills"]:not([data-workbench-accessory]) .dashboard-owned-page { left: calc(var(--dashboard-nav-width) + var(--dashboard-settings-width)); }
+}
