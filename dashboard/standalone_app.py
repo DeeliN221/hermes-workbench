@@ -939,6 +939,7 @@ def main():
     import uvicorn
     app = create_app(workspace_root=args.workspace, allow_missing_services=args.allow_missing_services)
     sock = socket.socket()
+    sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     sock.bind(('127.0.0.1', args.port))
     if app.state.auth_mode == 'local':
         print(f'Open http://127.0.0.1:{sock.getsockname()[1]}/#token={app.state.bootstrap_token}', flush=True)

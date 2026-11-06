@@ -168,9 +168,21 @@ authenticated app health and lifecycle cleanup, before any production switch.
 
 | Platform | Evidence and capability boundary |
 | --- | --- |
-| macOS | Clean packaging, relocated manifest checks and supervisor subprocess fault fixtures were tested locally. The current file-service PTY uses macOS seatbelt. Real PTY, provider and browser acceptance remain separate owner checks. |
+| macOS | Isolated native DSH, desktop/mobile browser, seatbelt PTY, context, archives, scheduling and real external Fleet acceptance were performed. Real bridge/app termination recovers the owned stack and persisted history, including with browser keepalive connections. Provider acceptance must still be repeated for an operator's chosen account before a production switch. |
 | Linux | The Node 24 CI job is configured for pure contracts, unit tests, supervision fixtures and packaging checks. Current PTY returns 503 without a supported isolated shell callback; a Linux sandbox backend requires separate integration and acceptance. CI does not establish real PTY/provider functionality. |
 | Other platforms | Unvalidated. Packaging or module checks alone do not establish process, sandbox, PTY or provider support. |
+
+The isolated integration acceptance covers the following behavior. These checks
+do not authorize a production switch or claim support on unvalidated platforms.
+
+| Area | Verified behavior |
+| --- | --- |
+| Native conversations | Streaming, tools, questions, approval rejection, cancellation, queued input and refresh/reconnect recovery; durable creation conflicts and native model/effort settings. |
+| User scope and preferences | User/profile/project ownership, backend persistence, draft isolation and clear errors for unsupported operations. |
+| Files and context | File conflicts and traversal rejection; actual file/folder/image reading; profile memory, skills and stdio MCP; macOS sandboxed PTY. |
+| History and schedules | Read-only legacy import/search, selected context in a new DSH session, manual/automatic scheduled occurrences with durable receipts. |
+| Fleet | Actual AGY workspace writes and sandbox commands, in-flight follow-up in the same conversation, foreground responsiveness, durable origin return, cancellation/retry and stale-attempt rejection. Empty or denied tool output does not count as completion. |
+| Delivery and recovery | Frozen candidate build and relocated hash verification; authenticated readiness; whole-stack recovery after bridge/app termination; owned-child cleanup and bounded retry. |
 
 Keep PTY isolation fail closed on every platform; do not disable the sandbox to
 pass tests or infer full NAS functionality from a passing packaging job.

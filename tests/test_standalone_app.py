@@ -583,3 +583,59 @@ def test_native_model_controls_are_scoped_persisted_and_forwarded_before_input(t
         assert rejected.status_code == 409
         assert len(bridge.state.sessions[sid]['messages']) == before
         assert client.post(base + '/messages', json={'content': 'queued', 'request_id': 'same-controls', 'model': 'protocol-fixture', 'reasoning_effort': 'low'}).status_code == 200
+
+
+def test_real_app_rebinds_port_after_keepalive_shutdown(tmp_path):
+    import os
+    import socket
+    import subprocess
+    import sys
+    import time
+    import httpx
+
+    with socket.socket() as probe:
+        probe.bind(('127.0.0.1', 0))
+        port = probe.getsockname()[1]
+    root = Path(__file__).resolve().parents[1]
+    home = tmp_path / 'real-app-home'
+    env = {k: v for k, v in os.environ.items() if not k.startswith('WORKBENCH_')}
+    env.update(WORKBENCH_STANDALONE_HOME=str(home), WORKBENCH_AUTH_MODE='local')
+    command = [sys.executable, '-m', 'dashboard.standalone_app',
+               '--workspace', str(tmp_path / 'workspace'), '--port', str(port),
+               '--allow-missing-services']
+    clients = []
+    try:
+        for _ in range(2):
+            process = subprocess.Popen(command, cwd=root, env=env,
+                                       stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+            client = httpx.Client(base_url=f'http://127.0.0.1:{port}', trust_env=False, timeout=1)
+            clients.append(client)
+            try:
+                deadline = time.monotonic() + 8
+                while time.monotonic() < deadline:
+                    if process.poll() is not None:
+                        pytest.fail(process.stderr.read().decode())
+                    try:
+                        if client.get('/api/profiles').status_code == 401:
+                            break
+                    except httpx.RequestError:
+                        pass
+                    time.sleep(0.03)
+                else:
+                    pytest.fail('App did not rebind its own port')
+                token = (home / 'bootstrap-token').read_text().strip()
+                response = client.post('/api/standalone/bootstrap', headers={
+                    'Authorization': 'Bearer ' + token, 'X-Workbench-Request': '1'})
+                assert response.status_code == 200
+                assert client.get('/api/profiles').status_code == 200
+                # Keep the browser-like client connection open through server shutdown.
+                process.terminate()
+                assert process.wait(timeout=5) in (0, -15)
+            finally:
+                if process.poll() is None:
+                    process.kill()
+                    process.wait(timeout=3)
+                process.stderr.close()
+    finally:
+        for client in clients:
+            client.close()
