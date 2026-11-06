@@ -421,10 +421,15 @@ def test_health_is_authenticated_and_requires_live_runtime_and_complete_assets(t
     (assets / 'assets').mkdir(parents=True)
     (assets / 'standalone.html').write_text('<script src="/assets/app.js"></script>')
     (assets / 'assets/app.js').write_text('// explicit build fixture')
+    (assets / 'assets/lazy.js').write_text('// explicit recovered application fixture')
+    (assets / 'standalone-manifest.json').write_text(__import__('json').dumps({'entry': {'file': 'assets/app.js', 'dynamicImports': ['lazy']}, 'lazy': {'file': 'assets/lazy.js'}}))
     ready.state.assets_root = assets
     result = c.get('/health')
     assert result.status_code == 200, result.text
     assert result.json() == {'status': 'ready', 'runtime': 'dsh'}
+    (assets / 'assets/lazy.js').unlink()
+    assert c.get('/health').status_code == 503
+    (assets / 'assets/lazy.js').write_text('// restored build fixture')
     ready_bridge.state.runtime_status = 'reconnecting'
     assert c.get('/health').status_code == 503
 

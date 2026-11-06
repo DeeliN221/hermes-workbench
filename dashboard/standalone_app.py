@@ -813,6 +813,22 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         refs = re.findall(r'(?:src|href)=["\'](/assets/[^"\']+)["\']', html)
         if not refs or any(not (build_root / ref.lstrip('/')).is_file() for ref in refs):
             raise HTTPException(503, 'Workbench build assets incomplete')
+        # The recovered application is a lazy chunk. An intact entry alone is
+        # insufficient: validate the build graph before advertising readiness.
+        try:
+            manifest = json.loads((build_root / 'standalone-manifest.json').read_text())
+            if not isinstance(manifest, dict) or not manifest:
+                raise ValueError('Missing build graph')
+            for item in manifest.values():
+                dependencies = [item['file'], *item.get('css', []), *item.get('assets', [])]
+                for relative in dependencies:
+                    target = (build_root / relative).resolve()
+                    if not target.is_relative_to(build_root.resolve()) or not target.is_file():
+                        raise ValueError('Missing build dependency')
+                if any(key not in manifest for key in [*item.get('imports', []), *item.get('dynamicImports', [])]):
+                    raise ValueError('Missing build import')
+        except (OSError, ValueError, KeyError, TypeError, AttributeError):
+            raise HTTPException(503, 'Workbench build graph incomplete') from None
         try:
             capability = await runtime_capabilities()
         except HTTPException:
