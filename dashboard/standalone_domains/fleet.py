@@ -190,12 +190,19 @@ def public_task(task):
 def public_artifact(value, task_id):
     if not isinstance(value, dict) or value.get("task_id") != task_id:
         fail(502, "Artifact task mismatch")
-    aid = identifier(value.get("id"))
+    # Fleet's persisted artifact primary key is an integer on the wire.
+    raw_id = value.get("id")
+    if type(raw_id) is int:
+        if raw_id <= 0:
+            fail(502, "Invalid Fleet artifact identity")
+        raw_id = str(raw_id)
+    aid = identifier(raw_id)
     return {
         k: value[k]
         for k in ("id", "task_id", "kind", "name", "sha", "size", "content_type")
         if k in value
     } | {
+        "id": aid,
         "download_url": f"/api/plugins/workbench/fleet/artifacts/{aid}/download?task_id={task_id}"
     }
 
