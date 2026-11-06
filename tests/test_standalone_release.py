@@ -185,6 +185,10 @@ def test_license_scan_is_bounded_and_requires_text(tmp_path):
         package.collect_licenses(tmp_path, stage)
 
 
+@pytest.mark.skipif(
+    not (ROOT / 'dashboard/runtime/node_modules/@deepseek-ai/dsh/package.json').is_file(),
+    reason='Actual runtime install is verified by the dedicated Node 24 standalone job',
+)
 def test_actual_installed_module_checks_are_offline(tmp_path):
     path, _ = config_file(tmp_path)
     config = start.load_config(path, development=True)
