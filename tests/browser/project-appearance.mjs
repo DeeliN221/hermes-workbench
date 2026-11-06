@@ -46,7 +46,7 @@ try {
   await editor.getByRole('button', { name: 'Save', exact: true }).click();
   await editor.waitFor({ state: 'detached' });
   await page.waitForFunction(() => document.querySelector('.codex-project-color-mark')?.style.color === 'rgb(51, 155, 114)');
-  assert.equal(await page.locator('.codex-center-header button').count(), 1);
+  assert.equal(await page.locator('.codex-center-header button').count(), 0, 'Single-pane headers have no close control');
   assert.equal(await page.locator('.codex-center-header input').count(), 0);
   await page.reload();
   await page.locator(".codex-pane-slot").first().waitFor();

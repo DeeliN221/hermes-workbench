@@ -7,6 +7,7 @@ import { rememberKanbanReturn } from './kanban-navigation';
 import { useFolderUpload } from './attachment-preferences';
 import { projectColors } from './project-appearance';
 import { GenerationSpeed, latestGenerationMetrics } from './generation-speed';
+import { MobileChatUtilities } from './mobile-chat-utilities';
 import { createSessionSearch } from './session-search';
 import { createWorkbenchTerminal } from './terminal-runtime';
 import { renderMarkdownSource as S2 } from './markdown-source';
@@ -2942,6 +2943,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               l("button", { type: "button", className: "dashboard-workspace-button workbench-theme-action", "aria-label": B, title: B, "aria-pressed": v === "dark", disabled: y, onClick: N }, craftingIcon(t, v === "dark" ? "sun" : "moon"), l("span", null, runtimeText("主题", "Theme"))),
               k("/achievements", runtimeText("成就", "Achievements"), "achievements", u.path === "/achievements", undefined, true),
             ),
+            mobile ? l(MobileChatUtilities, { React: t, sdk: i, profile: F, active: j }) : null,
           );
       return l(
         t.Fragment,
@@ -12890,7 +12892,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               }) : null,
               kv,
             ),
-            W(
+            _ ? W(
                   e,
                   "button",
                   {
@@ -12906,7 +12908,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                     title: runtimeText("关闭当前窗格", "Close current pane"),
                   },
                   st(e, "close"),
-                ),
+                ) : null,
           ),
           uD,
           Y0
@@ -12950,7 +12952,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             },
           }, runtimeText("回答问题", "Answer questions")) : null,
           !B ? W(e, "div", { className: "codex-conversation-dock" },
-            headerGenerationMetrics ? W(e, GenerationSpeed, { React: e, metrics: headerGenerationMetrics }) : null,
+            headerGenerationMetrics ? W(e, GenerationSpeed, { React: e, metrics: headerGenerationMetrics, sdk: i, profile: M }) : null,
           ) : null,
           B ? hD : nD,
           B ? null : lD,

@@ -29,7 +29,9 @@ const MAX_IIFE_BYTES = 2 * 1024 * 1024;
 // dependencies; keep the same 2 MiB raw cap while allowing its compressed UI.
 // Profile execution settings add a compact settings page; retain a bounded
 // budget with 1 KiB of additional gzip headroom (raw limit stays unchanged).
-const MAX_IIFE_GZIP_BYTES = 651 * 1024;
+// Optional server-backed chat visibility controls and their mobile rail
+// presentation add about 6 KiB raw / 2 KiB gzip while preserving one bundle.
+const MAX_IIFE_GZIP_BYTES = 654 * 1024;
 const FORBIDDEN_REACT_IMPORT = /^(?:react(?:\/.*)?|react-dom(?:\/.*)?)$/;
 const EMBEDDED_REACT_FINGERPRINTS = [
   '__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED',

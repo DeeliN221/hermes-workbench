@@ -3,21 +3,26 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   disposeUserMessageBall,
   installUserMessageBall,
-  readUserMessageBallEnabled,
-  renderUserMessageBallSetting,
-  writeUserMessageBallEnabled,
 } from '../dashboard/src/user-message-ball';
+import { primeChatDisplayPreferences } from '../dashboard/src/chat-display-preferences';
 
 const BALL = '[data-workbench-user-message-ball]';
 const PANEL = '[data-workbench-user-message-panel]';
 
 beforeEach(() => {
   document.documentElement.lang = 'zh-CN';
+  primeChatDisplayPreferences('default', {
+    generationSpeedEnabled: false,
+    userMessageNavigatorEnabled: true,
+  });
 });
 
 afterEach(() => {
   disposeUserMessageBall();
-  localStorage.clear();
+  primeChatDisplayPreferences('default', {
+    generationSpeedEnabled: false,
+    userMessageNavigatorEnabled: false,
+  });
   document.body.replaceChildren();
 });
 
@@ -60,30 +65,17 @@ function panels(): HTMLElement[] {
   return Array.from(document.querySelectorAll<HTMLElement>(PANEL));
 }
 
-describe('user message navigator settings', () => {
-  it('defaults on and persists the off choice', () => {
-    expect(readUserMessageBallEnabled()).toBe(true);
-    writeUserMessageBallEnabled(false);
-    expect(readUserMessageBallEnabled()).toBe(false);
-    writeUserMessageBallEnabled(true);
-    expect(readUserMessageBallEnabled()).toBe(true);
-  });
-
-  it('renders a switch that updates the stored preference', () => {
-    const target = document.createElement('section');
-    document.body.append(target);
-    renderUserMessageBallSetting(target);
-    const toggle = target.querySelector<HTMLButtonElement>('[data-testid="user-message-ball-toggle"]')!;
-    expect(toggle.getAttribute('role')).toBe('switch');
-    expect(toggle.getAttribute('aria-checked')).toBe('true');
-    toggle.click();
-    expect(toggle.getAttribute('aria-checked')).toBe('false');
-    expect(readUserMessageBallEnabled()).toBe(false);
-    expect(toggle.textContent).toContain('已关闭');
-  });
-});
-
 describe('user message navigator panes', () => {
+  it('is hidden by default before a user opens the setting', async () => {
+    primeChatDisplayPreferences('default', {
+      generationSpeedEnabled: false,
+      userMessageNavigatorEnabled: false,
+    });
+    buildPane(['a1'], 'First');
+    installUserMessageBall();
+    await vi.waitFor(() => expect(balls()[0].hasAttribute('hidden')).toBe(true));
+  });
+
   it('mounts one navigator per pane and counts only that pane', () => {
     const first = buildPane(['a1', 'a2', 'a3'], 'First');
     const second = buildPane(['b1'], 'Second');
@@ -139,12 +131,18 @@ describe('user message navigator panes', () => {
     installUserMessageBall();
     expect(balls().map(ball => ball.hasAttribute('hidden'))).toEqual([false, false]);
 
-    writeUserMessageBallEnabled(false);
+    primeChatDisplayPreferences('default', {
+      generationSpeedEnabled: false,
+      userMessageNavigatorEnabled: false,
+    });
     await vi.waitFor(() => {
       expect(balls().map(ball => ball.hasAttribute('hidden'))).toEqual([true, true]);
     });
 
-    writeUserMessageBallEnabled(true);
+    primeChatDisplayPreferences('default', {
+      generationSpeedEnabled: false,
+      userMessageNavigatorEnabled: true,
+    });
     await vi.waitFor(() => {
       expect(balls().map(ball => ball.hasAttribute('hidden'))).toEqual([false, false]);
     });
