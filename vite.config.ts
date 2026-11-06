@@ -27,8 +27,9 @@ const MAX_IIFE_BYTES = 2 * 1024 * 1024;
 // another small block; keep the raw cap and one-chunk/SDK checks fixed.
 // Profile-scoped home layout controls add a small settings panel without new
 // dependencies; keep the same 2 MiB raw cap while allowing its compressed UI.
-// Eight resize handles and profile geometry persistence add <2 KiB gzip.
-const MAX_IIFE_GZIP_BYTES = 650 * 1024;
+// Profile execution settings add a compact settings page; retain a bounded
+// budget with 1 KiB of additional gzip headroom (raw limit stays unchanged).
+const MAX_IIFE_GZIP_BYTES = 651 * 1024;
 const FORBIDDEN_REACT_IMPORT = /^(?:react(?:\/.*)?|react-dom(?:\/.*)?)$/;
 const EMBEDDED_REACT_FINGERPRINTS = [
   '__SECRET_INTERNALS_DO_NOT_USE_OR_YOU_WILL_BE_FIRED',

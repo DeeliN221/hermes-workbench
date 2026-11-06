@@ -58,7 +58,7 @@ try {
   const messages = page.locator('.codex-message.is-user');
   async function clean() {
     const text = await messages.allTextContents();
-    assert.ok(text.every(value => !/Path:|Image attachment:|User attachment|Read only what|Please review the attachment/.test(value)), text.join('\n'));
+    assert.ok(text.every(value => !/Path:|Image attachment:|User attachment|Read only what|Please review the attachment|workbench_execution_mode/.test(value)), text.join('\n'));
     assert.equal(await page.locator('vite-error-overlay').count(), 0);
     assert.deepEqual(await page.evaluate(() => window.__smokeErrors), []);
   }
@@ -90,6 +90,8 @@ try {
   const evidence = await (await fetch(origin + '/api/plugins/workbench/qa/attachments', { headers })).json();
   assert.equal(evidence.requests, 5);
   assert.equal(evidence.hiddenContexts, 5);
+  assert.equal(evidence.hiddenExecutionContexts, 5);
+  assert.deepEqual(evidence.executionModes, Array(5).fill('foreground'));
   assert.equal(evidence.readAttachments.length, 7);
   assert.equal(evidence.visibleTexts.at(-1), '');
   if (shots) {
@@ -113,7 +115,7 @@ try {
   const snippet = page.locator('.codex-session-search-result-snippet');
   await snippet.first().waitFor();
   assert.match(await snippet.first().innerText(), /Compare the image, file and folder/);
-  assert.doesNotMatch(await page.locator('.codex-session-search-dialog').innerText(), /Path:|private native search/);
+  assert.doesNotMatch(await page.locator('.codex-session-search-dialog').innerText(), /Path:|private native search|workbench_execution_mode/);
   if (shots) await page.screenshot({ path: `${shots}/attachments-search.png` });
   await page.locator('input[name="session-search"]').fill('.workbench-attachments');
   await page.locator('.codex-session-search-results').getByText('No matching sessions or tasks', { exact: true }).waitFor();

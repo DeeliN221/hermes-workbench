@@ -23,6 +23,7 @@ import { ProcessSummary } from './process-summary';
 import { displayCommand } from './command-display';
 import { createShortcutSettings, useSendShortcut, shouldSendMessage, sendShortcutHint } from './send-shortcut';
 import { createChatDisplaySettings } from './chat-display-settings';
+import { createExecutionSettings } from './execution-settings';
 import { createModelVisibilitySettings, createVersionSettings } from './workbench-version-settings';
 import { createCodexUserInput, pendingAsyncQuestions, formatQuestionAnswers, questionTranscript } from './codex-user-input';
 import { collectAttachmentDrop, folderBatchFromFileList, isAttachmentDrag } from './workbench-attachment-drop';
@@ -2582,6 +2583,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       LanguageControl = createLanguageControl(i),
       ShortcutSettings = createShortcutSettings(i),
       ChatDisplaySettings = createChatDisplaySettings(i),
+      ExecutionSettings = createExecutionSettings(i),
       ModelVisibilitySettings = createModelVisibilitySettings(i),
       VersionSettings = createVersionSettings(i),
       QuotaSettings = createQuotaSettings(i),
@@ -2617,10 +2619,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         isProfiles = u.path === "/profiles" && !u.profileManager,
         isShortcuts = u.path === "/config" && u.settingsTab === "shortcuts",
         isChatDisplay = u.path === "/config" && u.settingsTab === "display",
+        isExecutionSettings = u.path === "/config" && u.settingsTab === "execution",
         isModelVisibility = u.path === "/config" && u.settingsTab === "models",
         isVersionSettings = u.path === "/config" && (u.settingsTab === "versions" || u.settingsTab === "settings"),
         isQuotaSettings = u.path === "/config" && u.settingsTab === "allowances",
-        isConfigSubpage = isQuotaSettings || isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
+        isConfigSubpage = isExecutionSettings || isQuotaSettings || isShortcuts || isChatDisplay || isModelVisibility || isVersionSettings,
         M = isHome || u.path === "/cron" || u.path === "/skills" || isProfiles || isConfigSubpage,
         H = Cx(u.path),
         F = yx(u.profile, da),
@@ -3116,9 +3119,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 ref: D,
                 className: `dashboard-owned-page${isProfiles ? " dashboard-profile-page" : isConfigSubpage ? " dashboard-shortcuts-page" : ""}`,
                 tabIndex: -1,
-                "aria-label": isQuotaSettings ? runtimeText("订阅额度", "Subscription allowances") : isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
+                "aria-label": isExecutionSettings ? runtimeText("任务执行", "Task execution") : isQuotaSettings ? runtimeText("订阅额度", "Subscription allowances") : isShortcuts ? runtimeText("快捷键", "Keyboard shortcuts") : isChatDisplay ? runtimeText("聊天显示", "Chat display") : isModelVisibility ? runtimeText("模型显示", "Model visibility") : isVersionSettings ? runtimeText("版本切换", "Version switching") : isHome ? runtimeText("首页", "Home") : isProfiles ? runtimeText("配置档案", "Profiles") : u.path === "/cron" ? runtimeText("定时", "Scheduled jobs") : runtimeText("技能", "Skills"),
               },
-              isQuotaSettings ? l(QuotaSettings, { key: `quotas:${F}`, profile: F }) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(ProfileOverview) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
+              isExecutionSettings ? l(ExecutionSettings, { key: `execution:${F}`, profile: F }) : isQuotaSettings ? l(QuotaSettings, { key: `quotas:${F}`, profile: F }) : isShortcuts ? l(ShortcutSettings) : isChatDisplay ? l(ChatDisplaySettings) : isModelVisibility ? l(ModelVisibilitySettings, { key: `models:${F}`, profile: F }) : isVersionSettings ? l(VersionSettings) : isHome ? l(ProfileOverview) : isProfiles ? l(ProfilesPage, { profile: F }) : u.path === "/cron"
                 ? l(o, { key: `cron:${F}`, profile: F })
                 : l(a, { key: `skills:${F}`, profile: F }),
             )
