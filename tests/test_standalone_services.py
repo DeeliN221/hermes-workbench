@@ -587,7 +587,11 @@ def test_unauthorized_websocket_is_denied_before_accept(env):
 
 @pytest.mark.skipif(os.name != "posix", reason="PTY requires POSIX")
 def test_actual_pty_workspace_resize_environment_and_cleanup(env):
-    _, client, _, root, _ = env
+    services, client, _, root, _ = env
+    if sys.platform != "darwin":
+        # Exercise generic PTY plumbing with an explicitly injected test host.
+        # Production must still refuse platforms without a filesystem sandbox.
+        services.runtime = {"shell_command": lambda context, home: ["/bin/sh"]}
     child_pid = None
     with client.websocket_connect(API + "/shell") as ws:
         ws.send_text(json.dumps({"type": "resize", "cols": 101, "rows": 37}))
@@ -611,6 +615,20 @@ def test_actual_pty_workspace_resize_environment_and_cleanup(env):
         time.sleep(0.02)
     else:
         pytest.fail("PTY shell survived websocket disconnect")
+
+
+def test_shell_without_supported_sandbox_fails_before_accept(env, monkeypatch):
+    from dashboard.standalone_domains import files
+
+    _, client, _, _, _ = env
+    monkeypatch.setattr(sys, "platform", "unsupported-test-platform")
+    with pytest.raises(HTTPException) as direct:
+        files.sandbox_shell("/workspace", "/private-home", "/private-state")
+    assert direct.value.status_code == 503
+    with pytest.raises(Exception) as connection:
+        with client.websocket_connect(API + "/shell"):
+            pass
+    assert getattr(connection.value, "code", None) == 4503
 
 
 def test_internal_storage_is_not_readable_through_workspace_api(tmp_path):
