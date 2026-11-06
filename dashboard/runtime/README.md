@@ -54,3 +54,5 @@ node dashboard/runtime/scripts/restart-probe.mjs --real-local-inference
 ```
 
 Probes use private state, produce private JSON results and never print credentials. The restart probe simulates a lost acceptance acknowledgement on its own request to test native deduplication. Public tests require no DSH installation or credentials. For a new private installation, copy this directory's package/lock/build policy into the private install directory, run `pnpm install --frozen-lockfile`, then run `scripts/setup-private.mjs --use-existing-local-gateway` once with a fresh isolated home. No global installation is needed.
+
+Fresh-home setup parses dotenv and copies only the exact configured `MAGPIE_GATEWAY_KEY` binding into an owner-only file. It never copies other environment entries, comments, or source credentials wholesale. It preserves the configured loopback gateway URL without assuming a particular port, refuses nonempty destinations, and reports credential/setup failures without source text.
