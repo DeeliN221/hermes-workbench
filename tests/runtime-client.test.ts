@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { RuntimeProjection, projectSnapshot, subscribeRuntime, type RuntimeEvent, type RuntimeSnapshot } from '../dashboard/src/runtime-client';
+import { RuntimeProjection, projectSnapshot, projectInteraction, runtimeInteractionResponse, subscribeRuntime, type RuntimeEvent, type RuntimeSnapshot } from '../dashboard/src/runtime-client';
 import type { FetchJSON } from '../dashboard/src/workbench-api';
 
 const snapshot = (status = 'running'): RuntimeSnapshot => ({ session: { id: 's1', runtime: 'dsh', profile_id: 'p1', project_id: 'a' }, messages: [], cursor: '0', interactions: [], inbox: [], status });
@@ -140,4 +140,13 @@ it('keeps durable Fleet notifications separate from assistant replies and ongoin
   const restored = projectSnapshot({ ...snapshot('idle'), deliveries: [delivery] });
   expect(restored.messages.filter(message => message.role === 'assistant')).toHaveLength(0);
   expect(restored.messages[0].id).toBe(projection.value?.messages[0].id);
+});
+
+it('projects actual DSH questions into the existing form and replies with neutral selected/custom answers', () => {
+  const questions = [{ id: 'choice', question: 'Choose', options: [{ label: 'Alpha' }, { label: 'Beta' }] }];
+  expect(projectInteraction({ id: 'request', kind: 'question', questions })).toMatchObject({ kind: 'user-input', questions: [{ id: 'choice', question: 'Choose', isOther: true }] });
+  expect(runtimeInteractionResponse({ choice: { answers: ['Beta'] } }, questions)).toEqual({ answer: { answers: [{ id: 'choice', selected: ['Beta'] }] } });
+  expect(runtimeInteractionResponse({ choice: { answers: ['Custom'] } }, questions)).toEqual({ answer: { answers: [{ id: 'choice', selected: [], custom: 'Custom' }] } });
+  expect(runtimeInteractionResponse('approve')).toEqual({ decision: 'allowed-once' });
+  expect(runtimeInteractionResponse('reject')).toEqual({ decision: 'rejected' });
 });

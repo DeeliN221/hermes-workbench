@@ -7,7 +7,7 @@ import { loadModelDisplay, modelIsVisible } from './model-display';
 import { runtimeErrorText } from './chat-runtime-errors';
 import { uiText } from './ui-locale';
 import { standalone, runtimeUI } from './runtime-mode';
-import { scoped, sessionURL } from './runtime-client';
+import { scoped, sessionURL, runtimeInteractionResponse } from './runtime-client';
 const API = runtimeUI;
 const encode = encodeURIComponent;
 const sessionQuery = (profile: string, session: string) => `profile=${encode(profile)}&session_id=${encode(session)}`;
@@ -308,11 +308,11 @@ export async function stopCodexTurn(read: FetchJSON, profile: string, session: s
   if (!turnId) throw new Error(uiText('当前没有可停止的轮次', 'No active turn to stop'));
   await read(`${API}/session/stop?${sessionQuery(profile, session)}`, json('POST', { profile, turnId }));
 }
-export async function answerCodexApproval(read: FetchJSON, profile: string, session: string, approvalId: string, answer: string | Record<string, unknown>) {
+export async function answerCodexApproval(read: FetchJSON, profile: string, session: string, approvalId: string, answer: string | Record<string, unknown>, questions?: { id: string; options?: { label: string }[] | null }[]) {
   if (standalone) {
     let result: Record<string, unknown>;
     try {
-      result = record(await read(scoped(sessionURL(profile, session) + '/interactions/' + encode(approvalId), profile), json('POST', typeof answer === 'object' ? { answers: answer } : { decision: answer })));
+      result = record(await read(scoped(sessionURL(profile, session) + '/interactions/' + encode(approvalId), profile), json('POST', runtimeInteractionResponse(answer, questions))));
     } catch (error) {
       if ([404, 409, 410].includes(Number(record(error).status))) throw Object.assign(new Error('DSH interaction expired. Refresh the session for current requests.'), { interactionExpired: true });
       throw error;

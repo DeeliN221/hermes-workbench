@@ -11,8 +11,19 @@ export const sessionURL = (profile: string, session: string) => `/api/runtime/se
 export const scoped = (url: string, profile: string) => `${url}${url.includes('?') ? '&' : '?'}profile_id=${encodeURIComponent(profile)}`;
 
 export function projectInteraction(value: Record<string, unknown>) {
-  return { ...value, id: text(value.id ?? value.request_id), kind: value.kind || 'approval',
-    questions: value.questions, text: [text(value.prompt ?? value.reason, 'DSH interaction requires a response'), text(value.command)].filter(Boolean).join('\n') };
+  const question = value.kind === 'question' || value.type === 'question';
+  return { ...value, id: text(value.id ?? value.request_id), kind: question ? 'user-input' : value.kind || 'approval',
+    questions: Array.isArray(value.questions) ? value.questions.map(item => { const q = record(item); return { ...q, id: text(q.id), header: text(q.header), question: text(q.question), isOther: q.allowCustom !== false, options: q.options }; }) : value.questions, text: [text(value.prompt ?? value.reason, 'DSH interaction requires a response'), text(value.command)].filter(Boolean).join('\n') };
+}
+export function runtimeInteractionResponse(answer: string | Record<string, unknown>, questions: { id: string; options?: { label: string }[] | null }[] = []) {
+  if (typeof answer === 'string') return { decision: answer === 'approve' ? 'allowed-once' : answer === 'reject' ? 'rejected' : answer };
+  return { answer: { answers: Object.entries(answer).map(([id, value]) => {
+    const values = record(value).answers;
+    if (!Array.isArray(values) || values.some(value => typeof value !== 'string')) throw new Error('Invalid DSH question answers');
+    const question = questions.find(question => question.id === id);
+    const custom = question && values.some(value => !question.options?.some(option => option.label === value));
+    return { id, selected: custom ? [] : values, ...(custom ? { custom: values.join('\n') } : {}) };
+  }) } };
 }
 export function projectFleetNotification(value: Record<string, unknown>): ChatMessage {
   const id = text(value.delivery_id ?? value.id);

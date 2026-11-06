@@ -11356,7 +11356,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             const U = Y.current,
               ee = X.current;
             try {
-              await t5(i.fetchJSON, M, U, yn.id, L);
+              await t5(i.fetchJSON, M, U, yn.id, L, standalone ? yn.questions : undefined);
               if (ee === X.current && Y.current === U) Fr(null);
               const ne = await wd(i.fetchJSON, M, U);
               ee === X.current &&
