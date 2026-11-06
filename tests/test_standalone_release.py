@@ -187,7 +187,7 @@ def test_license_scan_is_bounded_and_requires_text(tmp_path):
 
 def test_actual_installed_module_checks_are_offline(tmp_path):
     path, _ = config_file(tmp_path)
-    config = start.load_config(path)
+    config = start.load_config(path, development=True)
     config['node'] = shutil.which('node')
     home = config['dsh_home']
     home.mkdir(mode=0o700)
@@ -400,11 +400,17 @@ def test_stop_during_startup_is_bounded(tmp_path):
 def test_port_conflict_never_adopts_or_kills_existing_listener(tmp_path):
     path, config = config_file(tmp_path)
     with socket.socket() as unrelated:
+        unrelated.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         unrelated.bind(('127.0.0.1', config['bridge_port']))
         unrelated.listen()
         with running(path) as process:
             assert process.wait(timeout=3) == 1
         assert unrelated.getsockname()[1] == config['bridge_port']
+        with socket.create_connection(unrelated.getsockname(), timeout=1) as client:
+            accepted, _ = unrelated.accept()
+            with accepted:
+                accepted.sendall(b'fixture-listener-still-owned')
+                assert client.recv(64) == b'fixture-listener-still-owned'
         assert not (Path(config['state_dir']) / 'bridge-pids').exists()
     assert read_status(config)['state'] == 'failed'
 
@@ -452,4 +458,67 @@ def test_reject_unsafe_configuration(tmp_path, fault):
         config['environment']['WORKBENCH_FLEET_URL'] = 'https://fleet.example.test/api/v1'
     path.write_text(json.dumps(config))
     with pytest.raises(start.ReleaseError):
+        start.load_config(path, development=True)
+
+
+@pytest.mark.parametrize('url', [
+    'http://127.0.0.1:8080/api/v1', 'http://127.0.0.2/api/v1',
+    'http://localhost:8080/api/v1', 'http://LOCALHOST/api/v1',
+    'http://[::1]:8080/api/v1', 'http://[::1]/api/v1',
+    'https://fleet.example.test/api/v1', 'https://fleet.example.test:8443/api/v1',
+])
+def test_explicit_fleet_url_acceptance_is_offline(tmp_path, url):
+    token = tmp_path / 'fleet.token'
+    token.write_text('fixture-only')
+    token.chmod(0o600)
+    path, _ = config_file(tmp_path, environment={
+        'WORKBENCH_FLEET_URL': url, 'WORKBENCH_FLEET_TOKEN_FILE': str(token),
+    })
+    assert start.load_config(path, development=True)['environment']['WORKBENCH_FLEET_URL'] == url
+
+
+@pytest.mark.parametrize('url', [
+    'http://fleet.example.test/api/v1', 'http://localhost.example.test/api/v1',
+    'http://0.0.0.0:8080/api/v1', 'http://8.8.8.8:8080/api/v1',
+    'http://127.1:8080/api/v1', 'http://2130706433:8080/api/v1',
+    'http://operator:fixture@localhost:8080/api/v1', 'http://@localhost:8080/api/v1',
+    'https://operator:fixture@fleet.example.test/api/v1',
+    'http://localhost:8080/api/v1?key=fixture', 'https://fleet.example.test/api/v1#fragment',
+    'http://localhost/api/v1?', 'http://localhost/api/v1#',
+    'http://localhost:invalid/api/v1', 'https://fleet.example.test:invalid/api/v1',
+    'http://localhost:65536/api/v1', 'http://localhost:0/api/v1',
+    'http://localhost:-1/api/v1', 'https://fleet.example.test:/api/v1',
+    'http://[::1]extra:8080/api/v1', 'http://[::1/api/v1',
+    'http://local\nhost:8080/api/v1', 'https:///api/v1', 'ftp://localhost/api/v1',
+])
+def test_reject_unsafe_or_malformed_fleet_url_offline(tmp_path, url):
+    token = tmp_path / 'fleet.token'
+    token.write_text('fixture-only')
+    token.chmod(0o600)
+    path, _ = config_file(tmp_path, environment={
+        'WORKBENCH_FLEET_URL': url, 'WORKBENCH_FLEET_TOKEN_FILE': str(token),
+    })
+    with pytest.raises(start.ReleaseError):
+        start.load_config(path, development=True)
+
+
+def test_development_can_default_to_checkout_runtime_install(tmp_path):
+    path, _ = config_file(tmp_path)
+    assert start.load_config(path, development=True)['module_root'] == ROOT / 'dashboard/runtime'
+
+
+def test_release_requires_explicit_external_frozen_install_path(tmp_path):
+    path, config = config_file(tmp_path)
+    with pytest.raises(start.ReleaseError, match='explicit external module_root'):
         start.load_config(path)
+    config['module_root'] = str(tmp_path / 'runtime-install')
+    path.write_text(json.dumps(config))
+    assert start.load_config(path)['module_root'] == tmp_path / 'runtime-install'
+    # A path alias must not permit installation into the verified candidate either.
+    alias = tmp_path / 'runtime-link'
+    alias.symlink_to(ROOT / 'dashboard/runtime', target_is_directory=True)
+    for internal in (ROOT / 'dashboard/runtime', alias):
+        config['module_root'] = str(internal)
+        path.write_text(json.dumps(config))
+        with pytest.raises(start.ReleaseError, match='outside the immutable candidate'):
+            start.load_config(path)

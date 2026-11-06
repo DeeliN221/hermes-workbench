@@ -19,7 +19,7 @@ def run():
         spec = importlib.util.spec_from_file_location('release_start_fixture', root / 'scripts/start-standalone.py')
         module = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(module)
-        config = module.load_config(Path(sys.argv[2]))
+        config = module.load_config(Path(sys.argv[2]), development=True)
         commands = [[sys.executable, str(Path(__file__).resolve()), part] for part in ('bridge', 'app')]
         try:
             return module.Supervisor(config, root, commands=commands).run()

@@ -6,7 +6,7 @@
   "workspace": "/srv/workbench/workspaces",
   "dsh_home": "/var/lib/workbench/dsh-home",
   "bridge_token_file": "/var/lib/workbench/secrets/bridge.token",
-  "module_root": "/srv/workbench/runtime-install",
+  "module_root": "/srv/workbench/runtime-installs/COMMIT",
   "provider": "configured-provider",
   "model": "configured-model",
   "app_port": 38880,

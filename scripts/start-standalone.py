@@ -8,6 +8,7 @@ import fcntl
 import hashlib
 from http.client import HTTPConnection
 from http.cookiejar import CookieJar
+import ipaddress
 import json
 import os
 from pathlib import Path
@@ -103,7 +104,7 @@ def absolute(value):
     return Path(os.path.abspath(value))
 
 
-def load_config(path, root=ROOT):
+def load_config(path, root=ROOT, *, development=False):
     private_file(path)
     try:
         config = json.loads(path.read_text())
@@ -171,10 +172,29 @@ def load_config(path, root=ROOT):
         if 'WORKBENCH_FLEET_REVIEW_TOKEN_FILE' in env and 'WORKBENCH_FLEET_URL' not in env:
             raise ReleaseError('Fleet review token requires explicit Fleet configuration')
         if 'WORKBENCH_FLEET_URL' in env:
-            fleet = urlsplit(env['WORKBENCH_FLEET_URL'])
-            if fleet.scheme != 'https' or not fleet.hostname or fleet.username or fleet.password or fleet.query or fleet.fragment:
-                raise ReleaseError('Fleet requires an explicit HTTPS endpoint without embedded credentials')
+            value = env['WORKBENCH_FLEET_URL']
+            fleet = urlsplit(value)
+            # Access .port explicitly: urlsplit alone accepts malformed/out-of-range ports.
+            port = fleet.port
+            host = fleet.hostname
+            try:
+                loopback = host == 'localhost' or ipaddress.ip_address(host or '').is_loopback
+            except ValueError:
+                loopback = False
+            authority = ('[' + host + ']') if host and ':' in host else host
+            if port is not None:
+                authority = (authority or '') + ':' + fleet.netloc.rsplit(':', 1)[-1]
+            if (fleet.scheme not in ('http', 'https') or not host
+                    or fleet.scheme == 'http' and not loopback
+                    or fleet.username is not None or fleet.password is not None
+                    or fleet.netloc.lower() != authority or port is not None and port == 0
+                    or any(c.isspace() for c in value) or any(c in value for c in ('?', '#', '\\'))):
+                raise ReleaseError('Fleet requires HTTPS or literal loopback HTTP, without credentials, query or fragment')
+        if not development and 'module_root' not in config:
+            raise ReleaseError('Release mode requires an explicit external module_root for the frozen runtime installation')
         config['module_root'] = absolute(config['module_root']) if 'module_root' in config else root / 'dashboard/runtime'
+        if not development and config['module_root'].resolve().is_relative_to(root.resolve()):
+            raise ReleaseError('Release module_root must be outside the immutable candidate')
         return config
     except (ValueError, TypeError, AttributeError) as error:
         raise ReleaseError('Invalid external JSON configuration') from error
@@ -342,6 +362,9 @@ class Supervisor:
                 sockets.append(listener)
                 listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                 listener.bind(('127.0.0.1', self.config[key]))
+                # Some SO_REUSEADDR platforms allow a competing bind; listen must
+                # also succeed before this port can be considered available.
+                listener.listen(1)
         finally:
             for listener in sockets:
                 listener.close()
@@ -467,7 +490,7 @@ def main(argv=None):
             return 0
         if not args.config:
             raise ReleaseError('--config is required')
-        config = load_config(args.config.resolve())
+        config = load_config(args.config.resolve(), development=args.development)
         if args.status:
             state = config['state_dir']
             with (state / 'supervisor.lock').open() as lock:

@@ -58,12 +58,19 @@ Keep the extracted candidate immutable. Create a separate, versioned staging
 installation for runtime dependencies and a Python virtual environment outside
 the candidate. Replace the example paths and COMMIT before running commands.
 
+```text
+/srv/workbench/
+  releases/COMMIT/          verified, immutable candidate
+  runtime-installs/COMMIT/  package.json, lock/build policy, installed node_modules
+  python/                  external Python environment
+```
+
 ```sh
-mkdir -p /srv/workbench/runtime-install
-cp /srv/workbench/releases/COMMIT/dashboard/runtime/package.json /srv/workbench/runtime-install/
-cp /srv/workbench/releases/COMMIT/dashboard/runtime/pnpm-lock.yaml /srv/workbench/runtime-install/
-cp /srv/workbench/releases/COMMIT/dashboard/runtime/pnpm-workspace.yaml /srv/workbench/runtime-install/
-pnpm --dir /srv/workbench/runtime-install install --frozen-lockfile
+mkdir -p /srv/workbench/runtime-installs/COMMIT
+cp /srv/workbench/releases/COMMIT/dashboard/runtime/package.json /srv/workbench/runtime-installs/COMMIT/
+cp /srv/workbench/releases/COMMIT/dashboard/runtime/pnpm-lock.yaml /srv/workbench/runtime-installs/COMMIT/
+cp /srv/workbench/releases/COMMIT/dashboard/runtime/pnpm-workspace.yaml /srv/workbench/runtime-installs/COMMIT/
+pnpm --dir /srv/workbench/runtime-installs/COMMIT install --frozen-lockfile
 uv venv --python 3.13 /srv/workbench/python
 uv pip install --python /srv/workbench/python/bin/python -r /srv/workbench/releases/COMMIT/scripts/start-standalone-requirements.txt
 ```
@@ -71,10 +78,12 @@ uv pip install --python /srv/workbench/python/bin/python -r /srv/workbench/relea
 Choose pnpm explicitly for the external runtime installation; the frozen runtime
 lock and its build policy are authoritative. A module_root must be the actual
 installation directory containing package.json and node_modules. It is passed as
-DSH_MODULE_ROOT. When omitted, the supervisor selects the candidate's
-dashboard/runtime installation; using an external module_root keeps candidate
-hash verification valid. Native dependencies are platform specific and are
-never copied from unrelated node_modules directories.
+DSH_MODULE_ROOT. Release mode requires an explicit external module_root; set it
+to /srv/workbench/runtime-installs/COMMIT in the external JSON configuration.
+Installing dependencies inside the verified candidate is unsupported and fails
+manifest verification. Only --development may default to the checkout's
+dashboard/runtime installation. Native dependencies are platform specific and
+are never copied from unrelated node_modules directories.
 
 The operator must configure a fresh isolated DSH_HOME using the published DSH
 package setup instructions, with explicit provider/model names. Configure its
@@ -141,6 +150,10 @@ fleet.json.example into the configuration's environment object only when the
 operator has explicitly configured that endpoint. Token and optional review
 token files must be 0600 and external. There is no default Fleet endpoint or
 token, no Fleet source/binary in the archive, and no Fleet request in CI/health.
+Nonloopback endpoints require HTTPS. Explicit HTTP is accepted only for localhost
+or literal loopback addresses, for example http://localhost:8080/api/v1 for an
+isolated integration. Credentials in URLs, queries, fragments and malformed ports
+are rejected; DNS names that merely resolve to loopback do not qualify for HTTP.
 Application services must implement these WORKBENCH_FLEET_* file-based names.
 
 ## Acceptance boundaries
@@ -152,5 +165,14 @@ CI never makes model requests, consumes a subscription, reads operator
 credentials or contacts real Fleet. The release owner separately performs real
 provider/browser acceptance against the prepared isolated environment, including
 authenticated app health and lifecycle cleanup, before any production switch.
+
+| Platform | Evidence and capability boundary |
+| --- | --- |
+| macOS | Clean packaging, relocated manifest checks and supervisor subprocess fault fixtures were tested locally. The current file-service PTY uses macOS seatbelt. Real PTY, provider and browser acceptance remain separate owner checks. |
+| Linux | The Node 24 CI job is configured for pure contracts, unit tests, supervision fixtures and packaging checks. Current PTY returns 503 without a supported isolated shell callback; a Linux sandbox backend requires separate integration and acceptance. CI does not establish real PTY/provider functionality. |
+| Other platforms | Unvalidated. Packaging or module checks alone do not establish process, sandbox, PTY or provider support. |
+
+Keep PTY isolation fail closed on every platform; do not disable the sandbox to
+pass tests or infer full NAS functionality from a passing packaging job.
 
 See manual-switch.md for explicit version selection and rollback.
