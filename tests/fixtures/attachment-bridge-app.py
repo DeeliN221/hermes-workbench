@@ -1,6 +1,7 @@
 """Local browser harness: real upload/SQLite/HTTP paths, deterministic Codex peer."""
 import io
 import json
+import re
 import sys
 import tempfile
 from contextlib import asynccontextmanager
@@ -11,13 +12,18 @@ from fastapi import FastAPI
 from codex_bridge import CodexBridge, create_router
 from codex_attachments import create_router as attachment_router
 from sidecar_app import TrustedProxyGate
+import plugin_api
 
 PNG = Path(__file__).with_name('attachment-diagram.png').read_bytes()
 temporary = tempfile.TemporaryDirectory(prefix='attachment-browser-')
 root = Path(temporary.name)
+# Exercise the real preference reader against fixture-owned state, never the
+# running developer instance. The empty store deliberately defaults to chat.
+plugin_api._workspace_root = lambda: root
 bridge = CodexBridge(db_path=root / 'bridge.db', workspace_map={})
 turns = {'codex-preview': [], 'codex-regression': []}
 read_attachments = []
+execution_modes = []
 
 class Peer:
     epoch = 'browser'
@@ -29,6 +35,10 @@ class Peer:
             return {'data': [{'thread': {'id': key}, 'snippet': 'private native search fragment'} for key in turns]}
         if method in {'turn/start', 'turn/steer'}:
             for part in payload['input'][1:]:
+                mode = re.fullmatch(r'<workbench_execution_mode mode="(foreground|background)">\n.+\n</workbench_execution_mode>', part['text'], re.DOTALL)
+                if mode:
+                    execution_modes.append(mode.group(1))
+                    continue
                 target = Path(next(line[6:] for line in part['text'].splitlines() if line.startswith('Path: ')))
                 if target.is_dir():
                     for child in target.rglob('*'):
@@ -77,4 +87,6 @@ async def evidence():
     payloads = [json.loads(row['payload']) for row in requests]
     return {'readAttachments': read_attachments, 'requests': len(payloads),
             'hiddenContexts': sum(p.get('_attachmentContext', {}).get('hidden') is True for p in payloads),
+            'hiddenExecutionContexts': sum(p.get('_executionContext', {}).get('hidden') is True for p in payloads),
+            'executionModes': execution_modes,
             'visibleTexts': [p['input'][0]['text'] for p in payloads]}
