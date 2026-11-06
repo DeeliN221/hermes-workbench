@@ -1733,6 +1733,59 @@ def put_attachment_preferences(request: Request, body: AttachmentPreferencesBody
     return _attachment_preferences(_model_display_owner(request), profile, body)
 
 
+class ChatDisplayPreferencesBody(BaseModel):
+    generationSpeedEnabled: bool = False
+    userMessageNavigatorEnabled: bool = False
+
+
+def _chat_display_preferences(owner: str, profile: str, body: ChatDisplayPreferencesBody | None = None):
+    profile = _clean_identifier(profile, label='Profile', maximum=_MAX_PROFILE_LENGTH)
+    if '/' in profile or '\\' in profile or profile in ('.', '..'):
+        raise HTTPException(422, 'Invalid profile')
+    connection = _open_organization_db()
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        connection.execute(
+            'CREATE TABLE IF NOT EXISTS chat_display_preferences '
+            '(owner TEXT NOT NULL, profile TEXT NOT NULL, generation_speed_enabled INTEGER NOT NULL, '
+            'user_message_navigator_enabled INTEGER NOT NULL, PRIMARY KEY(owner, profile))'
+        )
+        if body is not None:
+            connection.execute(
+                'INSERT INTO chat_display_preferences VALUES (?,?,?,?) '
+                'ON CONFLICT(owner, profile) DO UPDATE SET '
+                'generation_speed_enabled=excluded.generation_speed_enabled, '
+                'user_message_navigator_enabled=excluded.user_message_navigator_enabled',
+                (owner, profile, int(body.generationSpeedEnabled), int(body.userMessageNavigatorEnabled)),
+            )
+        row = connection.execute(
+            'SELECT generation_speed_enabled, user_message_navigator_enabled '
+            'FROM chat_display_preferences WHERE owner=? AND profile=?',
+            (owner, profile),
+        ).fetchone()
+        connection.commit()
+        return {
+            'generationSpeedEnabled': bool(row['generation_speed_enabled']) if row else False,
+            'userMessageNavigatorEnabled': bool(row['user_message_navigator_enabled']) if row else False,
+        }
+    finally:
+        connection.close()
+
+
+@router.get('/chat-display-preferences')
+def get_chat_display_preferences(request: Request, profile: str = 'default'):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        _chat_display_preferences(_model_display_owner(request), profile),
+        headers={'Cache-Control': 'no-store'},
+    )
+
+
+@router.put('/chat-display-preferences')
+def put_chat_display_preferences(request: Request, body: ChatDisplayPreferencesBody, profile: str = 'default'):
+    return _chat_display_preferences(_model_display_owner(request), profile, body)
+
+
 class ProfileDisplayBody(BaseModel):
     display_name: str = Field(max_length=64)
 

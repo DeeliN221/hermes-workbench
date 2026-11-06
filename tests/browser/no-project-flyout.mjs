@@ -15,6 +15,7 @@ try {
     const errors = [];
     page.on('pageerror', error => errors.push(String(error)));
     page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+    await page.request.put(host.origin + '/api/plugins/workbench/chat-display-preferences?profile=default', { data: { generationSpeedEnabled: false, userMessageNavigatorEnabled: true } });
     await page.addInitScript(() => localStorage.setItem('hermes.workbench.nav-collapsed', 'true'));
     await page.route('**/api/plugins/workbench/codex/sessions?**', async route => {
       const response = await route.fetch();
@@ -32,7 +33,7 @@ try {
       }).observe(document, { childList: true, subtree: true });
     });
     await page.goto(host.origin + '/chat?session=codex-preview&profile=default');
-    await page.locator('[data-workbench-user-message-ball]').first().waitFor();
+    await page.locator('.codex-composer-wrap').first().waitFor();
     assert.match(page.url(), /localhost/);
     assert.equal(await page.title(), 'default');
     await page.evaluate(theme => { document.documentElement.dataset.workbenchTheme = theme; document.documentElement.classList.toggle('dark', theme === 'dark'); }, theme);
@@ -57,7 +58,11 @@ try {
       if (await toggle.getAttribute('aria-expanded') === 'true') await toggle.click();
     } else await page.locator('.dashboard-nav-collapse').click();
     await absent();
-    for (let index = 0; index < 2; index++) {
+    if (mobile) {
+      assert.equal(await page.locator('[data-workbench-user-message-ball]:visible').count(), 0);
+      await expect(page.getByTestId('mobile-user-message-navigator')).toBeVisible();
+    }
+    for (let index = 0; !mobile && index < 2; index++) {
       const pane = page.locator('.codex-pane-slot').nth(index);
       const ball = pane.locator('[data-workbench-user-message-ball]');
       await ball.scrollIntoViewIfNeeded();
