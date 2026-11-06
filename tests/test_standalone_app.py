@@ -485,3 +485,33 @@ def test_readiness_rejects_malformed_successful_upstream_responses(tmp_path):
         app.state.assets_root = assets
         assert client.get('/api/runtime/capabilities').status_code == 502
         assert client.get('/health').status_code == 503
+
+
+def test_fleet_origin_hydration_keeps_current_user_scope_and_fails_closed(tmp_path):
+    from dashboard.standalone_fleet_transport import FleetOriginTransport
+    app, client, _ = setup(tmp_path)
+    login(app, client)
+    calls = []
+    async def transport(method, path, body=None, params=None):
+        calls.append(path)
+        if path == '/tasks':
+            return {'tasks': [{'id': 'owned', 'status': 'done'}, {'id': 'foreign', 'status': 'done'}], 'has_more': False}
+        user = 'local-owner' if path.endswith('/owned') else 'another-user'
+        return {'task': {'id': path.rsplit('/', 1)[-1], 'origin': {'user_id': user, 'profile_id': 'default', 'project_id': 'default', 'runtime': 'dsh', 'session_id': 'session'}}, 'attempts': [{'id': 'a1', 'status': 'ok'}, {'id': 'a2', 'status': 'failed'}]}
+    app.state.services.fleet.transport = FleetOriginTransport(transport)
+    response = client.get('/api/plugins/workbench/fleet/tasks')
+    assert response.status_code == 200, response.text
+    assert [task['id'] for task in response.json()['tasks']] == ['owned']
+    assert set(calls) == {'/tasks', '/tasks/owned', '/tasks/foreign'}
+    overview = client.post('/api/plugins/workbench/kanban-overview', json={'board': ''})
+    assert overview.status_code == 200, overview.text
+    assert overview.json()['stats'] == {'tasks_total': 1, 'by_status': {'done': 1}, 'runs_total': 2, 'runs_completed': 1, 'runs_failed': 1, 'runs_in_flight': 0, 'runs_neutral': 0, 'success_rate': .5}
+    assert client.post('/api/plugins/workbench/kanban-overview', json={'board': '', 'user_id': 'another-user'}).status_code == 422
+    async def missing_origin(method, path, body=None, params=None):
+        return {'tasks': [{'id': 'missing'}]} if path == '/tasks' else {'task': {'id': 'missing'}}
+    app.state.services.fleet.transport = FleetOriginTransport(missing_origin)
+    assert client.get('/api/plugins/workbench/fleet/tasks').json() == {'tasks': []}
+    async def mismatched_detail(method, path, body=None, params=None):
+        return {'tasks': [{'id': 'missing'}]} if path == '/tasks' else {'task': {'id': 'different'}}
+    app.state.services.fleet.transport = FleetOriginTransport(mismatched_detail)
+    assert client.get('/api/plugins/workbench/fleet/tasks').status_code == 502

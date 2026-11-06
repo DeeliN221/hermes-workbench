@@ -1,3 +1,4 @@
+import { standalone } from './runtime-mode';
 import { uiText as sourceText } from './ui-locale';
 /**
  * Board-level delivery progress for the native Kanban page.
@@ -13,7 +14,7 @@ const EMPTY_RETRY_MS = 30_000;
 const SUMMARY_LIMIT = 180;
 
 export type KanbanRun = {
-  id: number;
+  id: number | string;
   status: string;
   outcome: string;
   summary: string;
@@ -151,7 +152,8 @@ export function outcomeTone(status: string, task: KanbanTaskProgress): 'ok' | 'w
 /** One request for the whole board; a missing sidecar degrades quietly. */
 export async function fetchKanbanOverview(board: string, request: typeof fetch = fetch): Promise<KanbanOverview | null> {
   try {
-    const response = await request(`${WORKBENCH_API}/kanban-overview`, {
+    const perform = standalone && request === fetch && typeof (window as any).__HERMES_PLUGIN_SDK__?.authedFetch === 'function' ? (window as any).__HERMES_PLUGIN_SDK__.authedFetch : request;
+    const response = await perform(`${WORKBENCH_API}/kanban-overview`, {
       method: 'POST', credentials: 'same-origin', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ board }),
     });

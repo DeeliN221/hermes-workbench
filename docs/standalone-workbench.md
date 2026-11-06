@@ -44,3 +44,9 @@ new DSH session.
 The isolated protocol fixture tests transport/reconnect/error behavior only.
 They are not real DSH or Fleet end-to-end evidence. Live validation must use the
 actual bridge and an explicitly authorized Fleet worker/workspace.
+
+Fleet list responses that omit origin metadata are hydrated from authoritative
+task details before the domain ownership checks run. Unowned legacy records
+remain excluded. Kanban statistics use the scoped tasks and actual attempt
+records; the task drawer links to its verified original DSH session and shows
+only the persisted notification for the current attempt and epoch.

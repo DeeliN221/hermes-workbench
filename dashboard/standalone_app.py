@@ -796,10 +796,57 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
                 if not path:
                     raise HTTPException(503, 'Fleet review credential file is unconfigured')
                 return private_secret_file(path)
-            app.state.services.fleet.transport = FleetHTTP(fleet_url, fleet_token, review_token)
+            from .standalone_fleet_transport import FleetOriginTransport
+            app.state.services.fleet.transport = FleetOriginTransport(FleetHTTP(fleet_url, fleet_token, review_token))
         app.state.services_available = True
         app.include_router(router, prefix=PREFIX)
         app.include_router(services.create_extra_router(services=router.services, archives=True, schedules=True))
+
+    @app.post(PREFIX + '/kanban-overview')
+    async def kanban_overview(request: Request):
+        ctx = resolve_context(request)
+        body = await request.json()
+        if not isinstance(body, dict) or set(body) - {'board'} or body.get('board', '') not in ('', 'fleet'):
+            raise HTTPException(422, 'Standalone Fleet boards are scoped by the authenticated profile and project')
+        if not app.state.services_available:
+            raise HTTPException(503, 'Fleet service unavailable')
+        fleet = app.state.services.fleet
+        tasks = await fleet.list_tasks(ctx)
+        slots = asyncio.Semaphore(8)
+        async def detail(task):
+            async with slots:
+                return await fleet.detail(ctx, task['id'])
+        details = await asyncio.gather(*(detail(task) for task in tasks))
+        stats = {'tasks_total': len(tasks), 'by_status': {}, 'runs_total': 0, 'runs_completed': 0,
+                 'runs_failed': 0, 'runs_in_flight': 0, 'runs_neutral': 0, 'success_rate': None}
+        progress = []
+        for task, data in zip(tasks, details):
+            status = task.get('status', 'unknown')
+            stats['by_status'][status] = stats['by_status'].get(status, 0) + 1
+            attempts = data.get('attempts', [])
+            completed = sum(a.get('status') in ('ok', 'completed') for a in attempts)
+            failed = sum(a.get('status') == 'failed' for a in attempts)
+            active = sum(a.get('status') in ('running', 'claimed') for a in attempts)
+            stats['runs_total'] += len(attempts)
+            stats['runs_completed'] += completed
+            stats['runs_failed'] += failed
+            stats['runs_in_flight'] += active
+            stats['runs_neutral'] += len(attempts) - completed - failed - active
+            latest = max(attempts, key=lambda a: a.get('started_at', ''), default=None)
+            def millis(value):
+                from datetime import datetime
+                try:
+                    return int(datetime.fromisoformat(value.replace('Z', '+00:00')).timestamp() * 1000)
+                except (AttributeError, TypeError, ValueError):
+                    return None
+            latest_run = {'id': latest['id'], 'status': latest.get('status', 'unknown'), 'outcome': latest.get('status', 'unknown'),
+                          'summary': '', 'started_at': millis(latest.get('started_at')), 'ended_at': millis(latest.get('ended_at'))} if latest else None
+            progress.append({'task_id': task['id'], 'title': task.get('title', task['id']), 'status': status,
+                             'assignee': task.get('assignee', ''), 'summary': '', 'failure': task.get('error', task.get('blocked_reason', '')),
+                             'run_count': len(attempts), 'completed_runs': completed, 'failed_runs': failed, 'latest_run': latest_run})
+        decided = stats['runs_completed'] + stats['runs_failed']
+        stats['success_rate'] = stats['runs_completed'] / decided if decided else None
+        return {'available': True, 'board': body.get('board', ''), 'stats': stats, 'tasks': progress}
 
     @app.api_route('/api/{path:path}', methods=['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
     async def unavailable(path: str):

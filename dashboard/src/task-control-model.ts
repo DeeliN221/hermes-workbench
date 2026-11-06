@@ -63,6 +63,9 @@ export type StageReportInput = {
   format?: string;
 };
 export type Task = {
+  attempt_id?: string;
+  epoch?: number;
+  origin?: { runtime: string; user_id: string; profile_id: string; project_id: string; session_id: string };
   id: string;
   title: string;
   status: Status;
