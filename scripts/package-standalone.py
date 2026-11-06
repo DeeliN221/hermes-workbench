@@ -22,7 +22,7 @@ REQUIRED = {
     'vite.standalone.config.ts', 'vite.config.ts', 'dashboard/standalone.html',
     'dashboard/src/standalone-entry.ts', 'dashboard/src/standalone-pages.ts',
     'dashboard/standalone_app.py', 'dashboard/standalone_auth.py', 'dashboard/standalone_store.py',
-    'dashboard/standalone_services.py', 'dashboard/runtime/package.json',
+    'dashboard/standalone_services.py', 'dashboard/standalone_fleet_transport.py', 'dashboard/runtime/package.json',
     'dashboard/runtime/pnpm-lock.yaml', 'dashboard/runtime/pnpm-workspace.yaml',
     'dashboard/runtime/bridge.mjs', 'dashboard/runtime/host.mjs', 'dashboard/runtime/dsh-peer.mjs',
     'scripts/start-standalone.py', 'scripts/start-standalone-requirements.txt',
@@ -158,7 +158,7 @@ def allowed_source(name):
     return (
         name in {'LICENSE', 'THIRD_PARTY_NOTICES.md', 'dashboard/__init__.py',
                  'dashboard/standalone_app.py', 'dashboard/standalone_auth.py',
-                 'dashboard/standalone_store.py', 'dashboard/standalone_services.py',
+                 'dashboard/standalone_store.py', 'dashboard/standalone_services.py', 'dashboard/standalone_fleet_transport.py',
                  'scripts/start-standalone.py', 'scripts/start-standalone-requirements.txt',
                  'dashboard/runtime/package.json', 'dashboard/runtime/pnpm-lock.yaml',
                  'dashboard/runtime/pnpm-workspace.yaml'}
