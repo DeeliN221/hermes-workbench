@@ -46,3 +46,9 @@ test('unary redirects fail closed and authenticated sockets remain on the config
   assert.equal(targetRequests,0);assert.throws(()=>hooks.createWebSocket(`ws://127.0.0.1:${target.address().port}/api/remote.mux`),{code:'dsh/origin-rejected'});
   hooks.createWebSocket(`ws://127.0.0.1:${server.address().port}/api/remote.mux`);assert.equal(socketOptions.followRedirects,false);await peer.close();
 });
+
+test('pinned native list request uses its generated _request wire argument',async()=>{
+  const calls=[];const peer=new DshPeer({url:'http://127.0.0.1:9001',readToken:async()=>'',modules:{}});
+  peer.connect=async()=>{};peer.ctx={connection:{rpc:{call:async(...args)=>{calls.push(args);return {ok:true,value:{items:[]}};}}}};
+  assert.deepEqual(await peer.call('list',{}),{items:[]});assert.deepEqual(calls[0].slice(0,3),['/api','session/list',{args:{_request:{}}}]);
+});

@@ -110,7 +110,7 @@ export class DshPeer extends EventEmitter {
   }
   async call(method, request) {
     await this.connect();
-    return this.rpc(`session/${method}`, request === undefined ? {} : {request});
+    return this.rpc(`session/${method}`, request === undefined ? {} : method === 'list' ? {_request: request} : {request});
   }
   async rpc(endpoint, args) {
     this.lastHttpError = undefined;

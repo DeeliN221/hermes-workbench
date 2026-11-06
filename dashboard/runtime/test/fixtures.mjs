@@ -14,13 +14,24 @@ export class Queue {
   async return() { this.close(); return {done: true}; }
 }
 export class FakePeer extends EventEmitter {
-  constructor(native = new Map()) { super(); this.native = native; this.generation = 0; this.connected = false; this.promptCalls = 0; this.answers = []; }
+  constructor(native = new Map()) { super(); this.native = native; this.generation = 0; this.connected = false; this.createCalls = 0; this.selectionCalls = []; this.promptCalls = 0; this.answers = []; }
   async connect() { if (!this.connected) { this.connected = true; this.generation++; } }
   async call(method, request) {
-    if (method === 'modelCatalog') return {groups: [{id: 'local', models: [{id: 'test-model', name: 'Test'}]}]};
-    if (method === 'create') { if (!this.native.has(request.sessionId)) this.native.set(request.sessionId, {events: [], streams: [], queue: [], requests: new Set()}); return {sessionId: request.sessionId}; }
+    if (method === 'modelCatalog') return {groups: [{id: 'local', models: [{id: 'test-model', name: 'Test', reasoning: {efforts: [{id: 'low', name: 'Low'}, {id: 'high', name: 'High', description: 'More reasoning'}], defaultEffort: 'low'}}]}]};
+    if (method === 'list') return {items: [...this.native].map(([sessionId, s]) => ({sessionId, cwd: s.cwd, blank: !s.events.length && !s.requests.size}))};
+    if (method === 'create') {
+      this.createCalls++;
+      let id = request.sessionId; const existing = this.native.get(id);
+      if (existing && (existing.events.length || existing.requests.size)) id = `${id}-unexpected-new`;
+      if (!this.native.has(id)) this.native.set(id, {cwd: request.cwd, events: [], streams: [], queue: [], requests: new Set()});
+      return {sessionId: id};
+    }
     const session = this.native.get(request.sessionId ?? request.address?.sessionId);
-    if (['selectModel', 'rename'].includes(method)) return {};
+    if (method === 'selectModel') {
+      const {sessionId, ...selected} = request; this.selectionCalls.push({...selected}); session.selection = selected; return {selected};
+    }
+    if (method === 'projections') return {kind: 'sequenced', values: {modelSelection: {next: session.selection ?? null, lastUsed: null}}};
+    if (method === 'rename') return {};
     if (method === 'state') return {queue: session.queue, running: session.running ?? false};
     if (method === 'events') return {records: session.events.filter(e => e.seq < request.beforeSeq && e.seq <= request.throughSeq).map(event => ({type: 'event', event})), hasMore: false};
     if (method === 'prompt') {
@@ -33,6 +44,7 @@ export class FakePeer extends EventEmitter {
     if (method === 'cancel') { session.running = false; return {accepted: true}; }
     throw Error(`Unexpected method ${method}`);
   }
+  async registerContext() {}
   follow(id, signal) {
     const session = this.native.get(id); const q = new Queue(signal); session.streams.push(q);
     q.push({type: 'snapshot', cursor: session.events.at(-1)?.seq ?? -1, records: session.events.map(event => ({type: 'event', event})), hasMore: false});

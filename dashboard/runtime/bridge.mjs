@@ -24,7 +24,14 @@ async function close() {
   return closing;
 }
 try {
-  modules = await loadDsh(process.env.DSH_MODULE_ROOT ?? join(state, 'install'));
+  if (process.env.DSH_MODULE_ROOT) modules = await loadDsh(process.env.DSH_MODULE_ROOT);
+  else {
+    try { modules = await loadDsh(); }
+    catch (error) {
+      if (!['MODULE_NOT_FOUND', 'ERR_MODULE_NOT_FOUND'].includes(error.code)) throw error;
+      modules = await loadDsh(join(state, 'install'));
+    }
+  }
   const auth = await bridgeToken(process.env.WORKBENCH_DSH_BRIDGE_TOKEN_FILE ?? join(state, 'bridge.token'));
   store = new Store(join(state, 'bridge-state')); await store.init();
   let url = process.env.DSH_HOST_URL; let readToken;

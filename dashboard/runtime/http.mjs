@@ -92,11 +92,12 @@ export async function startHttp(runtime, {port = 38472, allowedOrigins = [], aut
       }
       const receipt = url.pathname.match(/^\/api\/runtime\/sessions\/([^/]+)\/requests\/([^/]+)$/);
       if (req.method === 'GET' && receipt) return json(res, 200, runtime.receipt(decodeURIComponent(receipt[1]), decodeURIComponent(receipt[2]), scope));
-      const match = url.pathname.match(/^\/api\/runtime\/sessions\/([^/]+)\/(snapshot|events|messages|cancel|interactions\/([^/]+))$/);
+      const match = url.pathname.match(/^\/api\/runtime\/sessions\/([^/]+)\/(snapshot|events|messages|model|cancel|interactions\/([^/]+))$/);
       if (match) {
         const id = decodeURIComponent(match[1]); runtime.get(id, scope);
         if (req.method === 'GET' && match[2] === 'snapshot') return json(res, 200, await runtime.snapshot(id, scope));
         if (req.method === 'GET' && match[2] === 'events') return await sse(req, res, runtime, id, scope, url);
+        if (req.method === 'POST' && match[2] === 'model') return json(res, 200, await runtime.selectModel(id, await body(req), scope));
         if (req.method === 'POST' && match[2] === 'messages') return json(res, 202, await runtime.message(id, await body(req), scope));
         if (req.method === 'POST' && match[2] === 'cancel') return json(res, 202, await runtime.cancel(id, scope));
         if (req.method === 'POST' && match[3]) return json(res, 202, await runtime.answer(id, decodeURIComponent(match[3]), await body(req), scope));

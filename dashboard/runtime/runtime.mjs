@@ -9,12 +9,21 @@ import {Projection} from './projection.mjs';
 import {RuntimeError, nonempty, publicError} from './errors.mjs';
 
 export function sessionRef(meta) {
-  return {id: meta.id, runtime: 'dsh', profile_id: meta.profile_id, project_id: meta.project_id, ...(meta.user_id ? {user_id: meta.user_id} : {})};
+  return {id: meta.id, runtime: 'dsh', profile_id: meta.profile_id, project_id: meta.project_id, ...(meta.user_id ? {user_id: meta.user_id} : {}),
+    model: meta.model, provider: meta.provider, ...(meta.reasoning_effort !== undefined ? {reasoning_effort: meta.reasoning_effort} : {})};
+}
+function canonical(value) {
+  if (Array.isArray(value)) return value.map(canonical);
+  if (value && typeof value === 'object') return Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, canonical(value[k])]));
+  return value;
 }
 const fingerprint = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const createKey = (owner, requestId) => JSON.stringify([owner.user_id, owner.profile_id, owner.project_id, requestId]);
 export class Runtime extends EventEmitter {
   constructor({peer, store, provider, model}) {
     super(); this.peer = peer; this.store = store; this.provider = provider; this.model = model;
+    this.creations = new Map(); this.provisionOperations = new Map(); this.modelOperations = new Map();
+    for (const meta of store.sessions.values()) if (meta.creation) this.creations.set(createKey(meta, meta.creation.request_id), meta);
     this.epoch = randomUUID(); this.monitors = new Map(); this.interactions = new Map(); this.operations = new Map(); this.closed = false;
     this.remoteListener = (frame, generation) => this.remoteEvent(frame, generation);
     this.disconnectListener = generation => {
@@ -39,7 +48,9 @@ export class Runtime extends EventEmitter {
   }
   async models() {
     const catalog = await this.peer.call('modelCatalog');
-    const models = catalog.groups.flatMap(g => g.models.map(m => ({id: m.id, provider: g.id, name: m.name})));
+    const models = catalog.groups.filter(g => g.id === this.provider).flatMap(g => g.models.map(m => ({id: m.id, provider: g.id, name: m.name,
+      ...(m.reasoning ? {reasoning: {efforts: m.reasoning.efforts.map(e => ({id: e.id, name: e.name, ...(e.description ? {description: e.description} : {})})),
+        ...(m.reasoning.defaultEffort !== undefined ? {defaultEffort: m.reasoning.defaultEffort} : {})}} : {})})));
     return {models, default: {provider: this.provider, model: this.model}};
   }
   capabilities() {
@@ -63,40 +74,144 @@ export class Runtime extends EventEmitter {
       .filter(m => (!scope.profile_id || scope.profile_id === m.profile_id) && (!scope.project_id || scope.project_id === m.project_id) && (!scope.user_id || scope.user_id === m.user_id))
       .map(m => ({...sessionRef(m), cwd: m.cwd, ...(m.title ? {title: m.title} : {})}))};
   }
-  async create(input) {
-    nonempty(input.profile_id, 'profile_id', 200); nonempty(input.project_id, 'project_id', 200);
-    nonempty(input.cwd, 'cwd');
-    if (!isAbsolute(input.cwd) || !(await stat(input.cwd).catch(() => null))?.isDirectory())
-      throw new RuntimeError(400, 'runtime/invalid-cwd', 'cwd must be an existing absolute directory');
+  rejectTier(input) {
+    if (Object.hasOwn(input, 'service_tier')) throw new RuntimeError(422, 'runtime/service-tier-unsupported', 'service_tier is unsupported by this DSH bridge');
+  }
+  async validateSelection(input) {
+    this.rejectTier(input);
+    if (input.provider !== undefined && input.provider !== this.provider)
+      throw new RuntimeError(400, 'runtime/provider-unavailable', 'Only the configured provider is available');
     const catalog = await this.models();
     const wanted = input.model ?? this.model;
     const chosen = catalog.models.find(m => m.id === wanted && m.provider === this.provider);
     if (!chosen) throw new RuntimeError(400, 'runtime/model-unavailable', 'Model is unavailable on the configured provider');
-    const context = normalizeContext(input.runtime_context, input.cwd);
+    const effort = input.reasoning_effort;
+    if (effort !== undefined && (typeof effort !== 'string' || !chosen.reasoning?.efforts.some(e => e.id === effort)))
+      throw new RuntimeError(400, 'runtime/reasoning-unavailable', 'Reasoning effort is unavailable for this model');
+    return {provider: chosen.provider, model: chosen.id, ...(effort !== undefined ? {reasoningEffort: effort} : {})};
+  }
+  async create(input) {
+    this.rejectTier(input);
+    nonempty(input.profile_id, 'profile_id', 200); nonempty(input.project_id, 'project_id', 200);
+    if (input.user_id !== undefined) nonempty(input.user_id, 'user_id', 200);
+    if (input.request_id && input.client_request_id && input.request_id !== input.client_request_id)
+      throw new RuntimeError(400, 'runtime/request-alias-conflict', 'Request identity aliases disagree');
+    const requestId = input.request_id ?? input.client_request_id;
+    if (requestId !== undefined) { nonempty(requestId, 'request_id', 200); nonempty(input.user_id, 'user_id', 200); }
+    const cwd = input.cwd ?? input.workspace;
+    nonempty(cwd, 'cwd');
+    if (!isAbsolute(cwd) || !(await stat(cwd).catch(() => null))?.isDirectory())
+      throw new RuntimeError(400, 'runtime/invalid-cwd', 'cwd must be an existing absolute directory');
+    if (input.workspace !== undefined) nonempty(input.workspace, 'workspace');
+    if (input.workspace !== undefined && resolve(input.workspace) !== resolve(cwd))
+      throw new RuntimeError(400, 'runtime/workspace-conflict', 'workspace and cwd disagree');
+    const selection = await this.validateSelection(input);
+    const context = normalizeContext(input.runtime_context, cwd);
     const agentPreset = input.agent_preset ?? 'standard';
     if (!['standard','minimal'].includes(agentPreset)) throw new RuntimeError(422, 'runtime/invalid-preset', 'Unsupported base preset');
     const presetId = context ? contextIdentity({...input, runtime_context: context, agent_preset: agentPreset}) : agentPreset;
     if (input.title !== undefined) nonempty(input.title, 'title', 200);
-    // Publish ownership before invoking DSH. A crash cannot orphan an owned native log.
-    const id = `session-${randomUUID()}`;
-    const meta = {id, profile_id: input.profile_id, project_id: input.project_id, cwd: resolve(input.cwd),
-      model: chosen.id, provider: chosen.provider, title: input.title, requests: {}, provisioned: false, user_id: input.user_id, agent_preset: agentPreset, preset_id: presetId, runtime_context: context};
-    this.store.sessions.set(id, meta); await this.store.save();
+    const normalized = {cwd: resolve(cwd), model: selection.model, provider: selection.provider,
+      reasoning_effort: selection.reasoningEffort, title: input.title, agent_preset: agentPreset, runtime_context: context};
+    const hash = fingerprint(canonical(normalized));
+    const key = requestId === undefined ? undefined : createKey(input, requestId);
+    let meta = key === undefined ? undefined : this.creations.get(key);
+    if (meta && meta.creation.hash !== hash)
+      throw new RuntimeError(409, 'runtime/create-conflict', 'Creation request_id already has a different payload in this scope');
+    if (!meta) {
+      meta = {id: `session-${randomUUID()}`, profile_id: input.profile_id, project_id: input.project_id,
+        user_id: input.user_id, ...normalized, requests: {}, provisioned: false, preset_id: presetId,
+        ...(key === undefined ? {} : {creation: {request_id: requestId, hash, status: 'intended'}})};
+      this.store.sessions.set(meta.id, meta);
+      if (key !== undefined) this.creations.set(key, meta);
+    }
     await this.provision(meta);
     return sessionRef(meta);
   }
   async provision(meta) {
-    if (meta.runtime_context && meta.contextGeneration !== `${this.epoch}:${this.peer.generation}`) {
+    if (this.provisionOperations.has(meta.id)) return this.provisionOperations.get(meta.id);
+    const operation = this.provisionSession(meta);
+    this.provisionOperations.set(meta.id, operation);
+    try { return await operation; } finally { this.provisionOperations.delete(meta.id); }
+  }
+  async provisionSession(meta) {
+    // Ownership and the intended native identity must be durable before any RPC.
+    if (!meta.provisioned) await this.store.save();
+    const generation = `${this.epoch}:${this.peer.generation}`;
+    if (meta.runtime_context && meta.contextGeneration !== generation) {
       await this.peer.registerContext({preset_id: meta.preset_id, user_id: meta.user_id, profile_id: meta.profile_id,
         project_id: meta.project_id, agent_preset: meta.agent_preset, runtime_context: meta.runtime_context});
-      meta.contextGeneration = `${this.epoch}:${this.peer.generation}`;
+      meta.contextGeneration = generation;
     }
-    if (meta.provisioned) return;
-    const created = await this.peer.call('create', {sessionId: meta.id, cwd: meta.cwd, agentPreset: meta.preset_id ?? meta.agent_preset ?? 'standard'});
-    if (created.sessionId !== meta.id) throw new RuntimeError(502, 'dsh/identity-mismatch', 'DSH changed Session identity');
-    await this.peer.call('selectModel', {sessionId: meta.id, provider: meta.provider, model: meta.model});
+    if (meta.provisioned) {
+      if (meta.modelGeneration !== generation) { await this.reconcileModel(meta); meta.modelGeneration = generation; }
+      return;
+    }
+    // create(sessionId) reuses only blank Sessions. After a lost acknowledgement
+    // a nonblank native Session must be resumed by address, never recreated.
+    const existing = (await this.peer.call('list', {})).items.find(row => row.sessionId === meta.id);
+    if (existing?.cwd && resolve(existing.cwd) !== meta.cwd)
+      throw new RuntimeError(409, 'runtime/native-scope-conflict', 'Native Session workspace differs from its owner metadata');
+    if (!existing) {
+      const created = await this.peer.call('create', {sessionId: meta.id, cwd: meta.cwd, agentPreset: meta.preset_id ?? meta.agent_preset ?? 'standard'});
+      if (created.sessionId !== meta.id) throw new RuntimeError(502, 'dsh/identity-mismatch', 'DSH changed Session identity');
+    }
+    const actual = await this.reconcileModel(meta);
+    if (!actual) await this.applySelection(meta, {provider: meta.provider, model: meta.model,
+      ...(meta.reasoning_effort !== undefined ? {reasoningEffort: meta.reasoning_effort} : {})});
     if (meta.title) await this.peer.call('rename', {sessionId: meta.id, title: meta.title});
-    meta.provisioned = true; await this.store.save();
+    meta.provisioned = true; meta.modelGeneration = generation;
+    if (meta.creation) meta.creation.status = 'ready';
+    await this.store.save();
+  }
+  serializeModel(meta, work) {
+    const previous = this.modelOperations.get(meta.id) ?? Promise.resolve();
+    const operation = previous.catch(() => {}).then(work);
+    this.modelOperations.set(meta.id, operation);
+    return operation.finally(() => { if (this.modelOperations.get(meta.id) === operation) this.modelOperations.delete(meta.id); });
+  }
+  updateSelection(meta, selection) {
+    if (!selection || typeof selection.provider !== 'string' || typeof selection.model !== 'string'
+      || (selection.reasoningEffort !== undefined && typeof selection.reasoningEffort !== 'string'))
+      throw new RuntimeError(502, 'dsh/invalid-selection', 'DSH did not return a valid model selection');
+    const before = JSON.stringify([meta.provider, meta.model, meta.reasoning_effort]);
+    meta.provider = selection.provider; meta.model = selection.model;
+    if (selection.reasoningEffort === undefined) delete meta.reasoning_effort;
+    else meta.reasoning_effort = selection.reasoningEffort;
+    return before !== JSON.stringify([meta.provider, meta.model, meta.reasoning_effort]);
+  }
+  reconcileModel(meta) {
+    return this.serializeModel(meta, async () => {
+      const generation = this.peer.generation;
+      const projection = await this.peer.call('projections', {sessionId: meta.id});
+      if (!this.peer.connected || generation !== this.peer.generation)
+        throw new RuntimeError(503, 'dsh/selection-generation-expired', 'Native model observation expired');
+      const value = projection?.values?.modelSelection;
+      const selection = value?.next ?? value?.lastUsed;
+      if (selection && this.updateSelection(meta, selection)) await this.store.save();
+      return selection;
+    });
+  }
+  applySelection(meta, selection) {
+    return this.serializeModel(meta, async () => {
+      const generation = this.peer.generation;
+      const result = await this.peer.call('selectModel', {sessionId: meta.id, ...selection});
+      if (!this.peer.connected || generation !== this.peer.generation)
+        throw new RuntimeError(503, 'dsh/selection-generation-expired', 'Native model selection acknowledgement expired');
+      if (!result?.selected || result.selected.provider !== this.provider || result.selected.model !== selection.model)
+        throw new RuntimeError(502, 'dsh/invalid-selection', 'DSH did not return the configured provider selection');
+      this.updateSelection(meta, result.selected); await this.store.save();
+      return result.selected;
+    });
+  }
+  async selectModel(id, input, scope) {
+    const meta = this.get(id, scope);
+    nonempty(input.model, 'model', 200);
+    const selection = await this.validateSelection(input);
+    await this.ensure(meta);
+    const selected = await this.applySelection(meta, selection);
+    return {session_id: id, session: sessionRef(meta), provider: selected.provider, model: selected.model,
+      ...(selected.reasoningEffort !== undefined ? {reasoning_effort: selected.reasoningEffort} : {}), selected};
   }
   startMonitor(meta) {
     if (this.monitors.has(meta.id)) return this.monitors.get(meta.id);
@@ -166,18 +281,21 @@ export class Runtime extends EventEmitter {
   }
   currentSnapshot(m, state) {
     const interactions = [...this.interactions.values()].filter(x => x.session_id === m.id).map(x => x.public);
+    m.projection.session = sessionRef(this.get(m.id));
     return m.projection.snapshot({interactions, inbox: state?.queue ?? [],
       ...(!this.peer.connected || !m.active ? {status: 'disconnected'}
         : state?.running && !['error', 'cancelled'].includes(m.projection.status) ? {status: 'running'} : {})});
   }
   async snapshot(id, scope) {
-    const m = await this.ensure(this.get(id, scope));
+    const meta = this.get(id, scope); const m = await this.ensure(meta);
+    await this.reconcileModel(meta);
     const state = await this.peer.call('state', {sessionId: id});
     return this.currentSnapshot(m, state);
   }
   publish(id, event) { this.emit('event', {...event, session_id: id,
     connection_generation: `${this.epoch}:${event.generation ?? this.peer.generation}`}); }
   normalizeMessage(input) {
+    this.rejectTier(input);
     const attachments = imageParts(input.attachments);
     if (input.content !== undefined && (typeof input.content !== 'string' || input.content.length > 200000))
       throw new RuntimeError(400, 'runtime/invalid-content', 'content must be text');
@@ -301,7 +419,7 @@ export class Runtime extends EventEmitter {
     this.peer.off('remote-event', this.remoteListener); this.peer.off('disconnected', this.disconnectListener);
     await this.peer.close();
     await Promise.allSettled([...this.monitors.values()].map(m => m.task));
-    await this.recovery; await Promise.allSettled([...this.operations.values()]);
+    await this.recovery; await Promise.allSettled([...this.operations.values(), ...this.provisionOperations.values(), ...this.modelOperations.values()]);
     await this.store.close();
   }
 }

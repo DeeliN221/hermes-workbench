@@ -93,3 +93,16 @@ test('HTTP body accepts bounded image payloads above 1 MiB; receipts stay scoped
   assert.equal((await f.call(`/sessions/${id}/requests/large-image?project_id=other`)).status,404);
   assert.equal((await f.call(`/sessions/${id}/requests/missing`)).status,404);
 });
+
+test('model HTTP control returns native selection, validates scope and refreshes snapshot metadata',async t=>{
+  const f=await fixture(t);const id=f.session.id;
+  const catalog=(await f.call('/models')).value;assert.ok(catalog.models[0].reasoning.efforts.some(x=>x.id==='high'));
+  const selected=await f.call(`/sessions/${id}/model`,{model:'test-model',reasoning_effort:'high'});
+  assert.equal(selected.status,200);assert.equal(selected.value.selected.reasoningEffort,'high');
+  const snapshot=(await f.call(`/sessions/${id}/snapshot`)).value;
+  assert.equal(snapshot.session.provider,'local');assert.equal(snapshot.session.model,'test-model');assert.equal(snapshot.session.reasoning_effort,'high');
+  assert.equal((await f.call(`/sessions/${id}/model?project_id=other`,{model:'test-model'})).status,404);
+  assert.equal((await f.call(`/sessions/${id}/model`,{model:'test-model',reasoning_effort:'unknown'})).status,400);
+  assert.equal((await f.call(`/sessions/${id}/model`,{model:'test-model',provider:'wrong'})).status,400);
+  assert.equal((await f.call(`/sessions/${id}/model`,{model:'test-model',service_tier:'priority'})).status,422);
+});
