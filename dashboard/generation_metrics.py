@@ -1,9 +1,9 @@
-"""Turn-local provider output counters and diagnostic observed event windows.
+"""Turn-local provider output counters and observed response-time estimates.
 
 Output counters include reasoning tokens (a subset, never added twice), never
-text lengths or tool output. Event gaps cannot establish model-only generation
-time: queueing, buffering and short waits may be included. Retain those windows
-for diagnostics but withhold TPS until authoritative model timing is available.
+text lengths or tool output. Response time includes hidden reasoning and request
+latency, with tool execution and approval waits removed. It is an estimate, not
+authoritative model-only generation time. Legacy event gaps remain diagnostic.
 """
 import json
 import math
@@ -35,11 +35,13 @@ def timestamp(value, fallback):
 def public(state):
     output = max(state.get('recordOutput', 0), state.get('countOutput', 0))
     reasoning = max(state.get('recordReasoning', 0), state.get('countReasoning', 0))
-    active = state.get('usageActiveMs', 0)
+    estimated = 'responseUsageMs' in state
+    active = state.get('responseUsageMs', state.get('usageActiveMs', 0))
+    rate = output / (active / 1000) if estimated and active >= 250 and output >= 2 else None
     return dict(outputTokens=output, reasoningOutputTokens=reasoning if state.get('hasReasoning') else None,
                 activeSeconds=active / 1000, firstGeneratedAt=state.get('first'), lastGeneratedAt=state.get('last'),
                 samples=state.get('samples', 0),
-                timingBasis='observed-event-gaps', tokensPerSecond=None)
+                timingBasis='observed-response-time' if estimated else 'observed-event-gaps', tokensPerSecond=rate)
 
 
 def read_state(connection, identity, turn):
@@ -126,12 +128,29 @@ def observe(connection, identity, method, payload, observed_at):
     item_type = item.get('type')
     raw_tool_start = kind in {'exec_command_begin', 'mcp_tool_call_begin', 'web_search_begin', 'patch_apply_begin'}
     raw_tool_end = kind in {'exec_command_end', 'mcp_tool_call_end', 'web_search_end', 'patch_apply_end'}
-    tool = raw_tool_start or raw_tool_end or item_type in {'commandExecution', 'fileChange', 'mcpToolCall', 'dynamicToolCall', 'webSearch', 'imageView', 'collabAgentToolCall'}
-    now = timestamp(body.get('timestamp', params.get('timestamp', payload.get('timestamp'))), observed_at * 1000)
+    tool = raw_tool_start or raw_tool_end or item_type in {'commandExecution', 'fileChange', 'mcpToolCall', 'dynamicToolCall', 'webSearch', 'imageView', 'collabAgentToolCall', 'subAgentActivity'}
+    now = timestamp(payload.get('emittedAtMs', body.get('timestamp', params.get('timestamp', payload.get('timestamp')))), observed_at * 1000)
     generating = kind in {'agent_message_delta', 'agent_reasoning_delta', 'reasoning_content_delta'} or method.startswith(('item/agentMessage/', 'item/reasoning/')) and method.endswith(('delta', 'Delta'))
     # Counter updates can timestamp generation when textual deltas are absent.
     output = max(state.get('recordOutput', 0), state.get('countOutput', 0))
     generating = generating or bool((values or totals) and output > previous_output)
+    # A turn boundary is required: imported fragments cannot establish a full
+    # response duration. Unlike delta gaps, this includes non-streamed reasoning.
+    if method == 'turn/started' or kind == 'task_started':
+        state.setdefault('responseClock', now)
+        state.setdefault('responseActiveMs', 0)
+    clock = state.get('responseClock')
+    if clock is not None and not state.get('finished'):
+        now = max(now, clock)  # Delayed events cannot move the clock backwards.
+        if not state.get('tools') and not state.get('responsePaused'):
+            state['responseActiveMs'] += now - clock
+        state['responseClock'] = now
+        if 'requestApproval' in method or method.endswith('/requestUserInput'):
+            state['responsePaused'] = True
+        elif method == 'serverRequest/resolved' or generating or tool and (method == 'item/started' or raw_tool_start):
+            # Some adapters omit turnId on resolution; the next scoped model or
+            # tool event also safely resumes without charging the human wait.
+            state.pop('responsePaused', None)
     if tool:
         tools = set(state.get('tools', []))
         tool_id = str(item.get('id') or body.get('call_id') or kind.rsplit('_', 1)[0])
@@ -155,6 +174,9 @@ def observe(connection, identity, method, payload, observed_at):
             state['samples'] = state.get('samples', 0) + 1
     if (values or totals) and output > previous_output:
         state['usageActiveMs'] = state.get('activeMs', 0)
+        if clock is not None:
+            # Freeze time with its counter; new text must not dilute old usage.
+            state['responseUsageMs'] = state.get('responseActiveMs', 0)
     write_state(connection, identity, str(turn_id), state)
     return {'turnId': str(turn_id), **public(state)}
 
