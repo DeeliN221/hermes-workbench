@@ -68,7 +68,7 @@ export function rememberHomePaneOwner(profile: string, storage: LayoutStorage | 
 }
 
 /** Mobile keeps the existing horizontal pane strip; reveal the requested conversation. */
-export function revealActiveHomePane(): void {
-  if (location.pathname !== '/chat' || !new URLSearchParams(location.search).has('paneOwner') || !matchMedia('(max-width: 800px)').matches) return;
+export function revealActiveHomePane(includeSessionRoutes = false): void {
+  if (location.pathname !== '/chat' || (!includeSessionRoutes && !new URLSearchParams(location.search).has('paneOwner')) || !matchMedia('(max-width: 800px)').matches) return;
   document.querySelector<HTMLElement>('.codex-multi-pane .codex-pane-slot.is-active')?.scrollIntoView({ block: 'nearest', inline: 'start' });
 }

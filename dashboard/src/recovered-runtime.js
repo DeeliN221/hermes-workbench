@@ -13064,8 +13064,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, [m, w]);
       x.current = g;
       r(() => {
-        const frame = requestAnimationFrame(revealActiveHomePane);
-        return () => cancelAnimationFrame(frame);
+        const reveal = () => revealActiveHomePane(standalone);
+        const frame = requestAnimationFrame(reveal);
+        if (standalone) window.addEventListener('resize', reveal);
+        return () => { cancelAnimationFrame(frame); if (standalone) window.removeEventListener('resize', reveal); };
       }, [g, m]);
       r(() => {
         const sync = () => {
