@@ -29,7 +29,7 @@ def test_generation_tool_wait_idle_duplicates_and_restart(tmp_path):
     emit(store, 'item/agentMessage/delta', 1, delta='a')
     emit(store, 'item/agentMessage/delta', 3, delta='b')
     usage(store, 3, 100)
-    assert metrics(store)['tokensPerSecond'] is None
+    assert metrics(store)['tokensPerSecond'] == pytest.approx(100 / 3)
     emit(store, 'item/started', 3, item={'id': 'tool', 'type': 'commandExecution'})
     # Usage updates while a tool is running must not create a time window.
     usage(store, 20, 100)
@@ -42,9 +42,10 @@ def test_generation_tool_wait_idle_duplicates_and_restart(tmp_path):
     usage(store, 202, 100, response='r3')
     emit(store, 'turn/completed', 220)
     before = metrics(store)
-    assert before['activeSeconds'] == 6
+    # Includes silent reasoning/request time; removes the 97-second tool run.
+    assert before['activeSeconds'] == 105
     assert before['outputTokens'] == 300 and before['reasoningOutputTokens'] == 150
-    assert before['tokensPerSecond'] is None
+    assert before['tokensPerSecond'] == pytest.approx(300 / 105)
     # A replay and late final counter cannot add time or double-count output.
     usage(store, 202, 100, response='r3')
     usage(store, 240, 100, response='r3')
@@ -53,6 +54,66 @@ def test_generation_tool_wait_idle_duplicates_and_restart(tmp_path):
     store = BridgeStore(path)
     assert metrics(store) == before
     assert decorate(store.connection, ('other', 'default', 'session'), [{'id': 'turn'}])[0]['generationMetrics']['outputTokens'] == 0
+    store.close()
+
+
+def test_silent_reasoning_with_only_final_usage_produces_an_estimate(tmp_path):
+    store = BridgeStore(tmp_path / 'db')
+    emit(store, 'turn/started', 0)
+    usage(store, 60, 3000)
+    result = metrics(store)
+    assert result['activeSeconds'] == 60
+    assert result['tokensPerSecond'] == 50
+    assert result['timingBasis'] == 'observed-response-time'
+    # Freeze the denominator with the counter, including through finalization.
+    emit(store, 'item/agentMessage/delta', 90, delta='late final text')
+    emit(store, 'turn/completed', 100)
+    assert metrics(store)['tokensPerSecond'] == 50
+    store.close()
+
+
+def test_parallel_tools_and_human_waits_are_excluded(tmp_path):
+    store = BridgeStore(tmp_path / 'db')
+    emit(store, 'turn/started', 0)
+    emit(store, 'item/started', 2, item={'id': 'a', 'type': 'commandExecution'})
+    emit(store, 'item/started', 3, item={'id': 'b', 'type': 'subAgentActivity'})
+    emit(store, 'item/completed', 10, item={'id': 'a', 'type': 'commandExecution'})
+    emit(store, 'item/completed', 20, item={'id': 'b', 'type': 'subAgentActivity'})
+    emit(store, 'item/commandExecution/requestApproval', 22, approvalId='approval')
+    emit(store, 'serverRequest/resolved', 100, requestId='approval')
+    usage(store, 102, 300)
+    assert metrics(store)['activeSeconds'] == 6
+    assert metrics(store)['tokensPerSecond'] == 50
+    store.close()
+
+
+def test_final_counter_after_completion_does_not_charge_delivery_delay(tmp_path):
+    store = BridgeStore(tmp_path / 'db')
+    emit(store, 'turn/started', 0)
+    emit(store, 'turn/completed', 10)
+    usage(store, 30, 500)
+    assert metrics(store)['samples'] == 0
+    assert metrics(store)['activeSeconds'] == 10
+    assert metrics(store)['tokensPerSecond'] == 50
+    store.close()
+
+
+def test_upstream_emission_time_survives_batched_delivery(tmp_path):
+    store = BridgeStore(tmp_path / 'db')
+    def notification(method, seconds, **params):
+        return store.append_event(*IDENTITY, method, {
+            'method': method, 'emittedAtMs': BASE + seconds * 1000,
+            'params': {'turnId': 'turn', **params}})
+    notification('turn/started', 0)
+    notification('thread/tokenUsage/updated', 10, tokenUsage={
+        'total': {'outputTokens': 500}, 'last': {'outputTokens': 500}})
+    assert metrics(store)['activeSeconds'] == 10
+    assert metrics(store)['tokensPerSecond'] == 50
+    notification('item/agentMessage/delta', 5, delta='delayed')
+    notification('thread/tokenUsage/updated', 12, tokenUsage={
+        'total': {'outputTokens': 600}, 'last': {'outputTokens': 100}})
+    assert metrics(store)['activeSeconds'] == 12
+    assert metrics(store)['tokensPerSecond'] == 50
     store.close()
 
 
