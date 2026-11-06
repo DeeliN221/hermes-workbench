@@ -190,7 +190,10 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
                 detail = 'DSH request failed'
             public_detail = str(detail).replace(backend_secret, '[redacted]') if backend_secret else str(detail)
             raise HTTPException(result.status_code, public_detail[:500])
-        return result.json()
+        try:
+            return result.json()
+        except ValueError:
+            raise HTTPException(502, 'DSH runtime returned invalid JSON') from None
 
     def project_view(user, row):
         return {**row, **row['settings'], 'workspaceId': row['id'], 'workspacePath': str((store.user_workspace(user) / row['relative_path']).resolve())}
@@ -328,6 +331,8 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
     @app.get('/api/runtime/capabilities')
     async def runtime_capabilities():
         capability = await upstream('GET', 'capabilities')
+        if not isinstance(capability, dict) or not isinstance(capability.get('capabilities', {}), dict):
+            raise HTTPException(502, 'DSH runtime returned invalid capabilities')
         if app.state.services_available:
             app.state.services.runtime['capabilities'].update(capability.get('capabilities', {}))
         return capability

@@ -469,3 +469,19 @@ def test_scheduled_input_waits_for_durable_journal_and_reuses_pending_identity(t
         receipt = client.portal.call(send, ctx, sid, {'text': 'slow', 'request_id': 'pending-scheduled'})
         assert receipt['durable'] is True
         assert len(bridge.state.sessions[sid]['requests']) == 1
+
+
+def test_readiness_rejects_malformed_successful_upstream_responses(tmp_path):
+    for index, response in enumerate([httpx.Response(200, text='not JSON'), httpx.Response(200, json=['invalid catalog']), httpx.Response(200, json={'capabilities': []})]):
+        app = create_app(home=tmp_path / str(index), workspace_root=tmp_path / 'workspace', runtime_url='http://localhost', transport=httpx.MockTransport(lambda request: response), services_module=fixture_module.create_services_fixture())
+        client = TestClient(app)
+        login(app, client)
+        assets = tmp_path / 'assets'
+        assets.mkdir(exist_ok=True)
+        (assets / 'standalone.html').write_text('<script src="/assets/app.js"></script>')
+        (assets / 'assets').mkdir(exist_ok=True)
+        (assets / 'assets/app.js').write_text('// explicit build fixture')
+        (assets / 'standalone-manifest.json').write_text('{"entry":{"file":"assets/app.js"}}')
+        app.state.assets_root = assets
+        assert client.get('/api/runtime/capabilities').status_code == 502
+        assert client.get('/health').status_code == 503
