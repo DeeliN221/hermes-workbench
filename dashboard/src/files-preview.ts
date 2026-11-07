@@ -1,3 +1,5 @@
+import { standalone } from './runtime-mode';
+import { currentProfile } from './profile-scope';
 import { uiText as sourceText } from './ui-locale';
 import { openFilePreview } from './file-preview';
 import { uiText } from './ui-locale';
@@ -84,7 +86,7 @@ export async function readManagedFile(path: string): Promise<{ name: string; blo
   const controller = new AbortController();
   const timer = window.setTimeout(() => controller.abort(), 15000);
   try {
-    const url = `/api/files/read?path=${encodeURIComponent(path)}`;
+    const url = standalone ? `/api/standalone/file-content?path=${encodeURIComponent(path)}&profile=${encodeURIComponent(currentProfile())}&session=${encodeURIComponent(new URLSearchParams(location.search).get('session') || '')}` : `/api/files/read?path=${encodeURIComponent(path)}`;
     const response = sdk?.authedFetch
       ? await sdk.authedFetch(url, { signal: controller.signal })
       : await fetch(url, { credentials: 'same-origin', signal: controller.signal });
@@ -106,6 +108,7 @@ export async function readManagedFile(path: string): Promise<{ name: string; blo
       const reason = ({ 401: sourceText("登录已失效", "Your session has expired"), 403: sourceText("没有读取权限", "Read permission denied"), 404: sourceText("路径不存在", "Path does not exist"), 413: sourceText("文件过大", "File too large") } as Record<number, string>)[response.status];
       throw new Error(reason || uiText(`文件读取失败（${response.status}）`, `Could not read file (${response.status})`));
     }
+    if (standalone) return { name: path.split('/').at(-1) || path, blob: await response.blob(), mime: response.headers.get('content-type') || '', path };
     if (!response.headers.get('content-type')?.includes('application/json')) throw new Error(uiText('文件接口未返回有效数据', 'Invalid file API response'));
     const payload = await response.json() as ManagedRead;
     if (typeof payload.name !== 'string' || typeof payload.data_url !== 'string' || !/^data:[^,]*;base64,/i.test(payload.data_url)) {

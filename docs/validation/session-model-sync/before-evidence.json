@@ -1,0 +1,6 @@
+{
+  "fixture": "Real standalone host, neutral protocol runtime fixture; no provider/model invocation",
+  "cases": [
+    "Baseline reproduces: an unsent model choice disappears after refresh"
+  ]
+}

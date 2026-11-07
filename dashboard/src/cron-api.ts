@@ -1,3 +1,4 @@
+import { standalone } from './runtime-mode';
 /** Translate host cron responses and editor forms at a single typed boundary. */
 import type { FetchJSON } from './workbench-api';
 import { record, rows, text, type JsonRecord } from './api-values';
@@ -11,7 +12,7 @@ export interface CronForm {
   skills: string; model: string; provider: string; base_url: string; script: string;
   no_agent: boolean; context_from: string; enabled_toolsets: string; workdir: string;
   continuity: boolean; repeat_times: string; attach_to_session: boolean;
-  monitor_script: string; monitor_url: string; reasoning_effort: string;
+  monitor_script: string; monitor_url: string; reasoning_effort: string; execution?: 'foreground' | 'background'; timezone?: string; session_id?: string;
 }
 export type CronJob = JsonRecord & { id: string };
 export type CronHistoryEntry =
@@ -50,6 +51,7 @@ export function cronForm(value: unknown): CronForm {
     continuity: !!job.continuity || context.some(value => value.toLowerCase() === 'self'), repeat_times: text(repeat.times),
     attach_to_session: !!job.attach_to_session, monitor_script: text(job.monitor_script), monitor_url: text(job.monitor_url),
     reasoning_effort: text(job.reasoning_effort),
+    ...(standalone ? { execution: job.execution === 'foreground' ? 'foreground' as const : 'background' as const, timezone: text(job.timezone, 'UTC'), session_id: text(job.session_id) } : {}),
   };
 }
 export function cronPayload(form: CronForm) {
@@ -57,6 +59,7 @@ export function cronPayload(form: CronForm) {
   const context = cronList(form.context_from).filter(value => value.toLowerCase() !== 'self');
   if (form.continuity) context.push('self');
   return {
+    ...(standalone ? { execution: form.execution || 'background', timezone: form.timezone || 'UTC', session_id: form.session_id || undefined } : {}),
     prompt: form.prompt, schedule: form.schedule.trim(), name: form.name.trim(), deliver: form.deliver.trim() || 'local',
     skills: cronList(form.skills), model: nullableText(form.model), provider: nullableText(form.provider),
     base_url: nullableText(form.base_url), script: nullableText(form.script), context_from: context,
@@ -88,7 +91,7 @@ export function normalizeCronJob(value: unknown): CronJob {
 function historyRows(value: unknown, ...keys: string[]): JsonRecord[] {
   return rows(value, ...keys).filter(value => value && typeof value === 'object').map(record);
 }
-export function cronSessionId(run: JsonRecord) { return text(run.session_id || run.id).trim(); }
+export function cronSessionId(run: JsonRecord) { return text(run.session_id || (standalone ? '' : run.id)).trim(); }
 /** Profiles that may own a legacy cron session after profile storage moved. */
 export function cronSessionProfiles(run: JsonRecord, owner: string): string[] {
   return [...new Set([run.profile, run.profile_name, owner, 'default']
@@ -110,22 +113,29 @@ export function cronTimestamp(value: unknown) {
 }
 export function mergeCronHistory(runs: JsonRecord[], executions: JsonRecord[]): CronHistoryEntry[] {
   const entries: CronHistoryEntry[] = runs.flatMap(run => {
-    const id = cronSessionId(run); return id ? [{ kind: 'session' as const, key: `session:${id}`, sessionId: id, run }] : [];
+    const id = cronSessionId(run); return id ? [{ kind: 'session' as const, key: `session:${standalone ? text(run.id, id) : id}`, sessionId: id, run }] : [];
   });
   for (const execution of executions) {
     const id = text(execution.id).trim();
+    if (standalone && runs.some(run => text(run.id) === id && cronSessionId(run))) continue;
     if (id) entries.push({ kind: 'execution', key: `execution:${id}`, sessionId: null, execution });
   }
   const time = (entry: CronHistoryEntry) => entry.kind === 'session'
-    ? entry.run.started_at || entry.run.last_active || entry.run.ended_at
+    ? entry.run.started_at || entry.run.last_active || entry.run.ended_at || (standalone && (entry.run.accepted_at || entry.run.scheduled_at))
     : entry.execution.finished_at || entry.execution.started_at || entry.execution.claimed_at;
   return entries.sort((a, b) => cronTimestamp(time(b)) - cronTimestamp(time(a)) || a.key.localeCompare(b.key));
 }
-export async function listCronJobs(read: FetchJSON, profile: string) { return normalizeCronJobs(await read(`${API}/jobs?${profileQuery(profile)}`)); }
+export async function listCronJobs(read: FetchJSON, profile: string): Promise<CronJob[]> {
+  if (standalone && profile === 'all') {
+    const profiles = rows(await read('/api/profiles'), 'profiles').map(value => text(record(value).name)).filter(Boolean);
+    return (await Promise.all(profiles.map(async owner => (await listCronJobs(read, owner)).map(job => ({ ...job, profile: owner }))))).flat();
+  }
+  return normalizeCronJobs(await read(`${API}/jobs?${profileQuery(profile)}`));
+}
 export async function listCronRuns(read: FetchJSON, profile: string, id: string) { return historyRows(await read(`${API}/jobs/${encode(id)}/runs?${profileQuery(profile)}&limit=100`), 'runs'); }
 export async function listCronExecutions(read: FetchJSON, profile: string, id: string) {
   try { return historyRows(await read(`${EXTENDED_API}/executions?${profileQuery(profile)}&job_id=${encode(id)}&limit=100`), 'executions', 'items'); }
-  catch { return []; } // Older hosts do not provide the optional execution journal.
+  catch (error) { if (standalone) throw error; return []; } // Older plugin hosts may omit the journal.
 }
 async function writeJob(read: FetchJSON, url: string, method: string, body?: object) {
   return normalizeCronJob(await read(url, { method, ...(body ? { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) } : {}) }));
@@ -133,5 +143,15 @@ async function writeJob(read: FetchJSON, url: string, method: string, body?: obj
 export function createNativeCronJob(read: FetchJSON, profile: string, form: CronForm) { return writeJob(read, `${API}/jobs?${profileQuery(profile)}`, 'POST', nativeCronPayload(form)); }
 export function createExtendedCronJob(read: FetchJSON, profile: string, form: CronForm) { return writeJob(read, `${EXTENDED_API}/jobs?${profileQuery(profile)}`, 'POST', cronPayload(form)); }
 export function updateCronJob(read: FetchJSON, profile: string, id: string, form: CronForm) { return writeJob(read, `${API}/jobs/${encode(id)}?${profileQuery(profile)}`, 'PUT', { updates: cronPayload(form) }); }
-export function changeCronJobState(read: FetchJSON, profile: string, id: string, action: 'pause' | 'resume' | 'trigger') { return writeJob(read, `${API}/jobs/${encode(id)}/${action}?${profileQuery(profile)}`, 'POST'); }
+const pendingTriggers = new Map<string, string>();
+export async function changeCronJobState(read: FetchJSON, profile: string, id: string, action: 'pause' | 'resume' | 'trigger') {
+  const url = `${API}/jobs/${encode(id)}/${action}?${profileQuery(profile)}`;
+  if (!standalone || action !== 'trigger') return writeJob(read, url, 'POST');
+  const key = profile + ':' + id;
+  const requestId = pendingTriggers.get(key) || crypto.randomUUID();
+  pendingTriggers.set(key, requestId);
+  const result = normalizeCronJob(await read(url, { method: 'POST', headers: { 'Idempotency-Key': requestId } }));
+  pendingTriggers.delete(key);
+  return result;
+}
 export async function deleteCronJob(read: FetchJSON, profile: string, id: string) { await read(`${API}/jobs/${encode(id)}?${profileQuery(profile)}`, { method: 'DELETE' }); }

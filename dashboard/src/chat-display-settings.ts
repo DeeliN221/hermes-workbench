@@ -1,6 +1,7 @@
 import { renderHomeSettings } from './home-settings';
 import { renderHomeLayoutSettings } from './home-layout-settings';
 import { renderFolderUploadSetting } from './attachment-preferences';
+import { renderChatDisplayPreferences } from './chat-display-preferences';
 import type { FetchJSON } from './workbench-api';
 import {
   CHAT_DETAIL_MODES,
@@ -11,7 +12,6 @@ import {
 import { currentProfile } from './profile-scope';
 import { uiText as sourceText } from './ui-locale';
 import { accessoryPanelOpen, withAccessoryPanel } from './workbench-accessory';
-import { renderUserMessageBallSetting } from './user-message-ball';
 import './chat-display-settings.css';
 
 const LINK_ATTR = 'data-workbench-chat-display-link';
@@ -158,7 +158,7 @@ export function renderChatDisplayPanel(panel: HTMLElement, read?: FetchJSON): vo
   const toolsHeading = document.createElement('h2');
   toolsHeading.textContent = sourceText('聊天工具', 'Chat tools');
   tools.append(toolsHeading);
-  renderUserMessageBallSetting(tools);
+  if (read) renderChatDisplayPreferences(tools, read);
   if (read) renderFolderUploadSetting(tools, read);
   panel.append(header, details, tools);
 }

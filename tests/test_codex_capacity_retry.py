@@ -84,7 +84,8 @@ class CapacityRetryContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([method for method, _ in calls], ['turn/start', 'turn/start'])
         self.assertEqual(calls[0][1], calls[1][1])
         self.assertEqual(calls[1][1]['clientUserMessageId'], 'request')
-        self.assertEqual(calls[1][1]['input'], [{'type': 'text', 'text': 'Implement the requested change'}])
+        self.assertEqual(calls[1][1]['input'][0], {'type': 'text', 'text': 'Implement the requested change'})
+        self.assertIn('mode="foreground"', calls[1][1]['input'][-1]['text'])
 
     async def test_post_acceptance_capacity_failure_retries_from_the_same_turn(self):
         bridge, calls = await self.bridge_with_peer([
@@ -155,7 +156,8 @@ class CapacityRetryContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(accepted['turn_id'], 'backup-turn')
         self.assertEqual(calls[0][1]['model'], 'primary-model')
         self.assertEqual(calls[1][1]['model'], 'backup-model')
-        self.assertEqual(calls[1][1]['input'], [{'type': 'text', 'text': 'Keep the session responsive'}])
+        self.assertEqual(calls[1][1]['input'][0], {'type': 'text', 'text': 'Keep the session responsive'})
+        self.assertEqual(calls[1][1]['input'], calls[0][1]['input'])
 
         events = bridge.store.events('qa', 'default', 'session', 0)
         fallback_events = [event for event in events if event['method'] == 'workbench/modelFallback']

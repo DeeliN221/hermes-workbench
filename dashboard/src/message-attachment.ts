@@ -11,7 +11,7 @@ interface ReactRuntime {
 /** Fetch persisted images through host authentication, including token-only hosts. */
 export function MessageAttachment({ React, attachment }: { React: ReactRuntime; attachment: MessageAttachmentPreview }) {
   const source = attachment.src || '';
-  const remote = source.startsWith('/api/plugins/workbench/codex/attachments/');
+  const remote = source.startsWith('/api/plugins/workbench/codex/attachments/') || source.startsWith('/api/plugins/workbench/attachments/');
   const [loaded, setLoaded] = React.useState({ source: '', url: '' });
   const [failed, setFailed] = React.useState('');
   React.useEffect(() => {

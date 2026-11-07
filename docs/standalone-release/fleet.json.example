@@ -1,0 +1,5 @@
+{
+  "WORKBENCH_FLEET_URL": "https://fleet.example.test/api/v1",
+  "WORKBENCH_FLEET_TOKEN_FILE": "/var/lib/workbench/secrets/fleet.token",
+  "WORKBENCH_FLEET_REVIEW_TOKEN_FILE": "/var/lib/workbench/secrets/fleet-review.token"
+}

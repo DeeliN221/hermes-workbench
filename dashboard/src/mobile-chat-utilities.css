@@ -1,0 +1,55 @@
+.dashboard-rail-chat-utilities {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--mc-line-soft, #c7c7ba);
+}
+
+.dashboard-action-rail .dashboard-rail-utility {
+  position: relative;
+}
+
+.dashboard-action-rail .dashboard-rail-utility svg {
+  width: 17px;
+  height: 17px;
+  margin-top: -5px;
+}
+
+.dashboard-action-rail .dashboard-rail-utility-badge {
+  position: absolute;
+  top: 3px;
+  right: 2px;
+  min-width: 14px;
+  height: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: var(--mc-accent, #466d2b);
+  color: #fff;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 14px;
+  text-align: center;
+  display: block !important;
+}
+
+.dashboard-action-rail .dashboard-rail-utility-value {
+  position: absolute;
+  right: 2px;
+  bottom: 2px;
+  left: 2px;
+  overflow: hidden;
+  color: inherit;
+  font-size: 8px;
+  font-weight: 700;
+  line-height: 10px;
+  text-align: center;
+  text-overflow: clip;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  display: block !important;
+}
+
+.dashboard-action-rail .dashboard-rail-speed { cursor: default; }

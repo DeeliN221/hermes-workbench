@@ -1,3 +1,4 @@
+import { standalone } from './runtime-mode';
 /**
  * Wrap workspace, file-tree, file read/write, and image-resource APIs for Hermes Workbench.
  * Use only the authenticated client supplied by the Dashboard SDK; do not read private host state.
@@ -57,7 +58,8 @@ export async function loadWorkspace(
   profile: string,
   sessionId: string,
 ): Promise<Workspace | null> {
-  const cached = workspaceCache.get(profile);
+  const cacheKey = standalone ? `${profile}:${sessionId}` : profile;
+  const cached = workspaceCache.get(cacheKey);
   if (cached) return { ...cached, profile, sessionId };
   const response = await fetchJSON<any>(
     `${WORKBENCH_API}/workspace?profile=${query(profile)}&session=${query(sessionId)}`,
@@ -65,7 +67,7 @@ export async function loadWorkspace(
   const workspace = normalizeWorkspace(response);
   if (!workspace) return null;
   const normalized = { ...workspace, profile, sessionId: '' };
-  workspaceCache.set(profile, normalized);
+  workspaceCache.set(cacheKey, normalized);
   return { ...normalized, sessionId };
 }
 

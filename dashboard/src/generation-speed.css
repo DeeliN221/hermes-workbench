@@ -7,6 +7,9 @@
 .codex-generation-tooltip { position: absolute; bottom: calc(100% + 8px); right: 0; z-index: 120; white-space: normal; background: var(--mc-surface, #fff); color: var(--mc-ink, #203345); border: 1px solid var(--mc-line-soft, #ccc); box-shadow: 0 4px 12px #0003; }
 .codex-center-heading-copy { min-width: 0; }
 
+/* TPS is a mobile-only optional statistic; desktop chat keeps the conversation unobstructed. */
+.codex-generation-speed { display: none !important; }
+
 /* Anchor to the composer edge without reserving a full-width transcript row. */
 .codex-conversation-dock {
   position: relative;
