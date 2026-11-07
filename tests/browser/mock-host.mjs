@@ -246,6 +246,14 @@ function apiPayload(url, method, body = null, preferences = new Map()) {
     if (method === 'PUT') preferences.set(key, { folderUploadEnabled: body.folderUploadEnabled === true });
     return preferences.get(key) || { folderUploadEnabled: false };
   }
+  if (url.pathname === '/api/plugins/workbench/chat-display-preferences') {
+    const key = 'chat-display:' + (url.searchParams.get('profile') || 'default');
+    if (method === 'PUT') preferences.set(key, {
+      generationSpeedEnabled: body.generationSpeedEnabled === true,
+      userMessageNavigatorEnabled: body.userMessageNavigatorEnabled === true,
+    });
+    return preferences.get(key) || { generationSpeedEnabled: false, userMessageNavigatorEnabled: false };
+  }
   if (url.pathname.startsWith('/api/plugins/workbench/model-display')) {
     const profile = url.searchParams.get('profile') || 'default';
     const current = preferences.get(profile);

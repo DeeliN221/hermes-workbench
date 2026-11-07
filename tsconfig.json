@@ -26,6 +26,7 @@
     "vite.config.ts",
     "vitest.config.ts",
     "dashboard/loader.ts",
-    "vite.loader.config.ts"
+    "vite.loader.config.ts",
+    "vite.standalone.config.ts"
   ]
 }

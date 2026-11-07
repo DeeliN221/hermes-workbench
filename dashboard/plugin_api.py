@@ -27,7 +27,7 @@ import termios
 import threading
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request, WebSocket, WebSocketDisconnect
 from fastapi.responses import FileResponse
@@ -1733,6 +1733,59 @@ def put_attachment_preferences(request: Request, body: AttachmentPreferencesBody
     return _attachment_preferences(_model_display_owner(request), profile, body)
 
 
+class ChatDisplayPreferencesBody(BaseModel):
+    generationSpeedEnabled: bool = False
+    userMessageNavigatorEnabled: bool = False
+
+
+def _chat_display_preferences(owner: str, profile: str, body: ChatDisplayPreferencesBody | None = None):
+    profile = _clean_identifier(profile, label='Profile', maximum=_MAX_PROFILE_LENGTH)
+    if '/' in profile or '\\' in profile or profile in ('.', '..'):
+        raise HTTPException(422, 'Invalid profile')
+    connection = _open_organization_db()
+    try:
+        connection.execute('BEGIN IMMEDIATE')
+        connection.execute(
+            'CREATE TABLE IF NOT EXISTS chat_display_preferences '
+            '(owner TEXT NOT NULL, profile TEXT NOT NULL, generation_speed_enabled INTEGER NOT NULL, '
+            'user_message_navigator_enabled INTEGER NOT NULL, PRIMARY KEY(owner, profile))'
+        )
+        if body is not None:
+            connection.execute(
+                'INSERT INTO chat_display_preferences VALUES (?,?,?,?) '
+                'ON CONFLICT(owner, profile) DO UPDATE SET '
+                'generation_speed_enabled=excluded.generation_speed_enabled, '
+                'user_message_navigator_enabled=excluded.user_message_navigator_enabled',
+                (owner, profile, int(body.generationSpeedEnabled), int(body.userMessageNavigatorEnabled)),
+            )
+        row = connection.execute(
+            'SELECT generation_speed_enabled, user_message_navigator_enabled '
+            'FROM chat_display_preferences WHERE owner=? AND profile=?',
+            (owner, profile),
+        ).fetchone()
+        connection.commit()
+        return {
+            'generationSpeedEnabled': bool(row['generation_speed_enabled']) if row else False,
+            'userMessageNavigatorEnabled': bool(row['user_message_navigator_enabled']) if row else False,
+        }
+    finally:
+        connection.close()
+
+
+@router.get('/chat-display-preferences')
+def get_chat_display_preferences(request: Request, profile: str = 'default'):
+    from fastapi.responses import JSONResponse
+    return JSONResponse(
+        _chat_display_preferences(_model_display_owner(request), profile),
+        headers={'Cache-Control': 'no-store'},
+    )
+
+
+@router.put('/chat-display-preferences')
+def put_chat_display_preferences(request: Request, body: ChatDisplayPreferencesBody, profile: str = 'default'):
+    return _chat_display_preferences(_model_display_owner(request), profile, body)
+
+
 class ProfileDisplayBody(BaseModel):
     display_name: str = Field(max_length=64)
 
@@ -1864,6 +1917,39 @@ def get_home_preferences(request: Request):
 def put_home_preferences(request: Request, body: HomePreferencesBody, profile: str = 'default'):
     from codex_bridge import _user
     return _home_preferences(_user(request), profile, body)
+
+
+class ExecutionPreferencesBody(BaseModel):
+    mode: Literal['foreground', 'background']
+
+
+def _execution_profile(profile: str) -> str:
+    _clean_identifier(profile, label="Profile", maximum=_MAX_PROFILE_LENGTH)
+    if "/" in profile or "\\" in profile or profile in (".", ".."):
+        raise HTTPException(422, "Invalid profile")
+    return profile
+
+
+@router.get('/execution-preferences')
+def get_execution_preferences(request: Request, profile: str = 'default'):
+    from codex_bridge import _user
+    from execution_preferences import current_mode
+    from fastapi.responses import JSONResponse
+    return JSONResponse({"mode": current_mode(_user(request), _execution_profile(profile))}, headers={"Cache-Control": "no-store"})
+
+
+@router.put('/execution-preferences')
+def put_execution_preferences(request: Request, body: ExecutionPreferencesBody, profile: str = 'default'):
+    from codex_bridge import _user
+    user, profile = _user(request), _execution_profile(profile)
+    connection = _open_organization_db()
+    try:
+        with connection:
+            connection.execute("CREATE TABLE IF NOT EXISTS execution_preferences (owner TEXT NOT NULL, profile TEXT NOT NULL, mode TEXT NOT NULL, PRIMARY KEY(owner, profile))")
+            connection.execute("INSERT INTO execution_preferences VALUES (?, ?, ?) ON CONFLICT(owner, profile) DO UPDATE SET mode=excluded.mode", (user, profile, body.mode))
+        return {"mode": body.mode}
+    finally:
+        connection.close()
 
 
 def _home_layout(user: str, profile: str | None = None, body: HomeLayoutBody | None = None):

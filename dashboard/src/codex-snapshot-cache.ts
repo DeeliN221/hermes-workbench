@@ -1,3 +1,4 @@
+import { standalone } from './runtime-mode';
 /**
  * Persist a compact Codex pane snapshot so a full page reload paints the latest
  * messages before the session preview and authoritative snapshot arrive.
@@ -15,6 +16,7 @@ const MAX_SERIALIZED_CHARS = 450_000;
 const MESSAGE_COUNTS = [48, 24, 12, 6, 3, 1];
 
 function storage(): Storage | null {
+  if (standalone) return null;
   try {
     return typeof window === 'undefined' ? null : window.localStorage;
   } catch {
