@@ -16,6 +16,8 @@ import { EditorView as Te, lineNumbers as aS, highlightActiveLine as iS, highlig
   syntaxHighlighting as Su, defaultHighlightStyle as mS, codeHighlightStyle as O2,
   codeLanguage as w2, fileLanguage as AL, fileLanguage as fM } from './editor-runtime';
 import { normalizeSession as Ll, listCodexSessions as i0, searchCodexSessions as yQ, normalizeGroup as yd, listCodexGroups as XL, createCodexGroup as WL, renameCodexGroup as qL, deleteCodexGroup as ZL, organizeCodexSession as jL, normalizeGoal as FL, readCodexGoal as HL, updateCodexGoal as n0, deleteCodexGoal as VL, listCodexWorkspaces as UL, loadCodexModels as YL, markCodexSessionRead as kd, createCodexSession as KL, sendCodexMessageRetry as JL, normalizeAttachment as i5, uploadCodexAttachment as e5, uploadCodexFolder as eF, stopCodexTurn as o0, answerCodexApproval as t5, CodexSendError as t0 } from './codex-api';
+import { updateRuntimeSessionModel } from './codex-api';
+import { SessionModelControlsMemory } from './session-model-controls';
 import { shouldSubmitComposerMessage } from './composer-command';
 import { messagePhase as NL, turnStatus as Al, messageStatus as Rl, itemStatus as vd, completedItemStatus as BL, mergeMessage as zL, contentText as Wn, userContentText as r5, normalizeMessage as mn, notification as l0, messageFromNotification as n5, messagesFromTurns as GL, applyChatEvent as c0 } from './codex-messages';
 import { applyMessagePreviews } from './message-previews';
@@ -10064,7 +10066,21 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         Vn = s(0),
         K0 = s(0),
         Go = s(0),
-        J0 = s("");
+        J0 = s(""),
+        sessionModelMemory = s(null);
+      if (!sessionModelMemory.current) sessionModelMemory.current = new SessionModelControlsMemory();
+      const applySessionModel = value => {
+        bM(value.model);
+        zd(value.effort || "medium");
+      };
+      const saveSessionModel = value => {
+        if (!standalone || te.current) return;
+        const session = Y.current, profile = M;
+        sessionModelMemory.current.choose(profile, session, value,
+          controls => updateRuntimeSessionModel(i.fetchJSON, profile, session, controls))
+          .then(saved => { if (saved && Hi.current && kr.current === profile && Y.current === session && !te.current) { applySessionModel(saved); Pt(previous => /Model settings were not saved|模型设置未保存/.test(previous) ? "" : previous); } })
+          .catch(error => { if (Hi.current && kr.current === profile && Y.current === session && !te.current) Pt(runtimeText(`模型设置未保存：${String(error)}`, `Model settings were not saved: ${String(error)}`)); });
+      };
       s(0);
       const Vl = s(""),
         tr = s(0),
@@ -10116,6 +10132,13 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, [p]),
         r(() => subscribeSessionColors(() => bumpSessionColors(value => value + 1)), []),
         r(() => subscribeSessionTitles(() => bumpSessionTitles(value => value + 1)), []),
+        r(() => {
+          if (!standalone || B) return;
+          const value = sessionModelMemory.current.value(M, k), defaults = ai.find(model => model.isDefault);
+          bM(value?.model || "");
+          zd(value?.effort || (!k && defaults?.defaultEffort) || "medium");
+          Xd(!k && !!defaults?.defaultFast);
+        }, [M, k, B]),
         r(() => {
           const updateDetail = () => setChatDetail(readChatDetailMode());
           window.addEventListener("storage", updateDetail);
@@ -10506,7 +10529,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
         }, [Fi, Bt, ai]),
         r(() => {
           let L = !0;
-          bM("");
+          if (!standalone) bM("");
           setModelChoices({ profile: M, items: [] });
           if (B) {
             (qd(!1), Fl(""));
@@ -10534,8 +10557,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               .then((U) => {
                 if (L) {
                   const defaults = U.find(model => model.isDefault);
-                  zd(defaults?.defaultEffort || "medium");
-                  Xd(!!defaults?.defaultFast);
+                  if (!standalone || !Y.current && !sessionModelMemory.current.edited(M, "")) {
+                    zd(defaults?.defaultEffort || "medium");
+                    Xd(!!defaults?.defaultFast);
+                  }
                   setModelChoices({ profile: M, items: U });
                 }
               })
@@ -10687,7 +10712,6 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           if (!k || B) return;
           if (standalone) {
             const active = () => L === X.current && Y.current === k;
-            let hydratedControls = false;
             return subscribeRuntime(i.fetchJSON, M, k, {
               update: view => {
                 if (!active()) return;
@@ -10695,10 +10719,9 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 Go.current = Vn.current;
                 Hl(""); _i(false);
                 if (view.runtimeError) Pt(view.runtimeError);
-                if (!hydratedControls && view.session) {
-                  hydratedControls = true;
-                  if (view.session.model) Wd(view.session.model);
-                  if (view.session.reasoningEffort) zd(view.session.reasoningEffort);
+                if (view.session) {
+                  const restored = sessionModelMemory.current.observe(M, k, view.session);
+                  if (restored) applySessionModel(restored);
                 }
                 ht(previous => {
                   const incoming = view.messages;
@@ -11143,6 +11166,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             );
             return;
           }
+          if (standalone && Y.current) {
+            try { await sessionModelMemory.current.flush(M, Y.current); }
+            catch (error) { Pt(String(error)); return; }
+          }
           submittingRef.current = true;
           setSubmitting(true);
           const ne = h0(),
@@ -11200,6 +11227,10 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               } finally {
                 ((Ai.current = Math.max(0, Ai.current - 1)), (tr.current += 1));
               }
+              if (standalone) {
+                sessionModelMemory.current.observe(M, sc.id, sc);
+                sessionModelMemory.current.clearDraft(M);
+              }
               (Vl.current === mi && (Vl.current = ""),
                 (tr.current += 1),
                 (Me = sc.id));
@@ -11245,6 +11276,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
             (pi.current.set(At, Hr),
               At === On(kr.current, Y.current) && !te.current && ((Zi.current = Hr), _e(Hr)),
               (Ge = !0));
+            if (standalone) await sessionModelMemory.current.flush(M, Me);
+            const savedControls = standalone ? sessionModelMemory.current.value(M, Me) : null;
             const ft =
                 ai.find((St) => St.id === Bt) ||
                 (Bt ? void 0 : ai.find((St) => St.isDefault)),
@@ -11256,8 +11289,8 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                 messageWithCard,
                 ne,
                 {
-                  model: Bt || ft?.id,
-                  effort: Fi,
+                  model: savedControls?.model || Bt || ft?.id,
+                  effort: standalone ? savedControls?.effort : Fi,
                   serviceTier: Ft,
                   fast: _n,
                   attachmentIds: jt,
@@ -12244,12 +12277,15 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
           const U =
             ai.find((ee) => ee.id === L) ||
             (L ? void 0 : ai.find((ee) => ee.isDefault));
-          (bM(L),
+          const selected = standalone && Y.current ? U?.id || L : L;
+          const effort = U?.efforts.length ? (U.efforts.includes(Fi) ? Fi : U.defaultEffort || U.efforts[0]) : undefined;
+          (bM(selected),
             U &&
               !U.efforts.includes(Fi) &&
               zd(U.defaultEffort || U.efforts[0] || "medium"),
             (!U?.supportsFast || !U.fastServiceTier) && Xd(!1),
             ye("main"));
+          saveSessionModel({ model: selected, effort });
         },
         wv = `codex-options-${f}`,
         oD = ie
@@ -12417,7 +12453,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
                             onClick: () => {
                               me === "model"
                                 ? sD(L.id)
-                                : (zd(L.id), ye("main"));
+                                : (zd(L.id), saveSessionModel({ model: Bt || tc?.id || "", effort: L.id }), ye("main"));
                             },
                           },
                           W(e, "span", { title: L.id }, L.label),

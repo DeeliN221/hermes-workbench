@@ -110,7 +110,10 @@ export class RuntimeProjection {
     if (eventKey) this.seen.add(eventKey);
     if (event.cursor !== undefined) this.value.cursor = event.cursor;
     const data = event.data;
-    if (event.type === 'assistant.delta') {
+    if (event.type === 'model.changed') {
+      const session = normalizeSession({ ...this.value.session, ...record(data.session) });
+      if (session?.id === this.session && (session.modelRevision ?? 0) >= (this.value.session?.modelRevision ?? 0)) this.value = { ...this.value, session };
+    } else if (event.type === 'assistant.delta') {
       const id = text(data.message_id ?? data.id);
       if (!id) throw new Error('DSH delta missing message id');
       const messages = [...this.value.messages];
@@ -226,7 +229,8 @@ export function subscribeRuntime(read: FetchJSON, profile: string, session: stri
   };
   const resume = () => { if (!document.hidden && !disposed) { clearTimeout(timer); void connect(); } };
   window.addEventListener('online', resume);
+  window.addEventListener('focus', resume);
   document.addEventListener('visibilitychange', resume);
   void connect();
-  return () => { disposed = true; generation++; clearTimeout(timer); controller?.abort(); window.removeEventListener('online', resume); document.removeEventListener('visibilitychange', resume); };
+  return () => { disposed = true; generation++; clearTimeout(timer); controller?.abort(); window.removeEventListener('online', resume); window.removeEventListener('focus', resume); document.removeEventListener('visibilitychange', resume); };
 }

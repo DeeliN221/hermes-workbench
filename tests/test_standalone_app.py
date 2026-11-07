@@ -96,6 +96,27 @@ def test_persistence_and_store_user_isolation(tmp_path):
     assert app2.state.store.session_context('local-owner', 'default', sid)['project_id'] == project['id']
 
 
+def test_session_model_selection_is_shared_before_send_and_profile_defaults_do_not_replace_it(tmp_path):
+    app, first, fixture = setup(tmp_path)
+    login(app, first)
+    a = first.post('/api/runtime/sessions', json={'model': 'protocol-fixture'}).json()['id']
+    b = first.post('/api/runtime/sessions', json={'model': 'other-model'}).json()['id']
+    second = TestClient(app)
+    login(app, second)
+    saved = first.post(f'/api/runtime/sessions/{a}/model', json={'model': 'selected-model', 'reasoning_effort': 'high'})
+    assert saved.status_code == 200
+    assert saved.json()['model_revision'] == 1
+    assert not fixture.state.sessions[a]['messages']
+    assert second.get(f'/api/runtime/sessions/{a}/snapshot').json()['session']['model'] == 'selected-model'
+    rows = second.get('/api/runtime/sessions').json()
+    assert next(row for row in rows if row['id'] == a)['model_revision'] == 1
+    assert next(row for row in rows if row['id'] == b)['model'] == 'other-model'
+    assert first.put('/api/config', json={'model': 'different-default'}).status_code == 200
+    assert second.get(f'/api/runtime/sessions/{a}/snapshot').json()['session']['model'] == 'selected-model'
+    other = first.post('/api/profiles', json={'name': 'Other'}).json()['name']
+    assert second.post(f'/api/runtime/sessions/{a}/model?profile_id={other}', json={'model': 'wrong-scope'}).status_code == 404
+
+
 def test_create_send_stream_refresh_cancel_interactions(tmp_path):
     app, client, fixture = setup(tmp_path)
     login(app, client)

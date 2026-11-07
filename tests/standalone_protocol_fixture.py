@@ -31,7 +31,7 @@ def create_fixture():
 
     @app.get('/api/runtime/models')
     async def models():
-        return {'models': [{'id': 'protocol-fixture', 'label': 'Protocol fixture (not DSH)', 'is_default': True}]}
+        return getattr(app.state, 'model_catalog', {'models': [{'id': 'protocol-fixture', 'label': 'Protocol fixture (not DSH)', 'is_default': True}]})
 
     @app.get('/api/runtime/sessions')
     async def sessions(profile_id: str, project_id: str):
@@ -65,6 +65,8 @@ def create_fixture():
         if not isinstance(body.get('model'), str) or any(not isinstance(v, str) or not v for v in body.values()):
             raise HTTPException(422, 'Invalid model controls')
         session['session'].update(body)
+        session['session']['model_revision'] = session['session'].get('model_revision', 0) + 1
+        emit(session, 'model.changed', {'session': dict(session['session'])})
         return session['session']
 
     def get(ident):

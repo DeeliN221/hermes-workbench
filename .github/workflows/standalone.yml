@@ -36,6 +36,19 @@ jobs:
           pnpm build:standalone
       - name: Pure runtime contracts
         run: node --test dashboard/runtime/test/*.test.mjs
+      - name: Verify session model synchronization across browsers
+        env:
+          SHOT_DIR: test-results/session-model-sync
+        run: |
+          pnpm exec playwright install --with-deps chromium
+          node tests/browser/session-model-sync.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: session-model-sync-${{ github.sha }}
+          path: test-results/session-model-sync/
+          if-no-files-found: ignore
+          retention-days: 7
       - name: Pure app, service, package and supervision tests
         run: >-
           uv run --python 3.13 --no-project --with-requirements requirements-dev.txt
