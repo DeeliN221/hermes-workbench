@@ -5,6 +5,7 @@ import {stat} from 'node:fs/promises';
 import {setTimeout as delay} from 'node:timers/promises';
 import {workspaceReferences, referenceText} from './workspace-references.mjs';
 import {deliveryInput, deliveryReceipt} from './deliveries.mjs';
+import {DeliverySupervisor, supervisorInput, SUPERVISOR_REQUEST_PREFIX} from './delivery-supervisor.mjs';
 import {imageParts} from './images.mjs';
 import {normalizeContext, contextIdentity} from './context.mjs';
 import {Projection} from './projection.mjs';
@@ -28,6 +29,7 @@ export class Runtime extends EventEmitter {
     this.creations = new Map(); this.provisionOperations = new Map(); this.modelOperations = new Map();
     for (const meta of store.sessions.values()) if (meta.creation) this.creations.set(createKey(meta, meta.creation.request_id), meta);
     this.epoch = randomUUID(); this.monitors = new Map(); this.interactions = new Map(); this.operations = new Map(); this.closed = false;
+    this.supervisor = new DeliverySupervisor(this);
     this.remoteListener = (frame, generation) => this.remoteEvent(frame, generation);
     this.disconnectListener = generation => {
       for (const m of this.monitors.values()) {
@@ -47,7 +49,8 @@ export class Runtime extends EventEmitter {
     for (const meta of this.store.sessions.values()) this.startMonitor(meta);
     // In-flight intent replays use DSH's native durable/queued requestId deduplication.
     this.recovery = Promise.allSettled([...this.store.sessions.values()].flatMap(meta =>
-      Object.entries(meta.requests ?? {}).filter(([, r]) => r.input).map(([id, r]) => this.submit(meta, id, r.input))));
+      Object.entries(meta.requests ?? {}).filter(([, r]) => r.input && !r.delivery_id).map(([id, r]) => this.submit(meta, id, r.input))));
+    this.supervisor.start();
   }
   async models() {
     const catalog = await this.peer.call('modelCatalog');
@@ -268,8 +271,13 @@ export class Runtime extends EventEmitter {
             m.active = true; this.settle(m);
             this.publish(meta.id, {type: 'snapshot', cursor: frame.cursor, data: this.currentSnapshot(m), generation});
           } else if (m.active && frame.type === 'event') {
-            for (const event of m.projection.durable(frame.event)) this.publish(meta.id, {...event,
-              ...(event.type==='message.committed'?{data:this.decorateMessage(meta,event.data)}:{}),generation});
+            for (const event of m.projection.durable(frame.event)) {
+              const data=event.type==='message.committed'?this.decorateMessage(meta,event.data):event.data;
+              // Preserve the native cursor without exposing the internal prompt
+              // as if the user had typed it.
+              this.publish(meta.id, data ? {...event,data,generation}
+                : {type:'state',cursor:event.cursor,native_sequence:event.native_sequence,data:{},generation});
+            }
           } else if (m.active && frame.type === 'assistant-stream') {
             for (const event of m.projection.live(frame.frame, generation)) this.publish(meta.id, {...event, generation});
           }
@@ -293,8 +301,8 @@ export class Runtime extends EventEmitter {
       ...(!this.peer.connected || !m.active ? {status: 'disconnected'}
         : state?.running && !['error', 'cancelled'].includes(m.projection.status) ? {status: 'running'} : {})});
     const meta=this.get(m.id);
-    snapshot.messages=snapshot.messages.map(message=>this.decorateMessage(meta,message));
-    snapshot.inbox=snapshot.inbox.map(item=>({...item,...(meta.requests[item.rpcId]?.attachments?.length?{attachments:meta.requests[item.rpcId].attachments}:{})}));
+    snapshot.messages=snapshot.messages.map(message=>this.decorateMessage(meta,message)).filter(Boolean);
+    snapshot.inbox=snapshot.inbox.filter(item=>!meta.requests[item.rpcId]?.delivery_id).map(item=>({...item,...(meta.requests[item.rpcId]?.attachments?.length?{attachments:meta.requests[item.rpcId].attachments}:{})}));
     snapshot.deliveries=(meta.deliveries??[]).map(({hash,...record})=>({...record,delivery_id:record.id,durable:true}));
     return snapshot;
   }
@@ -307,6 +315,7 @@ export class Runtime extends EventEmitter {
   publish(id, event) { this.emit('event', {...event, session_id: id,
     connection_generation: `${this.epoch}:${event.generation ?? this.peer.generation}`}); }
   decorateMessage(meta,message) {
+    if(meta.requests[message.request_id]?.delivery_id)return;
     const refs=meta.requests[message.request_id]?.attachments;
     return refs?.length?{...message,attachments:[...(message.attachments??[]),...refs]}:message;
   }
@@ -331,6 +340,7 @@ export class Runtime extends EventEmitter {
     if (input.request_id && input.client_request_id && input.request_id !== input.client_request_id)
       throw new RuntimeError(400, 'runtime/request-alias-conflict', 'Request identity aliases disagree');
     const requestId = input.request_id ?? input.client_request_id ?? randomUUID(); nonempty(requestId, 'request_id', 200);
+    if(requestId.startsWith(SUPERVISOR_REQUEST_PREFIX))throw new RuntimeError(400,'runtime/reserved-request-id','Reserved supervisor request identity');
     const hash = fingerprint(normalized); const existing = Object.hasOwn(meta.requests,requestId)?meta.requests[requestId]:undefined;
     if (existing && existing.hash !== hash) throw new RuntimeError(409, 'runtime/request-conflict', 'request_id already has different content');
     if (!existing) {
@@ -410,8 +420,15 @@ export class Runtime extends EventEmitter {
       throw new RuntimeError(409,'runtime/delivery-conflict','Delivery key already has a different payload or epoch/attempt');
     const normalized=deliveryInput(input);const hash=fingerprint(canonical(normalized));
     const record={...normalized,id:'delivery-'+fingerprint([id,normalized.idempotency_key]),hash,created_at:new Date().toISOString()};
-    const result=await this.store.commitDelivery(id,record);
+    let request;
+    if(normalized.wake_supervisor){
+      record.supervisor={request_id:SUPERVISOR_REQUEST_PREFIX+record.id,status:'pending'};
+      const input=supervisorInput(record);
+      request={hash:fingerprint(input),input,status:'intended',durable:false,delivery_id:record.id};
+    }
+    const result=await this.store.commitDelivery(id,record,request);
     if(result.created){const {hash,...value}=result.record;this.publish(id,{type:'delivery.received',data:{delivery:{...value,delivery_id:value.id,durable:true}}});}
+    if(result.record.supervisor)void this.supervisor.poll();
     return deliveryReceipt(result.record,id);
   }
   async cancel(id, scope) {
@@ -492,9 +509,11 @@ export class Runtime extends EventEmitter {
   }
   async close() {
     this.closed = true;
+    this.supervisor.closed = true; clearInterval(this.supervisor.timer);
     for (const m of this.monitors.values()) m.control?.abort();
     this.peer.off('remote-event', this.remoteListener); this.peer.off('disconnected', this.disconnectListener);
     await this.peer.close();
+    await this.supervisor.close();
     await Promise.allSettled([...this.monitors.values()].map(m => m.task));
     await this.recovery; await Promise.allSettled([...this.operations.values(), ...this.provisionOperations.values(), ...this.modelOperations.values()]);
     await this.store.close();

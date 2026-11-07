@@ -1,7 +1,9 @@
 import {RuntimeError, nonempty} from './errors.mjs';
 export function deliveryInput(input) {
-  if (Object.keys(input).some(k=>!['idempotency_key','task_id','attempt_id','kind','content','metadata','source','epoch'].includes(k)))
+  if (Object.keys(input).some(k=>!['idempotency_key','task_id','attempt_id','kind','content','metadata','source','epoch','wake_supervisor'].includes(k)))
     throw new RuntimeError(400,'runtime/invalid-delivery','Unknown delivery field');
+  if(input.wake_supervisor!==undefined&&typeof input.wake_supervisor!=='boolean')
+    throw new RuntimeError(400,'runtime/invalid-delivery','wake_supervisor must be a boolean');
   if(input.source!=='fleet'||!Number.isSafeInteger(input.epoch)||input.epoch<1)
     throw new RuntimeError(400,'runtime/invalid-delivery-source','Delivery requires source fleet and an integer epoch >= 1');
   for(const key of ['idempotency_key','task_id','attempt_id'])nonempty(input[key],key,200);
@@ -24,6 +26,6 @@ export function deliveryInput(input) {
   }
   inspect(metadata);
   if(Buffer.byteLength(JSON.stringify(metadata))>16384)throw new RuntimeError(413,'runtime/delivery-metadata-too-large','metadata exceeds 16 KiB');
-  return {source:input.source,epoch:input.epoch,idempotency_key:input.idempotency_key,task_id:input.task_id,attempt_id:input.attempt_id,kind:input.kind,content:input.content,metadata};
+  return {source:input.source,epoch:input.epoch,idempotency_key:input.idempotency_key,task_id:input.task_id,attempt_id:input.attempt_id,kind:input.kind,content:input.content,metadata,...(input.wake_supervisor?{wake_supervisor:true}:{})};
 }
 export function deliveryReceipt(record,sessionId){return {delivery_id:record.id,session_id:sessionId,idempotency_key:record.idempotency_key,source:record.source,epoch:record.epoch,task_id:record.task_id,attempt_id:record.attempt_id,accepted:true,durable:true,status:'persisted'};}

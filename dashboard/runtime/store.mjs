@@ -37,7 +37,7 @@ export class Store {
     const operation=this.writes.then(work);this.writes=operation.catch(()=>{});return operation;
   }
   save() { return this.enqueue(()=>this.writeSnapshot(this.snapshot())); }
-  commitDelivery(id,record) {
+  commitDelivery(id,record,request) {
     return this.enqueue(async()=>{
       const meta=this.sessions.get(id);const existing=(meta.deliveries??[]).find(x=>x.idempotency_key===record.idempotency_key);
       if(existing){
@@ -46,9 +46,27 @@ export class Store {
       }
       const snapshot=this.snapshot();const target=snapshot.sessions.find(x=>x.id===id);
       target.deliveries=[...(target.deliveries??[]),record];
+      if(request){
+        if(Object.hasOwn(target.requests,record.supervisor.request_id))throw new RuntimeError(409,'runtime/request-conflict','Supervisor request identity already exists');
+        target.requests[record.supervisor.request_id]=request;
+      }
       await this.writeSnapshot(snapshot);
       // Publish only after both the file and directory durability barriers.
-      meta.deliveries=target.deliveries;return {record,created:true};
+      meta.deliveries=target.deliveries;
+      if(request)meta.requests[record.supervisor.request_id]=request;
+      return {record,created:true};
+    });
+  }
+  updateSupervisor(id,deliveryId,supervisor) {
+    return this.enqueue(async()=>{
+      const meta=this.sessions.get(id);
+      const snapshot=this.snapshot();const target=snapshot.sessions.find(x=>x.id===id);
+      const record=target.deliveries.find(x=>x.id===deliveryId);
+      if(JSON.stringify(record.supervisor)===JSON.stringify(supervisor))return;
+      record.supervisor=supervisor;
+      await this.writeSnapshot(snapshot);
+      meta.deliveries=target.deliveries;
+      return record;
     });
   }
   async close() {

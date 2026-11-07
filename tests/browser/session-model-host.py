@@ -49,7 +49,29 @@ app = create_app(home=args.state / 'host', workspace_root=args.state / 'workspac
 async def fixture_controls(request, call_next):
     if request.url.path == '/__fixture/control':
         if request.method == 'POST':
-            control.update(await request.json())
+            payload = await request.json()
+            if 'delivery' in payload:
+                # UI-only evidence: emit the neutral protocol, never claim that
+                # this fixture executed a model. Native probes cover execution.
+                session = runtime.state.sessions[payload['session_id']]
+                delivery = payload['delivery']
+                rows = session.setdefault('deliveries', [])
+                existing = next((r for r in rows if r['delivery_id'] == delivery['delivery_id']), None)
+                kind = 'delivery.updated' if existing else 'delivery.received'
+                if existing:
+                    existing.update(delivery)
+                else:
+                    rows.append(delivery)
+                def emit(kind, data):
+                    sequence = len(session['events']) + 1
+                    session['events'].append({'type': kind, 'session_id': payload['session_id'], 'sequence': sequence, 'data': data})
+                emit(kind, {'delivery': delivery})
+                if payload.get('reply'):
+                    message = {'id': 'supervisor-reply', 'role': 'assistant', 'content': payload['reply']}
+                    session['messages'].append(message)
+                    emit('message.committed', message)
+            else:
+                control.update(payload)
         return JSONResponse(control)
     if args.assets and not request.url.path.startswith('/api/'):
         path = (args.assets / request.url.path.lstrip('/')).resolve()

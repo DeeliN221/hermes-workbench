@@ -66,6 +66,7 @@ async function sse(req, res, runtime, id, scope, url) {
     for (const event of buffered) {
       if (Number.isInteger(event.cursor) && event.cursor > snapshot.cursor) write(event);
       else if(event.type==='delivery.received'&&!snapshot.deliveries.some(x=>x.id===event.data.delivery.id))write(event);
+      else if(event.type==='delivery.updated')write(event);
     }
     heartbeat = setInterval(() => { if (!closed) res.write(': heartbeat\n\n'); }, 15000);
     heartbeat.unref();
