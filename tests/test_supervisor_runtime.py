@@ -122,7 +122,7 @@ class SupervisorRuntimeContract(unittest.TestCase):
                 self.wait_for(lambda: self.bridge.store.session(*self.identity)['status'] == 'completed')
                 self.assertEqual(len(self.runtime.starts()), 1)
                 self.assertEqual(self.runtime.starts()[0]['threadId'], 'thread')
-                self.assertIn('The report passed all checks.', self.runtime.starts()[0]['input'][0]['text'])
+                self.assertIn('The report passed all checks.', str(self.runtime.starts()[0]['input']))
                 with client.websocket_connect(
                     '/api/plugins/workbench/codex/events?profile=default&session_id=supervisor',
                     headers=self.headers,

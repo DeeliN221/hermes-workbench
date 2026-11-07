@@ -64,7 +64,7 @@ class FleetCallbackContract(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(await self.consumer.poll(), 1)
         self.assertEqual(await self.inbox.drain(), {'accepted': 1})
         self.assertEqual(self.peer.starts()[0]['threadId'], 'thread')
-        self.assertIn('The report passed all checks.', self.peer.starts()[0]['input'][0]['text'])
+        self.assertIn('The report passed all checks.', str(self.peer.starts()[0]['input']))
         await self.peer.finish('thread', 'The report is ready; all checks passed.')
         history = await self.bridge.history(*self.identity, 0, 100)
         self.assertEqual(history['turns'][0]['items'][-1]['text'], 'The report is ready; all checks passed.')

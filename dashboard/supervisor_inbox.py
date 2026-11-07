@@ -262,7 +262,10 @@ class SupervisorInbox:
                 self._update(key, row["status"], error=row["last_error"])
                 return "busy"
             try:
-                result = await self.bridge._submit_once(*identity, {"clientRequestId": request_id, "text": row["text"]})
+                result = await self.bridge._submit_once(*identity, {
+                    "clientRequestId": request_id, "text": "Automatic task update.",
+                    "_supervisorContext": row["text"],
+                })
             except Exception as exc:
                 # A failure before the bridge recorded a request can retry.
                 # Once the bridge has a request, its acceptance is authoritative.

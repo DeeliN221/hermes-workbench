@@ -117,6 +117,7 @@ class SupervisorInboxContract(unittest.IsolatedAsyncioTestCase):
         await self.peer.finish('thread')
         history = await self.bridge.history(*self.identity, 0, 100)
         self.assertEqual(history['turns'][0]['items'][-1]['text'], 'The task is complete; the verified result is ready.')
+        self.assertEqual(history['turns'][0]['items'][0]['content'], [{'type': 'text', 'text': 'Automatic task update.'}])
         self.assertEqual(self.bridge.store.list_sessions('qa', 'default', 10, 0)[0]['unread'], True)
         self.inbox.enqueue('task:event-1', self.identity, 'A delegated task completed. Verify the result and notify the user.')
         self.assertEqual(await self.inbox.drain(), {'delivered': 1})
