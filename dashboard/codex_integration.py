@@ -37,6 +37,44 @@ class IntegratedCodexBridge(CodexBridge):
         """Start the explicitly enabled outbox consumer after ASGI startup."""
         if self.review_enabled:
             self.review_task = asyncio.create_task(self._review_loop())
+        from supervisor_inbox import SupervisorInbox
+        from supervisor_fleet import FleetSupervisor
+        from supervisor_native import NativeSupervisor
+        self.supervisor_stop = asyncio.Event()
+        self.supervisor_inbox = SupervisorInbox(self)
+        self.supervisor_native = NativeSupervisor(self, self.supervisor_inbox)
+        self.supervisor_fleet = FleetSupervisor(self, self.supervisor_inbox)
+        actions = [("native", self.supervisor_native.poll), ("inbox", self.supervisor_inbox.drain)]
+        if os.environ.get('FLEET_TOKEN') or Path(os.environ.get('FLEET_TOKEN_FILE', '/opt/data/.fleet-token')).is_file():
+            actions.append(("fleet", self.supervisor_fleet.poll))
+        self.supervisor_tasks = [asyncio.create_task(self._supervisor_loop(name, action)) for name, action in actions]
+
+    async def _supervisor_loop(self, name, action) -> None:
+        """Keep collecting and delivering results even with no browser or chat turn."""
+        while not self.supervisor_stop.is_set():
+            try:
+                await action()
+            except Exception as exc:
+                logger.warning("Supervisor callback %s failed: %s", name, type(exc).__name__)
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(self.supervisor_stop.wait(), timeout=5)
+
+    def _with_supervisor_receipts(self, user, profile, session_id, result):
+        inbox = getattr(self, 'supervisor_inbox', None)
+        if inbox is None:
+            return result
+        turns = list(result.get('turns') or [])
+        known = {turn.get('id') for turn in turns}
+        receipts = [turn for turn in inbox.receipts((user, profile, session_id)) if turn['id'] not in known]
+        return {**result, 'turns': turns + receipts} if receipts else result
+
+    async def history(self, user, profile, session_id, after, limit, **kwargs):
+        result = await super().history(user, profile, session_id, after, limit, **kwargs)
+        return self._with_supervisor_receipts(user, profile, session_id, result)
+
+    async def history_preview(self, user, profile, session_id, limit=20, **kwargs):
+        result = await super().history_preview(user, profile, session_id, limit, **kwargs)
+        return self._with_supervisor_receipts(user, profile, session_id, result)
 
     async def _review_loop(self) -> None:
         """Retry durable pending reviews without requiring another user message."""
@@ -88,6 +126,11 @@ class IntegratedCodexBridge(CodexBridge):
 
     async def close(self) -> None:
         """Finish an owned review subprocess before releasing its session database."""
+        if hasattr(self, 'supervisor_stop'):
+            self.supervisor_stop.set()
+            for task in self.supervisor_tasks:
+                task.cancel()
+            await asyncio.gather(*self.supervisor_tasks, return_exceptions=True)
         self.review_stop.set()
         if self.review_task is not None:
             await self.review_task

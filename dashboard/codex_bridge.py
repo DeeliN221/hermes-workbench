@@ -2651,6 +2651,12 @@ class CodexBridge:
         # Resolve on every new submission, including existing threads. Persist
         # the snapshot so retries keep the original request's execution mode.
         payload["_executionContext"] = mode_context(await asyncio.to_thread(current_mode, user, profile))
+        # Only internal supervisor submissions carry this field (it is absent
+        # from the HTTP submission schema). Keep callback instructions and raw
+        # evidence out of the user's authored-message transcript.
+        supervisor_context = values.get("_supervisorContext")
+        if isinstance(supervisor_context, str) and supervisor_context:
+            payload["_executionContext"]["content"].append({"type": "text", "text": supervisor_context})
         if attachment_input:
             payload["_attachmentContext"] = {"role": "user", "hidden": True, "content": attachment_input}
             payload["_attachments"] = self.attachments.previews(
