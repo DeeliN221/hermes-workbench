@@ -24,7 +24,7 @@ spec.loader.exec_module(module)
 runtime = module.create_fixture()
 runtime.state.model_catalog = {'models': [
     {'id': ident, 'name': name, 'provider': 'fixture-provider', 'is_default': ident == 'model-alpha',
-     'reasoning': {'efforts': [{'id': 'low'}, {'id': 'high'}]}}
+     'reasoning': {'efforts': [] if ident == 'model-gamma' else [{'id': 'low'}, {'id': 'high'}]}}
     for ident, name in [('model-alpha', 'Model Alpha'), ('model-beta', 'Model Beta'), ('model-gamma', 'Model Gamma')]
 ], 'default': {'model': 'model-alpha', 'provider': 'fixture-provider'}}
 control = {'fail': False, 'writes': 0}

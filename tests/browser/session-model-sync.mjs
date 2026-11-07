@@ -176,7 +176,9 @@ try {
     const composer = pane(draft).locator('.codex-composer [contenteditable="true"], .codex-composer textarea').first();
     await composer.fill('Remember the model chosen before creating this conversation');
     await pane(draft).getByRole('button', { name: 'Send', exact: true }).click();
-    const newSession = await (await created).json();
+    const creationResponse = await created;
+    assert.equal(Object.hasOwn(creationResponse.request().postDataJSON(), 'reasoning_effort'), false);
+    const newSession = await creationResponse.json();
     assert.equal(newSession.model, 'model-gamma');
     await expect.poll(() => model(newSession.id)).toBe('model-gamma');
     await expect(summary(draft)).toContainText('Model Gamma');

@@ -11217,7 +11217,7 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
               try {
                 sc = await KL(i.fetchJSON, M, {
                   model: Bt || tf?.id,
-                  effort: Fi,
+                  effort: standalone && !tf?.efforts.length ? undefined : Fi,
                   serviceTier: pD,
                   fast: _n,
                   cwd: St?.path,
