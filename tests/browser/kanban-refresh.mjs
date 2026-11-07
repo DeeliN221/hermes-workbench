@@ -93,12 +93,15 @@ try {
   page.on("response", async response => {
     if (response.url().endsWith("/tasks/sync") && response.ok()) payloads.push(await response.json());
   });
-  await page.clock.install();
+  // Freeze before navigation: sampling Date.now() after hydration and passing it
+  // back to pauseAt races the running clock and can target an instant in the past.
+  const frozenTime = new Date();
+  await page.clock.install({ time: new Date(frozenTime.getTime() - 1000) });
+  await page.clock.pauseAt(frozenTime);
   await page.goto(host.origin + "/kanban");
   await page.locator('.tower-board [data-task-id="review-task"]').waitFor();
   // Allow network-backed hydration to settle in the legacy baseline too.
   await new Promise(resolve => setTimeout(resolve, 300));
-  await page.clock.pauseAt(await page.evaluate(() => Date.now()));
   await page.addStyleTag({content: '#preview-banner { display: none }'});
   assert.equal(new URL(page.url()).pathname, "/kanban");
   assert.ok(await page.title());
