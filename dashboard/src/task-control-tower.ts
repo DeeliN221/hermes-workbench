@@ -1,3 +1,5 @@
+import { standalone } from './runtime-mode';
+import { createStandaloneTaskContext, fleetPrompt } from './standalone-task-context';
 import { uiText as tr } from "./ui-locale";
 import type { FetchJSON } from "./workbench-api";
 import {
@@ -135,6 +137,8 @@ export function createTaskControlTower(
       h("p", { className: "tower-muted" }, tr("请通过执行会话核对，或要求执行者补充后再确认。", "Check the execution session or ask the worker to add delivery details before approving.")));
   }
 
+  const StandaloneTaskContext = standalone ? createStandaloneTaskContext(sdk) : null;
+
   function SessionLinks({ task, profile, navigate }: { task: Task; profile: string; navigate: (path: string, profile: string) => void }) {
     const entries = sessionEntries(task);
     type Target = { state: string; id?: string; profile?: string; kind?: string; remoteUrl?: string };
@@ -153,6 +157,7 @@ export function createTaskControlTower(
       }));
       return () => { disposed = true; };
     }, [signature]);
+    if (standalone && task.origin?.runtime === "dsh") return h(StandaloneTaskContext, { task, navigate });
     if (!entries.length) return h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")), h("p", { className: "tower-muted" }, tr("未记录执行会话", "No execution session recorded")));
     return h("section", { className: "tower-sessions" }, h("h3", null, tr("会话", "Sessions")),
       ...entries.map(entry => {
@@ -172,7 +177,7 @@ export function createTaskControlTower(
   function SpecDetails({ task }: { task: Task }) {
     const [raw, setRaw] = useState(false);
     const markdown = useRef(null as HTMLElement | null);
-    const source = specMarkdown(task);
+    const source = standalone ? fleetPrompt(specMarkdown(task)) : specMarkdown(task);
     useEffect(() => {
       const element = markdown.current;
       if (!element || raw) return;
@@ -825,7 +830,7 @@ export function createTaskControlTower(
                       h("h3", null, tr("摘要", "Summary")),
                       h("p", null, t.review_actions ? hasReviewMaterial ? tr("核对交付后确认，或提交修改意见", "Review the delivery, then approve or request changes") : tr("暂无交付物/阶段报告，请先核对执行会话或要求补充。", "No final deliverable or stage report. Check the execution session or request details before approving.") : t.lifecycle_actions ? tr("任务状态由执行者推进，可使用下方可用操作", "The worker advances this task. Use the available actions below.") : t.read_only ? tr("只读连接：请在 Fleet 中操作", "Read-only connection: use Fleet to make changes") : nextAction(t)),
 
-                      t.spec_json?.summary ? h("p", { style: { whiteSpace: "pre-wrap" } }, t.spec_json.summary) : null,
+                      t.spec_json?.summary ? h("p", { style: { whiteSpace: "pre-wrap" } }, standalone ? fleetPrompt(t.spec_json.summary) : t.spec_json.summary) : null,
                       t.review_actions ? h("section", { className: "tower-review", "aria-busy": busy },
                         h("div", { className: "tower-move-actions" },
                           btn(tr("确认", "Approve"), () => void review(t, "approve"), { disabled: busy, className: "tower-primary" }),

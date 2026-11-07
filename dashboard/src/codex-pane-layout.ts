@@ -1,3 +1,4 @@
+import { standalone } from './runtime-mode';
 /**
  * Persist and restore the Codex multi-pane layout owned by one profile.
  *
@@ -42,7 +43,8 @@ const EMPTY_TARGET: PaneTarget = { sessionId: '', hermesSessionId: '' };
 
 /** Storage key scoped to the workspace owner; individual panes may name another profile. */
 export function paneLayoutStorageKey(profile: string): string {
-  return `${STORAGE_PREFIX}${profile || 'default'}`;
+  const user = standalone && typeof window !== 'undefined' ? (window as unknown as { __WORKBENCH_USER_ID__?: string }).__WORKBENCH_USER_ID__ || '' : '';
+  return `${STORAGE_PREFIX}${user ? encodeURIComponent(user) + ':' : ''}${profile || 'default'}`;
 }
 
 /** Browser storage can be unavailable (private mode, blocked cookies); never throw. */

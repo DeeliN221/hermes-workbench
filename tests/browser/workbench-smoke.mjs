@@ -190,7 +190,8 @@ try {
   assert.ok(projectList.scrollWidth <= projectList.clientWidth, 'The project list must not scroll horizontally');
   assert.equal(await panePage.locator('.project-navigation-resizer').count(), 1, 'Each split has one draggable separator');
   await restorePaneNavigation();
-  assert.deepEqual(await panePage.locator('.codex-center-header').first().evaluate(node => [...node.children].map(child => child.className)), ['codex-center-title', 'codex-icon-button codex-pane-close']);
+  assert.deepEqual(await panePage.locator('.codex-center-header').first().evaluate(node => [...node.children].map(child => child.className)), ['codex-center-title']);
+  assert.equal(await panePage.locator('.codex-pane-close').count(), 0, 'A single conversation has nothing to close');
   assert.equal(await panePage.locator('.codex-pane-color-menu').count(), 0);
   await panePage.evaluate(() => {
     window.__copiedSessionId = '';
@@ -222,6 +223,8 @@ try {
     && document.querySelectorAll('.codex-session-color-bar').length === 0);
   assert.equal(await panePage.locator('.codex-session-color-bar').count(), 0,
     'Closing the split pane must hide session accent bars');
+  assert.equal(await panePage.locator('.codex-pane-close').count(), 0,
+    'The remaining single pane must not show an inactive close control');
   await panePage.evaluate(() => {
     const url = new URL(location.href);
     url.searchParams.set('profile', 'writer');
@@ -285,6 +288,7 @@ try {
   const messageNavigatorPage = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const messageNavigatorErrors = [];
   messageNavigatorPage.on('pageerror', error => messageNavigatorErrors.push(error.stack || error.message));
+  await messageNavigatorPage.request.put(host.origin + '/api/plugins/workbench/chat-display-preferences?profile=default', { data: { generationSpeedEnabled: false, userMessageNavigatorEnabled: true } });
   await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
   await messageNavigatorPage.evaluate(() => {
@@ -326,16 +330,18 @@ try {
   await messageNavigatorPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
   await messageNavigatorPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
   const navigatorToggle = messageNavigatorPage.locator('[data-testid="user-message-ball-toggle"]');
-  assert.equal(await navigatorToggle.getAttribute('aria-checked'), 'true');
+  await messageNavigatorPage.waitForFunction(() => document.querySelector('[data-testid="user-message-ball-toggle"]')?.getAttribute('aria-checked') === 'true');
   await navigatorToggle.click();
-  assert.equal(await navigatorToggle.getAttribute('aria-checked'), 'false');
-  assert.equal(await messageNavigatorPage.evaluate(() => localStorage.getItem('workbench.user-message-ball.v1')), 'false');
+  await messageNavigatorPage.waitForFunction(() => document.querySelector('[data-testid="user-message-ball-toggle"]')?.getAttribute('aria-checked') === 'false');
+  assert.equal((await (await messageNavigatorPage.request.get(host.origin + '/api/plugins/workbench/chat-display-preferences?profile=default')).json()).userMessageNavigatorEnabled, false);
   await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
   assert.equal(await messageNavigatorPage.locator('[data-workbench-user-message-ball]').isVisible(), false, 'The setting must hide the navigator');
   await messageNavigatorPage.goto(host.origin + '/config?workbench=display&profile=default', { waitUntil: 'domcontentloaded' });
   await messageNavigatorPage.locator('[data-testid="chat-display-settings"]').waitFor({ state: 'visible', timeout: 5000 });
+  await messageNavigatorPage.waitForFunction(() => document.querySelector('[data-testid="user-message-ball-toggle"]')?.getAttribute('aria-checked') === 'false');
   await messageNavigatorPage.locator('[data-testid="user-message-ball-toggle"]').click();
+  await messageNavigatorPage.waitForFunction(() => document.querySelector('[data-testid="user-message-ball-toggle"]')?.getAttribute('aria-checked') === 'true');
   await messageNavigatorPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
   await messageNavigatorPage.locator('[data-workbench-user-message-ball]').waitFor({ state: 'visible', timeout: 5000 });
@@ -345,7 +351,8 @@ try {
   await messageNavigatorPage.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
   const mobileHeaderHeight = await messageNavigatorPage.locator('.codex-center-header').evaluate(node => node.getBoundingClientRect().height);
   assert.ok(mobileHeaderHeight <= 56, `The mobile chat header must stay compact; got ${mobileHeaderHeight}px`);
-  await messageNavigatorPage.locator('[data-workbench-user-message-ball]').waitFor({ state: 'visible', timeout: 5000 });
+  assert.equal(await messageNavigatorPage.locator('[data-workbench-user-message-ball]:visible').count(), 0);
+  await messageNavigatorPage.getByTestId('mobile-user-message-navigator').waitFor({ state: 'visible', timeout: 5000 });
   assert.deepEqual(messageNavigatorErrors, [], `Browser errors in the user message navigator:\n${messageNavigatorErrors.join('\n')}`);
   await messageNavigatorPage.close();
   const mobilePage = await browser.newPage({ viewport: { width: 390, height: 844 } });
@@ -473,7 +480,9 @@ try {
   ]);
   assert.equal(await detailPage.locator('[data-detail-mode="standard"]').getAttribute('aria-checked'), 'true');
   await detailPage.locator('[data-detail-mode="compact"]').click();
-  assert.match(await detailPage.locator('.workbench-chat-display-status').innerText(), /Compact saved/);
+  const detailStatus = detailPage.locator('.workbench-chat-display-status').filter({ hasText: 'Compact saved' });
+  await detailStatus.waitFor({ state: 'visible' });
+  assert.match(await detailStatus.innerText(), /Compact saved/);
 
   await detailPage.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   const detailGroup = detailPage.locator('.codex-tool-group').first();
