@@ -527,7 +527,7 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         payload = {'idempotency_key': idempotency_key, 'source': 'fleet',
                    'task_id': delivery['task_id'], 'attempt_id': delivery['attempt_id'],
                    'epoch': delivery['epoch'], 'kind': kind, 'content': content,
-                   'metadata': {'fleet_delivery_id': delivery['id']}}
+                   'metadata': {'fleet_delivery_id': delivery['id']}, 'wake_supervisor': True}
         receipt = await upstream('POST', f'sessions/{session_id}/deliveries', params=runtime_scope(ctx), body=payload)
         if receipt.get('session_id') != session_id or receipt.get('idempotency_key') != idempotency_key or receipt.get('durable') is not True or receipt.get('status') != 'persisted' or not receipt.get('delivery_id'):
             raise HTTPException(502, 'Notification is not durably persisted; Fleet ACK withheld')

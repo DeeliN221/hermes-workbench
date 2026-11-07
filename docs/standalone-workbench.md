@@ -28,8 +28,17 @@ the browser is closed.
 
 Fleet results enter the original DSH session as distinct persisted notifications,
 with source, task, attempt and epoch identities. The host acknowledges the Fleet
-outbox only after the bridge confirms durable notification storage. This does not
-submit a new model prompt. Scheduled foreground input uses a stable request ID
+outbox only after the bridge confirms durable notification storage and supervisor
+wake intent. The bridge queues a native DSH prompt in the same session, including
+when the browser is closed. A busy session finishes its current turn first.
+Native request IDs deduplicate retries and restarts; internal wake instructions
+are not displayed as user messages. A supervisor reply is confirmed only by the
+matching native turn completion with nonempty assistant output. Failed, cancelled
+or empty replies retain an explicit automatic receipt and the original task text;
+they do not silently re-execute the task. Only new verified deliveries opt in, so
+historical notifications are not replayed on upgrade.
+
+Scheduled foreground input uses a stable request ID
 and queries its durable receipt; HTTP acceptance or inference completion alone
 cannot acknowledge a scheduled submission. Unavailable capabilities remain
 visible errors, without synthetic success.
@@ -44,6 +53,11 @@ new DSH session.
 The isolated protocol fixture tests transport/reconnect/error behavior only.
 They are not real DSH or Fleet end-to-end evidence. Live validation must use the
 actual bridge and an explicitly authorized Fleet worker/workspace.
+
+`node dashboard/runtime/scripts/supervisor-probe.mjs --local-fake-inference` exercises the installed
+native DSH runtime with an isolated localhost inference fixture and no real
+provider credentials. It verifies protocol execution and recovery, not model
+quality or connectivity to a production Fleet worker.
 
 Fleet list responses that omit origin metadata are hydrated from authoritative
 task details before the domain ownership checks run. Unowned legacy records

@@ -29,9 +29,11 @@ export class Projection {
   constructor(session) {
     this.session = session; this.cursor = -1; this.rows = new Map(); this.status = 'idle';
     this.tools = new Map(); this.generation = 0; this.attempt = undefined; this.failedTurns = new Set(); this.requests = new Set();
+    this.requestTurns = new Map(); this.turnOutcomes = new Map(); this.activeTurn = undefined;
   }
   baseline(records, cursor, generation, assistantStream) {
     this.tools.clear(); this.rows.clear(); this.requests.clear(); this.failedTurns.clear(); this.status = 'idle'; this.cursor = -1;
+    this.requestTurns.clear(); this.turnOutcomes.clear(); this.activeTurn = undefined;
     this.generation = generation; this.attempt = undefined;
     for (const {event} of records) this.durable(event, false);
     this.cursor = cursor;
@@ -72,7 +74,7 @@ export class Projection {
       const previous = this.tools.get(tool.call_id);
       tool = {...previous, ...tool}; this.tools.set(tool.call_id, tool);
     }
-    if (event.type === 'turn/start') this.status = 'running';
+    if (event.type === 'turn/start') { this.status = 'running'; this.activeTurn = data.turn; }
     if (['assistant/message', 'assistant/attempt'].includes(event.type) && failureOf(data)) {
       this.failedTurns.add(data.turn); this.status = 'error';
       output.push({type: 'error', data: inferenceError(data)});
@@ -83,9 +85,19 @@ export class Projection {
         : ['cancelled', 'canceled', 'aborted', 'interrupted'].includes(kind) ? 'cancelled'
         : kind === 'completed' ? 'completed' : 'idle';
       if (this.status === 'error') output.push({type: 'error', data: inferenceError(data, 'dsh/turn-failed')});
+      this.turnOutcomes.set(data.turn, {...this.turnOutcomes.get(data.turn), turn: data.turn, ended: true, cursor: event.seq,
+        status: this.status === 'completed' ? 'completed' : this.status === 'cancelled' ? 'cancelled' : 'failed'});
+      if (this.activeTurn === data.turn) this.activeTurn = undefined;
     }
     const message = data.message ?? (event.type === 'user/message' ? data : undefined);
-    if (event.type === 'user/message' && message?.source?.rpcId) this.requests.add(message.source.rpcId);
+    if (event.type === 'user/message' && message?.source?.rpcId) {
+      this.requests.add(message.source.rpcId);
+      // Native user/message has no turn field. Only consumption after turn/start
+      // assigns it; inbox/spliced can queue a request during a different turn.
+      if (this.activeTurn !== undefined) this.requestTurns.set(message.source.rpcId, this.activeTurn);
+    }
+    if (event.type === 'assistant/message' && data.turn !== undefined && textOf(message?.content).trim() && !failureOf(data) && !data.interrupted)
+      this.turnOutcomes.set(data.turn, {...this.turnOutcomes.get(data.turn), message_id: message.id ?? `${this.session.id}:${event.seq}`});
     if (['user/message', 'assistant/message', 'tool/result'].includes(event.type) && message
       && (event.type !== 'user/message' || !message.source || ['user', 'user-question-reply'].includes(message.source.kind))) {
       const row = {seq: event.seq, message: {id: message.id ?? `${this.session.id}:${event.seq}`,
@@ -129,6 +141,10 @@ export class Projection {
       return [{type: 'state', attempt_id: a.id, data: {streaming: false, outcome: frame.outcome.kind}}];
     }
     return [];
+  }
+  requestOutcome(requestId) {
+    const turn = this.requestTurns.get(requestId);
+    return turn === undefined ? undefined : {turn, ...this.turnOutcomes.get(turn)};
   }
   snapshot({interactions = [], inbox = [], status} = {}) {
     return {session: this.session, messages: [...this.rows.values()].sort((a, b) => a.seq - b.seq).map(x => x.message),

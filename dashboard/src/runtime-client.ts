@@ -29,7 +29,8 @@ export function projectFleetNotification(value: Record<string, unknown>): ChatMe
   const id = text(value.delivery_id ?? value.id);
   if (value.source !== 'fleet' || !id || !value.task_id || !value.attempt_id || !Number.isInteger(value.epoch) || typeof value.content !== 'string') throw new Error('Invalid persisted Fleet notification');
   return { id: 'fleet-notification:' + id, role: 'notification', content: value.content,
-    delivery: { source: 'fleet', id, task_id: value.task_id, attempt_id: value.attempt_id, epoch: value.epoch, kind: value.kind },
+    delivery: { source: 'fleet', id, task_id: value.task_id, attempt_id: value.attempt_id, epoch: value.epoch, kind: value.kind,
+      supervisor: record(value.supervisor) },
     observedAt: typeof value.timestamp === 'number' ? value.timestamp : undefined };
 }
 export function projectSnapshot(snapshot: RuntimeSnapshot) {
@@ -92,9 +93,12 @@ export class RuntimeProjection {
     const eventKey = event.cursor === undefined ? '' : `${event.cursor}:${event.type}:${text(event.data.id ?? record(event.data.message).id ?? record(event.data.tool).call_id)}`;
     if (eventKey && this.seen.has(eventKey)) return this.value;
     if (event.sequence !== undefined && event.sequence <= this.sequence) return this.value;
-    if (event.type === 'delivery.received') {
+    if (event.type === 'delivery.received' || event.type === 'delivery.updated') {
       const message = projectFleetNotification(record(event.data.delivery));
-      this.value = { ...this.value, messages: [...this.value.messages.filter(row => row.id !== message.id), message] };
+      const messages = [...this.value.messages];
+      const index = messages.findIndex(row => row.id === message.id);
+      if (index < 0) messages.push(message); else messages[index] = message;
+      this.value = { ...this.value, messages };
       if (event.sequence !== undefined) this.sequence = event.sequence;
       if (eventKey) this.seen.add(eventKey);
       if (event.cursor !== undefined) this.value.cursor = event.cursor;

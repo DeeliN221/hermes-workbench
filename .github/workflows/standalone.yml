@@ -36,12 +36,27 @@ jobs:
           pnpm build:standalone
       - name: Pure runtime contracts
         run: node --test dashboard/runtime/test/*.test.mjs
+      - name: Native DSH supervisor callbacks with localhost inference only
+        run: |
+          mkdir -p test-results/dsh-supervisor
+          node dashboard/runtime/scripts/supervisor-probe.mjs --local-fake-inference | tee test-results/dsh-supervisor/native.json
       - name: Verify session model synchronization across browsers
         env:
           SHOT_DIR: test-results/session-model-sync
         run: |
           pnpm exec playwright install --with-deps chromium
           node tests/browser/session-model-sync.mjs
+      - name: Verify supervisor replies and fallback receipts in the browser
+        env:
+          SHOT_DIR: test-results/dsh-supervisor/browser
+        run: node tests/browser/dsh-supervisor.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: dsh-supervisor-${{ github.sha }}
+          path: test-results/dsh-supervisor/
+          if-no-files-found: ignore
+          retention-days: 7
       - uses: actions/upload-artifact@v7
         if: always()
         with:

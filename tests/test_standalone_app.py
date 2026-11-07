@@ -414,6 +414,7 @@ def test_durable_scheduled_receipt_and_fleet_notification_are_distinct_from_infe
         snapshot = client.get(f'/api/runtime/sessions/{sid}/snapshot').json()
         assert len(snapshot['deliveries']) == 1
         assert snapshot['deliveries'][0]['source'] == 'fleet'
+        assert snapshot['deliveries'][0]['wake_supervisor'] is True
         assert len(bridge.state.sessions[sid]['requests']) == 1
         assert not any(message['role'] == 'assistant' for message in snapshot['messages'])
         body_delivery = {**delivery, 'id': 'd2', 'payload': {'result': 'Actual worker result', 'evidence_json': 'internal details'}}

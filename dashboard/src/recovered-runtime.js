@@ -9616,7 +9616,11 @@ import { createProjectNavigation, PANE_DRAG_TYPE } from './project-navigation';
       W(i, "header", null, "Fleet task ", e.delivery.kind === "question" ? "question" : e.delivery.kind === "notice" ? "notice" : "result"),
       W(i, "a", { href: `/kanban?profile=${encodeURIComponent(currentProfile())}&task=${encodeURIComponent(e.delivery.task_id)}` }, e.delivery.task_id),
       W(i, Ki, { React: i, content: e.content, streaming: false }),
-      W(i, "small", null, `Attempt ${e.delivery.attempt_id} · epoch ${e.delivery.epoch}`));
+      W(i, "small", null, `Attempt ${e.delivery.attempt_id} · epoch ${e.delivery.epoch}`),
+      e.delivery.supervisor?.status && W(i, "small", { "data-supervisor-status": e.delivery.supervisor.status },
+        e.delivery.supervisor.status === "delivered" ? runtimeText("主管已汇报", "Supervisor replied")
+          : e.delivery.supervisor.fallback ? runtimeText("系统回执：主管暂未完成汇报，任务结果已保存在上方", "Automatic receipt: supervisor reply unavailable; the task update is saved above")
+          : runtimeText("等待主管汇报", "Waiting for supervisor reply")));
     if (e.role === "tool") {
       const t =
           e.result == null

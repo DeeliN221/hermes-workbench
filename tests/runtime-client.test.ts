@@ -149,6 +149,21 @@ it('keeps durable Fleet notifications separate from assistant replies and ongoin
   expect(restored.messages[0].id).toBe(projection.value?.messages[0].id);
 });
 
+it('updates supervisor receipts in place without retiring the active model attempt and restores failures after refresh', () => {
+  const projection = initialized();
+  const delivery = { delivery_id: 'delivery-1', source: 'fleet', task_id: 'task-1', attempt_id: 'worker-attempt', epoch: 2, kind: 'result', content: 'Actual background result', supervisor: { status: 'pending' } };
+  projection.apply(event('delivery.received', 1, { delivery }));
+  projection.apply(event('state', 2, { status: 'running' }, 'model-attempt'));
+  projection.apply(event('assistant.delta', 3, { message_id: 'answer', delta: 'Working' }, 'model-attempt'));
+  const failed = { ...delivery, supervisor: { status: 'failed', fallback: true } };
+  projection.apply(event('delivery.updated', 4, { delivery: failed }));
+  expect(projection.attempt).toBe('model-attempt');
+  expect(projection.value?.messages.map(message => message.role)).toEqual(['notification', 'assistant']);
+  expect(projection.value?.messages[0]).toMatchObject({ content: delivery.content, delivery: { supervisor: { status: 'failed', fallback: true } } });
+  const restored = projectSnapshot({ ...snapshot('idle'), deliveries: [failed] });
+  expect(restored.messages[0]).toEqual(projection.value?.messages[0]);
+});
+
 it('projects actual DSH questions into the existing form and replies with neutral selected/custom answers', () => {
   const questions = [{ id: 'choice', question: 'Choose', options: [{ label: 'Alpha' }, { label: 'Beta' }] }];
   expect(projectInteraction({ id: 'request', kind: 'question', questions })).toMatchObject({ kind: 'user-input', questions: [{ id: 'choice', question: 'Choose', isOther: true }] });
