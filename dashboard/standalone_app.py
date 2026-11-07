@@ -199,7 +199,7 @@ def create_app(*, home: Path | None = None, workspace_root: Path | None = None,
         return {**row, **row['settings'], 'workspaceId': row['id'], 'workspacePath': str((store.user_workspace(user) / row['relative_path']).resolve())}
 
     def session_view(ctx, row):
-        row = {k: value for k, value in row.items() if k in ('id', 'runtime', 'profile_id', 'project_id', 'title', 'status', 'created_at', 'updated_at', 'model', 'provider', 'reasoning_effort')}
+        row = {k: value for k, value in row.items() if k in ('id', 'runtime', 'profile_id', 'project_id', 'title', 'status', 'created_at', 'updated_at', 'model', 'provider', 'reasoning_effort', 'model_revision')}
         metadata = store.document(ctx['user_id'], ctx['profile_id'], 'session:' + row['id'])
         return {**row, 'groupId': ctx['project_id'], 'workspaceId': ctx['project_id'], 'workspacePath': ctx['workspace'], **metadata}
 

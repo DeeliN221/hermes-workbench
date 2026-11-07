@@ -19,7 +19,7 @@ export interface CodexSession {
   color: string;
   /** The user-supplied title, or null when the session still shows its derived default. */
   customTitle?: string | null;
-  model?: string; provider?: string; reasoningEffort?: string;
+  model?: string; provider?: string; reasoningEffort?: string; modelRevision?: number;
   /** 'user' = titled by hand, 'auto' = first-message title, null = neither yet. */
   titleSource?: 'user' | 'auto' | null;
 }
@@ -62,7 +62,7 @@ export function normalizeSession(value: unknown): CodexSession | null {
   const updatedRaw = row.updatedAt ?? row.updated_at ?? row.timestamp;
   const updatedAtEpoch = typeof updatedRaw === 'number' || typeof updatedRaw === 'string' && /^\d+(?:\.\d+)?$/.test(updatedRaw)
     ? Number(updatedRaw) * (Number(updatedRaw) < 1e12 ? 1000 : 1) : 0;
-  return { id, ...(row.model ? { model: text(row.model) } : {}), ...(row.provider ? { provider: text(row.provider) } : {}), ...(row.reasoning_effort ? { reasoningEffort: text(row.reasoning_effort) } : {}), threadId: text(row.threadId ?? row.thread_id) || undefined, title: text(row.title ?? row.name ?? row.summary, id),
+  return { id, ...(row.model ? { model: text(row.model) } : {}), ...(row.provider ? { provider: text(row.provider) } : {}), ...(row.reasoning_effort ? { reasoningEffort: text(row.reasoning_effort) } : {}), ...(Number.isSafeInteger(row.model_revision) ? { modelRevision: Number(row.model_revision) } : {}), threadId: text(row.threadId ?? row.thread_id) || undefined, title: text(row.title ?? row.name ?? row.summary, id),
     workspace: text(row.workspaceName ?? row.workspace_name, path.split('/').filter(Boolean).at(-1) || path || uiText('默认工作区', 'Default workspace')),
     workspaceId: text(row.workspaceId ?? row.workspace_id), workspacePath: path,
     favorite: row.favorite === true || row.favourited === true || row.isFavorite === true,
@@ -200,6 +200,15 @@ export async function loadCodexModels(read: FetchJSON, profile: string) {
 }
 export async function markCodexSessionRead(read: FetchJSON, profile: string, session: string, readSeq: number) {
   if (readSeq) await read(`${API}/session/read?${sessionQuery(profile, session)}`, json('POST', { profile, readSeq }));
+}
+/** A deliberate model choice is durable before another message is sent. */
+export async function updateRuntimeSessionModel(read: FetchJSON, profile: string, session: string, controls: { model: string; effort?: string }) {
+  const result = record(await read(scoped(sessionURL(profile, session) + '/model', profile), json('POST', {
+    model: controls.model, ...(controls.effort ? { reasoning_effort: controls.effort } : {}),
+  })));
+  const saved = normalizeSession(result.session ?? result);
+  if (!saved?.model || saved.id !== session) throw new Error('The runtime did not confirm the session model');
+  return saved;
 }
 export async function createCodexSession(read: FetchJSON, profile: string, options: SessionOptions) {
   if (standalone) {

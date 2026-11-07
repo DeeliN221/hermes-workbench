@@ -101,6 +101,26 @@ test('native model error does not change persisted or displayed selection',async
   const disk=JSON.parse(await readFile(join(f.directory,'metadata.json'),'utf8'));assert.equal(disk.sessions[0].reasoning_effort,'low');
 });
 
+test('a selected model is durable before a message and broadcasts a versioned session change',async t=>{
+  const f=await setup();const original=f.peer.call.bind(f.peer);
+  f.peer.call=async(method,input)=>{
+    const result=await original(method,input);
+    if(method==='modelCatalog')result.groups[0].models.push({...result.groups[0].models[0],id:'second-model'});
+    return result;
+  };
+  const a=await f.runtime.create({...input,request_id:'first'}),b=await f.runtime.create({...input,request_id:'second'});
+  const changes=[];f.runtime.on('event',event=>{if(event.type==='model.changed')changes.push(event);});
+  const selected=await f.runtime.selectModel(a.id,{model:'second-model',reasoning_effort:'high'});
+  assert.equal(selected.session.model,'second-model');assert.ok(selected.session.model_revision>0);
+  assert.equal(changes.at(-1).data.session.model,'second-model');
+  assert.equal((await f.runtime.snapshot(b.id)).session.model,'test-model');
+  assert.equal(f.peer.promptCalls,0);
+  const next=await reopen(f);t.after(async()=>{await next.runtime.close();await f.close();});
+  const restored=await next.runtime.snapshot(a.id);assert.equal(restored.session.model,'second-model');
+  assert.equal(restored.session.model_revision,selected.session.model_revision);
+  assert.equal((await next.runtime.snapshot(b.id)).session.model,'test-model');
+});
+
 test('native model selection reconciles a lost store acknowledgement on restart',async t=>{
   const f=await setup();const s=await f.runtime.create({...input,reasoning_effort:'low'});
   await f.peer.call('selectModel',{sessionId:s.id,provider:'local',model:'test-model',reasoningEffort:'high'});

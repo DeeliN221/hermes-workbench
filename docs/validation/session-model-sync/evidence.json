@@ -1,0 +1,13 @@
+{
+  "fixture": "Real standalone host, neutral protocol runtime fixture; no provider/model invocation",
+  "cases": [
+    "Selection saved before a message; second isolated context updates live; refresh preserves it",
+    "A late model catalog keeps the conversation model instead of restoring the profile default",
+    "Two conversations retain different models when navigating away and back",
+    "A late snapshot cannot overwrite a more recent saved selection",
+    "Rapid choices remain ordered while the first save acknowledgement is delayed",
+    "Failed save preserves the visible choice, exposes the error and prevents a message with the default model",
+    "A fresh browser context restores the server selection without sharing localStorage",
+    "A choice in a new unsaved draft does not change another session and is used for creation and the first message"
+  ]
+}
