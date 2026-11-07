@@ -34,7 +34,11 @@
     "stack:check": "python3 scripts/local-stack.py check",
     "stack:stop": "python3 scripts/local-stack.py stop",
     "test:browser:review": "node tests/browser/review-delivery-sessions.mjs",
-    "test:browser:home-layout": "node tests/browser/home-layout.mjs"
+    "test:browser:home-layout": "node tests/browser/home-layout.mjs",
+    "build:standalone": "vite build --config vite.standalone.config.ts",
+    "start:standalone": "uv run --no-project --with-requirements requirements-dev.txt python -m dashboard.standalone_app",
+    "release:standalone": "python3 scripts/package-standalone.py",
+    "start:standalone:supervised": "python3 scripts/start-standalone.py"
   },
   "dependencies": {
     "@codemirror/lang-cpp": "^6.0.3",
@@ -63,14 +67,14 @@
   "devDependencies": {
     "@fontsource/noto-sans-sc": "5.3.1",
     "@playwright/test": "^1.64.1",
-    "@types/node": "^26.6.5",
+    "@types/node": "^26.6.6",
     "happy-dom": "^21.0.4",
     "playwright": "1.64.1",
     "react": "18.3.1",
     "react-dom": "18.3.1",
     "typescript": "^7.0.2",
     "vite": "^8.3.5",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   },
   "repository": {
     "type": "git",

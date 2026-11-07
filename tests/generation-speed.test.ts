@@ -35,3 +35,13 @@ it('withholds rates from observed event gaps and legacy metrics', () => {
     expect(generationSpeedDetails(normalizeGenerationMetrics({ ...metrics, timingBasis }))).toContain('TPS is unavailable');
   }
 });
+
+it('displays response-time estimates including hidden reasoning and request latency', () => {
+  const value = normalizeGenerationMetrics({ ...metrics, timingBasis: 'observed-response-time', samples: 1 })!;
+  expect(generationSpeedLabel(value)).toBe('≈50.0 tok/s');
+  expect(generationSpeedDetails(value)).toContain('Estimated speed');
+  expect(generationSpeedDetails(value)).toContain('network and queueing');
+  expect(generationSpeedDetails(value)).toContain('100 output tokens / 2.00 s');
+  // A final counter can arrive after completion without any textual samples.
+  expect(generationSpeedLabel(normalizeGenerationMetrics({ ...value, samples: 0 }))).toBe('≈50.0 tok/s');
+});

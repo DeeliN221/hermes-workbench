@@ -76,7 +76,7 @@ def test_agent_display_history_search_and_retries(tmp_path, kinds, steer):
             assert private['input'] == [{'type': 'text', 'text': text}]
             assert private['_attachmentContext']['hidden'] is True
             assert len(private['_attachmentContext']['content']) == len(kinds)
-            for block in peer.calls[0][1]['input'][1:]:
+            for block in peer.calls[0][1]['input'][1:1 + len(kinds)]:
                 path = Path(next(line[6:] for line in block['text'].splitlines() if line.startswith('Path: ')))
                 assert path.exists()
                 assert path.is_dir() or path.read_bytes() in (PNG, b'notes')

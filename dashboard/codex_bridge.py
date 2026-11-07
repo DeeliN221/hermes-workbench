@@ -1301,7 +1301,7 @@ class BridgeStore:
             if not isinstance(payload, dict):
                 continue
             _, hidden = split_payload(payload)
-            if hidden and "_attachmentContext" not in payload:
+            if hidden and payload.get("_messageVisibility") != 1 and "_attachmentContext" not in payload:
                 # Read-only legacy enrichment: never rewrite old requests/events.
                 ids = []
                 for block in hidden:
@@ -1309,8 +1309,8 @@ class BridgeStore:
                     identifier = Path(path).parent.name
                     if re.fullmatch(r"[0-9a-f]{32}", identifier):
                         ids.append(identifier)
-                session = self.session(user, profile, session_id)
-                if session and ids:
+                session = self.session(user, profile, session_id) if ids else None
+                if session:
                     payload["_attachments"] = AttachmentStore().previews(Path(session["workspace_path"]), user, profile, session_id, ids)
                     request["payload"] = json.dumps(payload)
         return MessageProjection(requests)
@@ -2647,6 +2647,16 @@ class CodexBridge:
 
         self.store.set_title_if_empty(user, profile, session_id, title_text)
         payload = {"input": input_items, "threadId": session["thread_id"], "clientUserMessageId": client_id, "_messageVisibility": 1}
+        from execution_preferences import current_mode, mode_context
+        # Resolve on every new submission, including existing threads. Persist
+        # the snapshot so retries keep the original request's execution mode.
+        payload["_executionContext"] = mode_context(await asyncio.to_thread(current_mode, user, profile))
+        # Only internal supervisor submissions carry this field (it is absent
+        # from the HTTP submission schema). Keep callback instructions and raw
+        # evidence out of the user's authored-message transcript.
+        supervisor_context = values.get("_supervisorContext")
+        if isinstance(supervisor_context, str) and supervisor_context:
+            payload["_executionContext"]["content"].append({"type": "text", "text": supervisor_context})
         if attachment_input:
             payload["_attachmentContext"] = {"role": "user", "hidden": True, "content": attachment_input}
             payload["_attachments"] = self.attachments.previews(

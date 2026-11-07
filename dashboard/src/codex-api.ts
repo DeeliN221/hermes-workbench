@@ -6,7 +6,9 @@ import { applyProfileChatDefaults } from './profile-model';
 import { loadModelDisplay, modelIsVisible } from './model-display';
 import { runtimeErrorText } from './chat-runtime-errors';
 import { uiText } from './ui-locale';
-const API = '/api/plugins/workbench/codex';
+import { standalone, runtimeUI } from './runtime-mode';
+import { scoped, sessionURL, runtimeInteractionResponse } from './runtime-client';
+const API = runtimeUI;
 const encode = encodeURIComponent;
 const sessionQuery = (profile: string, session: string) => `profile=${encode(profile)}&session_id=${encode(session)}`;
 const json = (method: string, body: object): RequestInit => ({ method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -17,6 +19,7 @@ export interface CodexSession {
   color: string;
   /** The user-supplied title, or null when the session still shows its derived default. */
   customTitle?: string | null;
+  model?: string; provider?: string; reasoningEffort?: string; modelRevision?: number;
   /** 'user' = titled by hand, 'auto' = first-message title, null = neither yet. */
   titleSource?: 'user' | 'auto' | null;
 }
@@ -59,7 +62,7 @@ export function normalizeSession(value: unknown): CodexSession | null {
   const updatedRaw = row.updatedAt ?? row.updated_at ?? row.timestamp;
   const updatedAtEpoch = typeof updatedRaw === 'number' || typeof updatedRaw === 'string' && /^\d+(?:\.\d+)?$/.test(updatedRaw)
     ? Number(updatedRaw) * (Number(updatedRaw) < 1e12 ? 1000 : 1) : 0;
-  return { id, threadId: text(row.threadId ?? row.thread_id) || undefined, title: text(row.title ?? row.name ?? row.summary, id),
+  return { id, ...(row.model ? { model: text(row.model) } : {}), ...(row.provider ? { provider: text(row.provider) } : {}), ...(row.reasoning_effort ? { reasoningEffort: text(row.reasoning_effort) } : {}), ...(Number.isSafeInteger(row.model_revision) ? { modelRevision: Number(row.model_revision) } : {}), threadId: text(row.threadId ?? row.thread_id) || undefined, title: text(row.title ?? row.name ?? row.summary, id),
     workspace: text(row.workspaceName ?? row.workspace_name, path.split('/').filter(Boolean).at(-1) || path || uiText('默认工作区', 'Default workspace')),
     workspaceId: text(row.workspaceId ?? row.workspace_id), workspacePath: path,
     favorite: row.favorite === true || row.favourited === true || row.isFavorite === true,
@@ -73,6 +76,11 @@ export function normalizeSession(value: unknown): CodexSession | null {
     customTitle, titleSource: titleSource === 'user' || titleSource === 'auto' ? titleSource : null };
 }
 export async function listCodexSessions(read: FetchJSON, profile: string, options: boolean | { deleted?: boolean } = {}): Promise<CodexSession[]> {
+  if (standalone) {
+    const data = await read<unknown>(`/api/runtime/sessions?profile_id=${encode(profile)}`);
+    const deleted = typeof options === 'boolean' ? options : options.deleted === true;
+    return rows(Array.isArray(data) ? data : record(data).sessions, 'items').flatMap(row => { const session = normalizeSession(row); return session && session.deleted === deleted ? [session] : []; });
+  }
   const deleted = typeof options === 'boolean' ? options : options.deleted === true, result: CodexSession[] = [];
   for (let offset = 0; ; offset += 100) {
     const page = rows(await read(`${API}/sessions?profile=${encode(profile)}&limit=100&offset=${offset}${deleted ? '&deleted=true' : ''}`), 'items');
@@ -89,6 +97,10 @@ export async function searchCodexSessions(
   read: FetchJSON, profile: string, query: string, limit = 60,
   options: { signal?: AbortSignal; content?: boolean } = {},
 ): Promise<CodexSessionSearchHit[]> {
+  if (standalone) {
+    const sessions = await listCodexSessions(read, profile);
+    return sessions.filter(s => (s.title + s.id).toLowerCase().includes(query.toLowerCase())).slice(0, limit).map(s => ({ ...s, threadId: '', snippet: '', matched: 'title' as const, updatedAt: s.updatedAtEpoch, groupName: '' }));
+  }
   const url = `${API}/search?profile=${encode(profile)}&q=${encode(query)}&limit=${Math.max(1, Math.min(limit, 100))}`
     + (options.content === false ? '&content=false' : '');
   const response = record(await (options.signal ? read(url, { signal: options.signal }) : read(url)));
@@ -117,7 +129,7 @@ async function writeGroup(read: FetchJSON, url: string, method: string, body: ob
   if (!group) throw new Error(uiText('服务端未返回有效项目', 'The server returned no valid project'));
   return group;
 }
-export function createCodexGroup(read: FetchJSON, profile: string, name: string) { return writeGroup(read, `${API}/groups`, 'POST', { profile, name }); }
+export function createCodexGroup(read: FetchJSON, profile: string, name: string) { return writeGroup(read, `${API}/groups${standalone ? '?profile=' + encode(profile) : ''}`, 'POST', { profile, name }); }
 export function renameCodexGroup(read: FetchJSON, profile: string, id: string, name: string) { return writeGroup(read, `${API}/groups/${encode(id)}?profile=${encode(profile)}`, 'PATCH', { name }); }
 export async function deleteCodexGroup(read: FetchJSON, profile: string, id: string) { await read(`${API}/groups/${encode(id)}?profile=${encode(profile)}`, { method: 'DELETE' }); }
 export async function organizeCodexSession(read: FetchJSON, profile: string, session: string, changes: { favorite?: boolean; groupId?: string | null; deleted?: boolean; title?: string; color?: string }) {
@@ -147,7 +159,7 @@ function goalResponse(value: unknown) {
   if (!goal) throw new Error(uiText('服务端未返回有效目标', 'The server returned no valid goal'));
   return goal;
 }
-export async function readCodexGoal(read: FetchJSON, profile: string, session: string) { return goalResponse(await read(`${API}/session/goal?${sessionQuery(profile, session)}`)); }
+export async function readCodexGoal(read: FetchJSON, profile: string, session: string) { if (standalone) throw new Error('DSH session goals are unavailable'); return goalResponse(await read(`${API}/session/goal?${sessionQuery(profile, session)}`)); }
 export async function updateCodexGoal(read: FetchJSON, profile: string, session: string, goal: { objective?: string; status?: GoalStatus; tokenBudget?: number | null }) {
   return goalResponse(await read(`${API}/session/goal?${sessionQuery(profile, session)}`, json('PUT', goal)));
 }
@@ -189,7 +201,22 @@ export async function loadCodexModels(read: FetchJSON, profile: string) {
 export async function markCodexSessionRead(read: FetchJSON, profile: string, session: string, readSeq: number) {
   if (readSeq) await read(`${API}/session/read?${sessionQuery(profile, session)}`, json('POST', { profile, readSeq }));
 }
+/** A deliberate model choice is durable before another message is sent. */
+export async function updateRuntimeSessionModel(read: FetchJSON, profile: string, session: string, controls: { model: string; effort?: string }) {
+  const result = record(await read(scoped(sessionURL(profile, session) + '/model', profile), json('POST', {
+    model: controls.model, ...(controls.effort ? { reasoning_effort: controls.effort } : {}),
+  })));
+  const saved = normalizeSession(result.session ?? result);
+  if (!saved?.model || saved.id !== session) throw new Error('The runtime did not confirm the session model');
+  return saved;
+}
 export async function createCodexSession(read: FetchJSON, profile: string, options: SessionOptions) {
+  if (standalone) {
+    const row = await read<unknown>('/api/runtime/sessions', json('POST', { profile_id: profile, project_id: options.workspaceId || 'default', model: options.model, reasoning_effort: options.effort || undefined, request_id: options.sessionId }));
+    const session = normalizeSession(row);
+    if (!session) throw new Error('DSH returned no valid session');
+    return session;
+  }
   const response = record(await read(`${API}/sessions`, json('POST', { profile, model: options.model || undefined,
     effort: options.effort || undefined, serviceTier: options.serviceTier || undefined, cwd: options.cwd || undefined,
     workspace_id: options.workspaceId || undefined, session_id: options.sessionId || undefined })));
@@ -198,6 +225,18 @@ export async function createCodexSession(read: FetchJSON, profile: string, optio
   return session;
 }
 export async function sendCodexMessage(read: FetchJSON, profile: string, session: string, content: string, requestId: string, options: SendOptions, fetch?: AuthedFetch) {
+  if (standalone) {
+    let result: Record<string, unknown>;
+    try {
+      result = record(await read(scoped(sessionURL(profile, session) + '/messages', profile), json('POST', { content, request_id: requestId, model: options.model || undefined, reasoning_effort: options.effort || undefined, attachments: options.attachmentIds || [], mode: options.expectedTurnId ? 'steer' : 'queue' })));
+    } catch (error) {
+      if (typeof record(error).status === 'number') throw new CodexSendError(Number(record(error).status), String(error));
+      throw error;
+    }
+    if (result.execution === 'background' && result.task_id) return { accepted: true, status: 'background', turnId: '', error: '', clientRequestId: requestId, backgroundTask: result };
+    if (result.accepted !== true || result.status !== 'accepted') throw new Error('DSH did not acknowledge the message');
+    return { accepted: true, status: 'accepted', turnId: session, error: '', clientRequestId: requestId };
+  }
   const url = `${API}/session${options.expectedTurnId ? '/steer' : ''}?${sessionQuery(profile, session)}`;
   const init = json('POST', { profile, text: content, clientRequestId: requestId, model: options.model || undefined,
     effort: options.effort || undefined, serviceTier: options.serviceTier || undefined, attachmentIds: options.attachmentIds || [],
@@ -236,6 +275,7 @@ export async function sendCodexMessageRetry(
   read: FetchJSON, profile: string, session: string, content: string, requestId: string,
   options: SendOptions, fetch?: AuthedFetch, delay: (ms: number) => Promise<void> = wait,
 ) {
+  if (standalone) return sendCodexMessage(read, profile, session, content, requestId, options, fetch);
   for (let attempt = 0; ; attempt += 1) {
     try {
       return await sendCodexMessage(read, profile, session, content, requestId, options, fetch);
@@ -254,7 +294,7 @@ export function normalizeAttachment(value: unknown): CodexAttachment | null {
 export async function uploadCodexAttachment(fetch: AuthedFetch, profile: string, session: string, file: File, progress?: (fraction: number) => void) {
   progress?.(0);
   const form = new FormData(); form.append('file', file, file.name || 'attachment');
-  const response = await fetch(`${API}/attachments?${sessionQuery(profile, session)}`, { method: 'POST', body: form });
+  const response = await fetch(`${standalone ? '/api/plugins/workbench' : API}/attachments?${sessionQuery(profile, session)}`, { method: 'POST', body: form });
   if (!response.ok) throw new Error(await response.text().catch(() => '') || uiText(`附件上传失败（HTTP ${response.status}）`, `Attachment upload failed (HTTP ${response.status})`));
   const attachment = normalizeAttachment(record(await response.json()).attachment);
   if (!attachment) throw new Error(uiText('附件上传未返回有效附件编号', 'Upload returned no valid attachment ID'));
@@ -267,17 +307,29 @@ export async function uploadCodexFolder(fetch: AuthedFetch, profile: string, ses
   for (const entry of entries) form.append('files', entry.file, entry.file.name || 'attachment');
   form.append('paths', JSON.stringify(entries.map(entry => entry.relativePath)));
   form.append('name', name);
-  const response = await fetch(`${API}/attachments/folder?${sessionQuery(profile, session)}`, { method: 'POST', body: form });
+  const response = await fetch(`${standalone ? '/api/plugins/workbench' : API}/attachments/folder?${sessionQuery(profile, session)}`, { method: 'POST', body: form });
   if (!response.ok) throw new Error(await response.text().catch(() => '') || uiText(`文件夹上传失败（HTTP ${response.status}）`, `Folder upload failed (HTTP ${response.status})`));
   const attachment = normalizeAttachment(record(await response.json()).attachment);
   if (!attachment) throw new Error(uiText('文件夹上传未返回有效附件编号', 'Upload returned no valid attachment ID'));
   progress?.(1); return attachment;
 }
 export async function stopCodexTurn(read: FetchJSON, profile: string, session: string, turnId: string) {
+  if (standalone) { await read(scoped(sessionURL(profile, session) + '/cancel', profile), json('POST', {})); return; }
   if (!turnId) throw new Error(uiText('当前没有可停止的轮次', 'No active turn to stop'));
   await read(`${API}/session/stop?${sessionQuery(profile, session)}`, json('POST', { profile, turnId }));
 }
-export async function answerCodexApproval(read: FetchJSON, profile: string, session: string, approvalId: string, answer: string | Record<string, unknown>) {
+export async function answerCodexApproval(read: FetchJSON, profile: string, session: string, approvalId: string, answer: string | Record<string, unknown>, questions?: { id: string; options?: { label: string }[] | null }[]) {
+  if (standalone) {
+    let result: Record<string, unknown>;
+    try {
+      result = record(await read(scoped(sessionURL(profile, session) + '/interactions/' + encode(approvalId), profile), json('POST', runtimeInteractionResponse(answer, questions))));
+    } catch (error) {
+      if ([404, 409, 410].includes(Number(record(error).status))) throw Object.assign(new Error('DSH interaction expired. Refresh the session for current requests.'), { interactionExpired: true });
+      throw error;
+    }
+    if (result.accepted !== true && result.status !== 'accepted') throw new Error('DSH did not acknowledge the interaction response');
+    return;
+  }
   const result = record(await read(`${API}/session/approval?${sessionQuery(profile, session)}`, json('POST', {
     profile, approvalId, ...(typeof answer === 'object' ? { answers: answer } : { decision: answer === 'approve' ? 'accept' : answer === 'reject' ? 'decline' : answer }),
   })));
