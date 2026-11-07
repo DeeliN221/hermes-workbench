@@ -1,0 +1,50 @@
+.workbench-execution-options {
+  display: grid;
+  gap: 12px;
+  padding: 0;
+  margin: 24px 0 0;
+  min-width: 0;
+  border: 0;
+}
+.workbench-execution-options legend {
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.workbench-execution-option {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 18px;
+  border: 1px solid var(--dashboard-line, #8886);
+  border-radius: 10px;
+  background: var(--dashboard-page-surface, transparent);
+  cursor: pointer;
+}
+.workbench-execution-option:has(input:checked) {
+  border-color: var(--dashboard-accent, #117579);
+  background: var(--dashboard-active, #11757914);
+}
+.workbench-execution-option:has(input:focus-visible) {
+  outline: 2px solid var(--dashboard-accent, #117579);
+  outline-offset: 2px;
+}
+.workbench-execution-option input {
+  flex: 0 0 auto;
+  margin-top: 4px;
+  accent-color: var(--dashboard-accent, #117579);
+}
+.workbench-execution-option > span {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.workbench-execution-option span span,
+.workbench-execution-note {
+  color: var(--dashboard-muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+.workbench-execution-note { margin-top: 20px; }
+.workbench-execution-options:disabled { opacity: .65; }
+.workbench-execution-retry { margin-top: 10px; }

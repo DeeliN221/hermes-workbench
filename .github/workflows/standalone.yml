@@ -1,0 +1,101 @@
+name: Standalone candidate
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: standalone-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  standalone-node24:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '24'
+          cache: pnpm
+          cache-dependency-path: |
+            pnpm-lock.yaml
+            dashboard/runtime/pnpm-lock.yaml
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: '3.13'
+          enable-cache: true
+      - name: Frozen frontend and runtime installs
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm --dir dashboard/runtime install --frozen-lockfile
+          pnpm build:standalone
+      - name: Pure runtime contracts
+        run: node --test dashboard/runtime/test/*.test.mjs
+      - name: Install minimal Python closure outside the candidate
+        run: |
+          uv venv --python 3.13 "$RUNNER_TEMP/standalone-python"
+          uv pip install --python "$RUNNER_TEMP/standalone-python/bin/python" -r scripts/start-standalone-requirements.txt
+          uv pip check --python "$RUNNER_TEMP/standalone-python/bin/python"
+      - name: Pure app, service, package and supervision tests
+        env:
+          STANDALONE_TEST_PYTHON: ${{ runner.temp }}/standalone-python/bin/python
+        run: >-
+          uv run --python 3.13 --no-project --with-requirements requirements-dev.txt
+          pytest -q tests/test_standalone_app.py tests/test_standalone_services.py
+          tests/test_standalone_services_fleet.py tests/test_standalone_services_inputs_archives.py
+          tests/test_standalone_release.py
+      - name: Build actual clean committed candidate
+        run: uv run --python 3.13 --no-project python scripts/package-standalone.py
+      - name: Verify relocated extracted candidate
+        env:
+          STANDALONE_PYTHON: ${{ runner.temp }}/standalone-python/bin/python
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, shutil, subprocess, sys, tarfile, tempfile
+          archives = list(Path('release/standalone').glob('*.tar.gz'))
+          assert len(archives) == 1
+          archive = archives[0]
+          expected, name = Path('release/standalone/SHA256SUMS').read_text().split()
+          assert name == archive.name and hashlib.sha256(archive.read_bytes()).hexdigest() == expected
+          with tempfile.TemporaryDirectory() as temporary:
+              with tarfile.open(archive) as bundle:
+                  bundle.extractall(temporary, filter='data')
+              candidate = next(Path(temporary).iterdir())
+              subprocess.run([sys.executable, str(candidate / 'scripts/start-standalone.py'), '--verify'], check=True)
+              isolated = Path(temporary) / 'operator-fixture'
+              isolated.mkdir(mode=0o700)
+              dsh = isolated / 'dsh-home'
+              dsh.mkdir(mode=0o700)
+              for name in ('settings.yaml', '.env'):
+                  fixture = dsh / name
+                  fixture.write_text('Offline fixture; must never be parsed or used to start a provider')
+                  fixture.chmod(0o600)
+              config = {
+                  'node': shutil.which('node'), 'python': os.environ['STANDALONE_PYTHON'],
+                  'state_dir': str(isolated / 'state'), 'app_home': str(isolated / 'app'),
+                  'workspace': str(isolated / 'workspace'), 'dsh_home': str(dsh),
+                  'bridge_token_file': str(isolated / 'secrets/bridge.token'),
+                  'module_root': str(Path('dashboard/runtime').resolve()),
+                  'provider': 'offline-fixture', 'model': 'offline-fixture',
+                  'app_port': 38880, 'bridge_port': 38881, 'host_port': 38882,
+              }
+              configuration = isolated / 'config.json'
+              configuration.write_text(json.dumps(config))
+              configuration.chmod(0o600)
+              subprocess.run([os.environ['STANDALONE_PYTHON'], str(candidate / 'scripts/start-standalone.py'),
+                              '--check', '--config', str(configuration)], check=True)
+          PY
+      - name: Public content check
+        run: python scripts/check-public-content.py
+      - uses: actions/upload-artifact@v7
+        with:
+          name: standalone-${{ github.sha }}
+          path: release/standalone/
+          if-no-files-found: error
+          retention-days: 14

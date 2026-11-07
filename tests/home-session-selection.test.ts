@@ -1,5 +1,5 @@
-import { describe, it, expect } from 'vitest';
-import { homeSessionsPath, mergeHomeSessions, requestedHomeLayout, openedHomeSessions, sessionKey } from '../dashboard/src/home-session-selection';
+import { describe, it, expect, vi } from 'vitest';
+import { homeSessionsPath, mergeHomeSessions, requestedHomeLayout, openedHomeSessions, sessionKey, revealActiveHomePane } from '../dashboard/src/home-session-selection';
 import { savePaneLayout, resolvePaneLayout } from '../dashboard/src/codex-pane-layout';
 const session = (profile: string, sessionId = 'same') => ({ profile, sessionId, hermesSessionId: '' });
 const memory = () => { const values = new Map<string, string>(); return { getItem: (key: string) => values.get(key) ?? null, setItem: (key: string, value: string) => { values.set(key, value); } }; };
@@ -40,4 +40,17 @@ describe('home session selection', () => {
       expect(requestedHomeLayout(`/chat?homeOpen=${encodeURIComponent(JSON.stringify(raw))}`, storage)).toBeNull();
     }
   });
+});
+
+it('keeps the active standalone conversation visible when entering a phone viewport', () => {
+  const scrollIntoView = vi.fn();
+  vi.stubGlobal('location', { pathname: '/chat', search: '?session=owned' });
+  vi.stubGlobal('matchMedia', vi.fn(() => ({ matches: true })));
+  vi.stubGlobal('document', { querySelector: vi.fn(() => ({ scrollIntoView })) });
+  try {
+    revealActiveHomePane();
+    expect(scrollIntoView).not.toHaveBeenCalled(); // Preserve the existing plugin route policy.
+    revealActiveHomePane(true);
+    expect(scrollIntoView).toHaveBeenCalledWith({ block: 'nearest', inline: 'start' });
+  } finally { vi.unstubAllGlobals(); }
 });

@@ -16,6 +16,8 @@ try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const errors = [];
   page.on('pageerror', error => errors.push(error.stack || error.message));
+  const displayPreferences = host.origin + '/api/plugins/workbench/chat-display-preferences?profile=default';
+  await page.request.put(displayPreferences, { data: { generationSpeedEnabled: false, userMessageNavigatorEnabled: true } });
   await page.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await page.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
   await openSecondSession(page);
@@ -79,12 +81,12 @@ try {
   assert.equal(await page.locator('.codex-pane-slot').nth(0).locator(PANEL).isHidden(), true, 'an outside click must close the panel');
 
   // The global setting hides and restores every pane ball.
-  await page.evaluate(() => localStorage.setItem('workbench.user-message-ball.v1', 'false'));
+  await page.request.put(displayPreferences, { data: { generationSpeedEnabled: false, userMessageNavigatorEnabled: false } });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
   await page.waitForTimeout(300);
   assert.equal(await page.locator(BALL).first().isVisible(), false, 'the disabled setting must hide the navigator');
-  await page.evaluate(() => localStorage.setItem('workbench.user-message-ball.v1', 'true'));
+  await page.request.put(displayPreferences, { data: { generationSpeedEnabled: false, userMessageNavigatorEnabled: true } });
   await page.reload({ waitUntil: 'domcontentloaded' });
   await page.locator('.codex-message.is-user').first().waitFor({ state: 'attached', timeout: 5000 });
   await page.locator(BALL).first().waitFor({ state: 'visible', timeout: 5000 });
@@ -94,6 +96,7 @@ try {
   const mobile = await browser.newPage({ viewport: { width: 1440, height: 900 } });
   const mobileErrors = [];
   mobile.on('pageerror', error => mobileErrors.push(error.stack || error.message));
+  await mobile.request.put(displayPreferences, { data: { generationSpeedEnabled: false, userMessageNavigatorEnabled: true } });
   await mobile.goto(host.origin + '/chat?session=codex-preview&profile=default', { waitUntil: 'domcontentloaded' });
   await mobile.locator('.codex-pane-slot').first().waitFor({ state: 'attached', timeout: 5000 });
   await openSecondSession(mobile);
@@ -104,32 +107,36 @@ try {
   await mobile.waitForFunction((ball) => document.querySelectorAll(ball).length === 2
     && document.querySelectorAll(ball)[1]?.dataset.count === '3', BALL, { timeout: 5000 });
 
-  const mobileStart = await paneGeometry(mobile);
-  assert.deepEqual(mobileStart.map(pane => pane.count), ['7', '3'], 'mobile panes must keep separate counts');
-  assert.deepEqual(mobileStart.map(pane => pane.insidePane), [true, true], 'mobile balls must stay inside their panes');
-  assert.ok(mobileStart.every(pane => pane.composerClearance >= 8), 'mobile balls must clear the composer');
+  assert.equal(await mobile.locator(`${BALL}:visible`).count(), 0, 'mobile must not draw a floating user message ball');
+  const mobileRail = mobile.getByTestId('mobile-user-message-navigator');
+  await mobileRail.waitFor({ state: 'visible', timeout: 5000 });
+  const railBox = await mobileRail.boundingBox();
+  assert.ok(railBox.x < 48, 'the optional navigator belongs inside the left rail');
 
   await mobile.evaluate(() => {
     const strip = document.querySelector('.codex-multi-pane');
     strip.scrollLeft = strip.scrollWidth;
   });
   await mobile.waitForTimeout(250);
-  const mobileScrolled = await paneGeometry(mobile);
-  assert.deepEqual(offsets(mobileScrolled), offsets(mobileStart), 'horizontal pane scrolling must not move the balls');
+  assert.deepEqual(await mobileRail.boundingBox(), railBox, 'horizontal pane scrolling must not move the rail control');
 
   await mobile.locator('.dashboard-mobile-toggle').click();
   await mobile.locator('.dashboard-global-nav.is-open').waitFor({ state: 'visible', timeout: 5000 });
-  const mobileDrawer = await paneGeometry(mobile);
-  assert.deepEqual(offsets(mobileDrawer), offsets(mobileStart), 'the navigation drawer must not move the balls');
+  assert.deepEqual(await mobileRail.boundingBox(), railBox, 'the navigation drawer must not move the rail control');
   await mobile.locator('.dashboard-mobile-toggle').click();
   await mobile.waitForFunction(() => !document.querySelector('.dashboard-global-nav.is-open'), null, { timeout: 5000 });
 
-  await mobile.locator('.codex-pane-slot').nth(1).locator(BALL).click();
-  const mobilePanel = mobile.locator('.codex-pane-slot').nth(1).locator(PANEL);
+  const activeIndex = await mobile.locator('.codex-pane-slot').evaluateAll(panes => panes.findIndex(pane => pane.classList.contains('is-active')));
+  assert.ok(activeIndex >= 0);
+  const activePane = mobile.locator('.codex-pane-slot').nth(activeIndex);
+  const expectedCount = Number(await activePane.locator(BALL).getAttribute('data-count'));
+  assert.ok(expectedCount > 0);
+  await mobileRail.click();
+  const mobilePanel = activePane.locator(PANEL);
   await mobilePanel.waitFor({ state: 'visible', timeout: 5000 });
-  assert.equal(await mobilePanel.locator('[data-user-message-item]').count(), 3, 'the mobile panel must list only its own pane');
+  assert.equal(await mobilePanel.locator('[data-user-message-item]').count(), expectedCount, 'the mobile panel must list only the active pane');
   const mobilePanelBox = await mobilePanel.boundingBox();
-  const mobilePaneBox = await mobile.locator('.codex-pane-slot').nth(1).boundingBox();
+  const mobilePaneBox = await activePane.boundingBox();
   assert.ok(mobilePanelBox.x >= mobilePaneBox.x - 1 && mobilePanelBox.x + mobilePanelBox.width <= mobilePaneBox.x + mobilePaneBox.width + 1, 'the mobile panel must stay inside its pane');
   await mobilePanel.locator('.workbench-user-message-panel-close').click();
   assert.equal(await mobilePanel.isHidden(), true, 'the close control must close the panel');
@@ -137,7 +144,7 @@ try {
   await mobile.close();
 
   assert.deepEqual(errors, [], `Browser errors on desktop:\n${errors.join('\n')}`);
-  console.log('Per-pane user message navigator check passed: separate balls, panels, jumps, stable geometry on desktop and mobile.');
+  console.log('Per-pane user message navigator check passed: desktop balls and panels; mobile rail trigger with no floating ball.');
 } finally {
   await browser.close();
   await host.close();
