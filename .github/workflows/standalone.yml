@@ -36,7 +36,14 @@ jobs:
           pnpm build:standalone
       - name: Pure runtime contracts
         run: node --test dashboard/runtime/test/*.test.mjs
+      - name: Install minimal Python closure outside the candidate
+        run: |
+          uv venv --python 3.13 "$RUNNER_TEMP/standalone-python"
+          uv pip install --python "$RUNNER_TEMP/standalone-python/bin/python" -r scripts/start-standalone-requirements.txt
+          uv pip check --python "$RUNNER_TEMP/standalone-python/bin/python"
       - name: Pure app, service, package and supervision tests
+        env:
+          STANDALONE_TEST_PYTHON: ${{ runner.temp }}/standalone-python/bin/python
         run: >-
           uv run --python 3.13 --no-project --with-requirements requirements-dev.txt
           pytest -q tests/test_standalone_app.py tests/test_standalone_services.py
@@ -44,11 +51,6 @@ jobs:
           tests/test_standalone_release.py
       - name: Build actual clean committed candidate
         run: uv run --python 3.13 --no-project python scripts/package-standalone.py
-      - name: Install minimal Python closure outside the candidate
-        run: |
-          uv venv --python 3.13 "$RUNNER_TEMP/standalone-python"
-          uv pip install --python "$RUNNER_TEMP/standalone-python/bin/python" -r scripts/start-standalone-requirements.txt
-          uv pip check --python "$RUNNER_TEMP/standalone-python/bin/python"
       - name: Verify relocated extracted candidate
         env:
           STANDALONE_PYTHON: ${{ runner.temp }}/standalone-python/bin/python

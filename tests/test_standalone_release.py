@@ -193,6 +193,9 @@ def test_actual_installed_module_checks_are_offline(tmp_path):
     path, _ = config_file(tmp_path)
     config = start.load_config(path, development=True)
     config['node'] = shutil.which('node')
+    # CI checks the same minimal Python closure used by the extracted candidate,
+    # independently of uv's temporary pytest/development environment.
+    config['python'] = os.environ.get('STANDALONE_TEST_PYTHON', sys.executable)
     home = config['dsh_home']
     home.mkdir(mode=0o700)
     for name in ('settings.yaml', '.env'):
