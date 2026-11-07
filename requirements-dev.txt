@@ -79,7 +79,7 @@ pyjwt[crypto]==2.15.0
     # via mcp
 pytest==9.2.0
     # via -r requirements-dev.in
-python-multipart==0.0.32
+python-multipart==0.0.33
     # via
     #   -r requirements-dev.in
     #   mcp
