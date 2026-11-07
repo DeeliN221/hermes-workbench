@@ -9,6 +9,13 @@ const initialized = () => { const state = new RuntimeProjection('s1'); state.app
 afterEach(() => vi.useRealTimers());
 
 describe('neutral DSH presentation', () => {
+  it('applies model changes from another device and ignores older selection revisions', () => {
+    const state = initialized();
+    state.apply({ type: 'model.changed', session_id: 's1', data: { session: { id: 's1', model: 'selected', model_revision: 2, reasoning_effort: 'high' } } });
+    expect(state.value?.session).toMatchObject({ model: 'selected', modelRevision: 2, reasoningEffort: 'high' });
+    state.apply({ type: 'model.changed', session_id: 's1', data: { session: { id: 's1', model: 'stale', model_revision: 1 } } });
+    expect(state.value?.session?.model).toBe('selected');
+  });
   it('projects tool call/result cards while tool-only states preserve active execution', () => {
     const state = initialized();
     state.apply(event('state', 1, { status: 'running', tool: { type: 'tool/call', call_id: 'call-1', name: 'read_file', arguments: { path: 'notes.txt' } } }));

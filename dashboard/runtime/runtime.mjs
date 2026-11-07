@@ -12,7 +12,7 @@ import {RuntimeError, nonempty, publicError} from './errors.mjs';
 
 export function sessionRef(meta) {
   return {id: meta.id, runtime: 'dsh', profile_id: meta.profile_id, project_id: meta.project_id, ...(meta.user_id ? {user_id: meta.user_id} : {}),
-    model: meta.model, provider: meta.provider, ...(meta.reasoning_effort !== undefined ? {reasoning_effort: meta.reasoning_effort} : {})};
+    model: meta.model, provider: meta.provider, model_revision: meta.model_revision ?? 0, ...(meta.reasoning_effort !== undefined ? {reasoning_effort: meta.reasoning_effort} : {})};
 }
 function canonical(value) {
   if (Array.isArray(value)) return value.map(canonical);
@@ -181,7 +181,9 @@ export class Runtime extends EventEmitter {
     meta.provider = selection.provider; meta.model = selection.model;
     if (selection.reasoningEffort === undefined) delete meta.reasoning_effort;
     else meta.reasoning_effort = selection.reasoningEffort;
-    return before !== JSON.stringify([meta.provider, meta.model, meta.reasoning_effort]);
+    const changed = before !== JSON.stringify([meta.provider, meta.model, meta.reasoning_effort]);
+    if (changed) meta.model_revision = (meta.model_revision ?? 0) + 1;
+    return changed;
   }
   reconcileModel(meta) {
     return this.serializeModel(meta, async () => {
@@ -204,6 +206,7 @@ export class Runtime extends EventEmitter {
       if (!result?.selected || result.selected.provider !== this.provider || result.selected.model !== selection.model)
         throw new RuntimeError(502, 'dsh/invalid-selection', 'DSH did not return the configured provider selection');
       this.updateSelection(meta, result.selected); await this.store.save();
+      this.publish(meta.id, {type: 'model.changed', data: {session: sessionRef(meta)}});
       return result.selected;
     });
   }
